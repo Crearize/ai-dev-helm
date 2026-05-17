@@ -1,14 +1,12 @@
 name: Publish to npm
 
+# This workflow handles MANUAL releases (gh release create / workflow_dispatch).
+# Automated releases via release-please are published by release-please.yml
+# directly, because npm Trusted Publishing does not support reusable workflows.
+
 on:
   release:
     types: [published]
-  workflow_call:
-    inputs:
-      tag:
-        description: 'Release tag to publish (e.g. v1.3.0)'
-        required: true
-        type: string
   workflow_dispatch:
     inputs:
       tag:
@@ -29,7 +27,7 @@ jobs:
         run: |
           TAG="${{ github.event.release.tag_name || inputs.tag }}"
           if [ -z "$TAG" ]; then
-            echo "::error::No tag resolved from release / workflow_call / workflow_dispatch"
+            echo "::error::No tag resolved from release / workflow_dispatch"
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"

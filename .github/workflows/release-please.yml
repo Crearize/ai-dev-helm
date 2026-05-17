@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   release-please:
@@ -26,9 +27,39 @@ jobs:
   publish:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/publish.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Ensure npm 11.5.1+ for Trusted Publishing
+        run: npm install -g npm@latest
+
+      - name: Verify version matches tag
+        run: |
+          TAG="${{ needs.release-please.outputs.tag_name }}"
+          TAG_VERSION="${TAG#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $TAG does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+          echo "Verified: $TAG matches package.json $PKG_VERSION"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Publish to npm (Trusted Publishing / OIDC)
+        run: npm publish --access public --provenance
