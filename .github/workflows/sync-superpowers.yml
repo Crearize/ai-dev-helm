@@ -92,21 +92,15 @@ jobs:
         id: create-pr
         uses: peter-evans/create-pull-request@v7
         with:
-          title: "chore: sync superpowers v${{ steps.current.outputs.version }} → v${{ steps.latest.outputs.version }}"
+          title: "fix(superpowers): sync skills v${{ steps.current.outputs.version }} → v${{ steps.latest.outputs.version }}"
           body: |
             ## superpowers スキル自動同期
 
             **更新**: v${{ steps.current.outputs.version }} → v${{ steps.latest.outputs.version }}
 
             [リリースノート](https://github.com/obra/superpowers/releases/tag/v${{ steps.latest.outputs.version }})を確認してください。
-          branch: chore/sync-superpowers
-          commit-message: "chore: sync superpowers skills to v${{ steps.latest.outputs.version }}"
-          labels: auto-merge-superpowers
 
-      - name: Enable auto-merge
-        if: steps.create-pr.outputs.pull-request-number
-        run: |
-          gh pr merge "$PR_NUMBER" --auto --squash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.create-pr.outputs.pull-request-number }}
+            このPRは `fix(superpowers):` コミットとしてマージされ、release-please が自動で patch リリースに含めます。
+          branch: chore/sync-superpowers
+          commit-message: "fix(superpowers): sync skills to v${{ steps.latest.outputs.version }}"
+          labels: superpowers-sync
