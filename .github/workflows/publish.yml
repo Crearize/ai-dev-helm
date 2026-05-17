@@ -1,6 +1,11 @@
-name: Release Please
+name: Publish to npm
 
 # Single source of truth for both automated and manual npm releases.
+#
+# Automated path: push to main -> release-please job opens / merges
+#   release PR -> publish job runs in the same workflow.
+# Manual path:    'gh workflow run publish.yml -f publish_tag=vX.Y.Z'
+#   skips release-please and publishes the existing tag directly.
 #
 # Why one file: npm Trusted Publishing allows only one trusted publisher
 # per package, and the OIDC subject claim must match the workflow filename.
