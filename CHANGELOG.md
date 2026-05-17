@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4](https://github.com/Crearize/ai-dev-helm/compare/v1.3.3...v1.3.4) (2026-05-17)
+
+
+### Fixed
+
+* **ci:** inline publish step into release-please workflow ([#19](https://github.com/Crearize/ai-dev-helm/issues/19)) ([3737b13](https://github.com/Crearize/ai-dev-helm/commit/3737b132baaafd3b905c8c1fb394c42c3f9ef125))
+* **ci:** unify publish into release-please.yml (single trusted publisher) ([#21](https://github.com/Crearize/ai-dev-helm/issues/21)) ([2838a71](https://github.com/Crearize/ai-dev-helm/commit/2838a713146b7c14daf710a3bb5a55c92f284f8b))
+
 ## [1.3.3](https://github.com/Crearize/ai-dev-helm/compare/v1.3.2...v1.3.3) (2026-05-17)
 
 
