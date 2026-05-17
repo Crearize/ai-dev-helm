@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-17
+
+### Changed
+
+- superpowers スキルを v5.0.6 → v5.1.0 に同期 (#1)
+  - `finishing-a-development-branch`: ワークスペース状態を判別する Step 2「Detect Environment」を追加。通常リポジトリ／named-branch worktree／detached HEAD の3パターンに応じてメニューと cleanup 処理を切り替え
+  - `using-git-worktrees`: 「REQUIRED で worktree を作成」から「分離されたワークスペースを保証する（既存の worktree があれば検証する）」運用に緩和
+  - `executing-plans`: `using-git-worktrees` への依存表現を緩和方針に追従
+  - `requesting-code-review` / `code-reviewer.md`: レビュアー手順とプロンプト構成を刷新
+  - `subagent-driven-development` / `code-quality-reviewer-prompt.md`: サブエージェント運用のガイダンスを更新
+  - `systematic-debugging/root-cause-tracing.md`: 表現修正
+  - `using-superpowers` / `writing-plans`: 軽微な修正
+
+### Added
+
+- `skills/superpowers/writing-skills/persuasion-principles.md`: スキル設計時に活用する「説得の原則」リファレンスを新規追加
+
 ## [1.2.0] - 2026-04-19
 
 ### Added
