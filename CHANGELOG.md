@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2](https://github.com/Crearize/ai-dev-helm/compare/v1.3.1...v1.3.2) (2026-05-17)
+
+
+### Fixed
+
+* **ci:** use Node 24 + latest npm for Trusted Publishing ([#14](https://github.com/Crearize/ai-dev-helm/issues/14)) ([938c463](https://github.com/Crearize/ai-dev-helm/commit/938c463af6aa1bb07c8df04a2245ff717d1f1a0d))
+
+
+### CI
+
+* introduce release-please for automated version & release PRs ([#15](https://github.com/Crearize/ai-dev-helm/issues/15)) ([8687de3](https://github.com/Crearize/ai-dev-helm/commit/8687de32b9ac66d3cd4dd0ab898b3153876990f8))
+
 ## [Unreleased]
 
 ## [1.3.1] - 2026-05-17
