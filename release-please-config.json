@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "changelog-path": "CHANGELOG.md",
+  "bump-minor-pre-major": false,
+  "bump-patch-for-minor-pre-major": false,
+  "packages": {
+    ".": {
+      "package-name": "@crearize/ai-dev-helm"
+    }
+  },
+  "changelog-sections": [
+    { "type": "feat", "section": "Added", "hidden": false },
+    { "type": "fix", "section": "Fixed", "hidden": false },
+    { "type": "perf", "section": "Changed", "hidden": false },
+    { "type": "refactor", "section": "Changed", "hidden": false },
+    { "type": "docs", "section": "Documentation", "hidden": false },
+    { "type": "ci", "section": "CI", "hidden": false },
+    { "type": "build", "section": "Build", "hidden": false },
+    { "type": "chore", "section": "Miscellaneous Chores", "hidden": true }
+  ]
+}
