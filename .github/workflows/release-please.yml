@@ -1,10 +1,22 @@
 name: Release Please
 
+# Single source of truth for both automated and manual npm releases.
+#
+# Why one file: npm Trusted Publishing allows only one trusted publisher
+# per package, and the OIDC subject claim must match the workflow filename.
+# Inlining publish here avoids reusable-workflow incompatibility and keeps
+# manual recoveries on the same trusted-publisher path.
+
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      publish_tag:
+        description: 'Optional: existing tag to publish (skips release-please). e.g. v1.3.4'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -20,21 +32,32 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
+        if: ${{ inputs.publish_tag == '' || inputs.publish_tag == null }}
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
   publish:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' || inputs.publish_tag != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
+      - name: Resolve target tag
+        id: target
+        run: |
+          TAG="${{ inputs.publish_tag || needs.release-please.outputs.tag_name }}"
+          if [ -z "$TAG" ]; then
+            echo "::error::No tag resolved"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ steps.target.outputs.tag }}
 
       - uses: actions/setup-node@v4
         with:
@@ -46,7 +69,7 @@ jobs:
 
       - name: Verify version matches tag
         run: |
-          TAG="${{ needs.release-please.outputs.tag_name }}"
+          TAG="${{ steps.target.outputs.tag }}"
           TAG_VERSION="${TAG#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
