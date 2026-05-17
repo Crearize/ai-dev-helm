@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-05-17
+
+### Added
+
+- **`.github/workflows/publish.yml`**: GitHub Release が `published` になった時に npm へ自動公開するワークフローを追加 (#12)
+  - トリガー: `release: published`（主） / `workflow_dispatch`（手動リカバリ用）
+  - リリースタグと `package.json.version` の整合性を `npm publish` 前に検証
+  - publish 前に `npm ci` と `npm test` を実行して品質ゲートを担保
+  - 認証は **Trusted Publishing (OIDC)** を使用（`id-token: write` 権限のみで `NPM_TOKEN` 不要）
+  - `npm publish --provenance` で発行元の証明（provenance attestation）を付与
+
 ## [1.3.0] - 2026-05-17
 
 ### Changed
