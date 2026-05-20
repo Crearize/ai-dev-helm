@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0](https://github.com/Crearize/ai-dev-helm/compare/v1.3.5...v1.4.0) (2026-05-20)
+
+
+### Added
+
+* Codex CLI 対応をハーネスに追加 ([#25](https://github.com/Crearize/ai-dev-helm/issues/25)) ([d803253](https://github.com/Crearize/ai-dev-helm/commit/d803253936ca74295e75781cffdbe3e726d30df2)), closes [#24](https://github.com/Crearize/ai-dev-helm/issues/24)
+
 ## [1.3.5](https://github.com/Crearize/ai-dev-helm/compare/v1.3.4...v1.3.5) (2026-05-17)
 
 
