@@ -1,0 +1,62 @@
+# Codex user-level configuration (~/.codex/config.toml)
+# Merged by `ai-dev-helm personal`. Existing values are preserved.
+# Docs: https://developers.openai.com/codex/config-basic
+
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+
+# Default policy: prompt only when needed
+approval_policy = "on-request"
+
+# Default sandbox: read-only at user level; per-project files can opt into workspace-write
+sandbox_mode = "read-only"
+
+# Block destructive commands at the rules layer.
+# Matches Bash invocations and rejects them before sandbox evaluation.
+[[rules]]
+name = "block-rm-rf-root"
+match = { tool = "Bash", command_regex = "rm\\s+-rf\\s+/(\\s|$)" }
+decision = "deny"
+reason = "Blocked by ai-dev-helm: rm -rf / is destructive"
+
+[[rules]]
+name = "block-rm-rf-home"
+match = { tool = "Bash", command_regex = "rm\\s+-rf\\s+~(\\s|$)" }
+decision = "deny"
+reason = "Blocked by ai-dev-helm: rm -rf ~ is destructive"
+
+[[rules]]
+name = "block-rm-rf-dot"
+match = { tool = "Bash", command_regex = "rm\\s+-rf\\s+\\.(\\s|$)" }
+decision = "deny"
+reason = "Blocked by ai-dev-helm: rm -rf . is destructive"
+
+[[rules]]
+name = "block-git-force-push-main"
+match = { tool = "Bash", command_regex = "git\\s+push\\s+(--force|-f)\\s+origin\\s+(main|master)" }
+decision = "deny"
+reason = "Blocked by ai-dev-helm: force push to main/master"
+
+[[rules]]
+name = "block-git-reset-hard"
+match = { tool = "Bash", command_regex = "git\\s+reset\\s+--hard" }
+decision = "deny"
+reason = "Blocked by ai-dev-helm: git reset --hard"
+
+[[rules]]
+name = "block-git-clean-fd"
+match = { tool = "Bash", command_regex = "git\\s+clean\\s+-fd" }
+decision = "deny"
+reason = "Blocked by ai-dev-helm: git clean -fd"
+
+[[rules]]
+name = "block-docker-system-prune"
+match = { tool = "Bash", command_regex = "docker\\s+system\\s+prune" }
+decision = "deny"
+reason = "Blocked by ai-dev-helm: docker system prune"
+
+[[rules]]
+name = "block-npm-publish"
+match = { tool = "Bash", command_regex = "(npm|pnpm|yarn)\\s+publish" }
+decision = "deny"
+reason = "Blocked by ai-dev-helm: package publish must be done manually"

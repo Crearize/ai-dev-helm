@@ -1,0 +1,161 @@
+# {{PROJECT_NAME}} - Codex Development Guide
+
+This file is loaded by OpenAI Codex CLI at the start of each session (project-scope AGENTS.md).
+See: https://developers.openai.com/codex/guides/agents-md
+
+## Language Setting
+
+> **IMPORTANT**: Always respond in **Japanese** for this project.
+> This setting must persist even after context compaction.
+
+---
+
+## SuperPowers Operating Rules
+
+**SuperPowers Skills must be applied in every case.**
+
+### Basic Principles
+
+1. **Skill check at conversation start** - Skills live under `.codex/skills/`. If a SuperPowers skill is even 1% applicable, read its `SKILL.md` and follow it.
+2. **No skipping skills** - "It's simple" or "Let me read code first" are not valid reasons to skip
+3. **Process skills first** - When multiple skills apply: process skills (brainstorming, debugging) -> implementation skills
+
+### Required Skills
+
+| Scenario | Skill Path | Notes |
+|----------|------------|-------|
+| Before new feature/change | `.codex/skills/superpowers/brainstorming/SKILL.md` | Explore requirements first |
+| Multi-step implementation planning | `.codex/skills/superpowers/writing-plans/SKILL.md` | Plan before code |
+| Plan execution | `.codex/skills/superpowers/executing-plans/SKILL.md` | Inline execution |
+| Bug / test failure investigation | `.codex/skills/superpowers/systematic-debugging/SKILL.md` | Debug before fix |
+| Testing implementation | `.codex/skills/superpowers/test-driven-development/SKILL.md` | TDD |
+| Receiving code review | `.codex/skills/superpowers/receiving-code-review/SKILL.md` | Verify, not blind agree |
+| Before completion / merge | `.codex/skills/superpowers/verification-before-completion/SKILL.md` | Evidence-based |
+| Post-completion integration | `.codex/skills/superpowers/finishing-a-development-branch/SKILL.md` | Merge/PR/cleanup |
+
+### Plan Execution Rules
+
+1. **Always inline execution** - Execute plans in the current conversation.
+2. **Plan files are not committed** - `docs/superpowers/plans/*.md` must NOT be committed.
+3. **Plan file lifecycle** - Kept locally during implementation, deleted after PR merge.
+
+---
+
+## Quality Check Rules
+
+**All quality verification is done locally. CI is for build confirmation only.**
+
+### Flow
+
+```
+Change area detection (git diff)
+    |
+Static checks + tests
+    |
+Review cycles (persona + integrated review, minimum 3 cycles)
+    |
+E2E tests (final verification)
+    |
+Report data saved -> .quality-check-passed created -> push allowed
+```
+
+### Quality Check Hook
+
+Codex enforces this via a `PreToolUse` hook (configured in `.codex/hooks.json`).
+When you run `git push`, Codex checks for `.quality-check-passed`. If missing, the push is blocked.
+
+---
+
+## Critical Rules
+
+### Level 0: Auto-Execute (No confirmation needed)
+
+1. **Create GitHub Issue** - `gh issue create` to get Issue number
+2. **Create branch** - `git checkout -b [type]/[description]-[issue-number]`
+3. **Include Issue/branch/PR in plans** - Phase 0: Issue/branch creation, final Phase: PR creation
+4. **Always inline execution** - Execute plans inline (in current conversation)
+5. **Run quality-check before push** - All checks must pass before `git push`
+
+### Level 1: Must Follow
+
+1. **Branch check before work** - `git branch --show-current` to confirm not on main
+2. **No work on main** - Always create a new branch
+3. **Issue number required** - Branch name: `[type]/[description]-[issue-number]`
+4. **New error codes must be documented** - Add to error code list immediately
+
+### Level 2: Important
+
+- Follow coding conventions (see `documents/development/coding-rules/`)
+- Always implement tests
+- Document-driven development (spec -> implementation)
+
+### Level 3: Recommended
+
+- Performance optimization
+- Security measures
+- Accessibility
+
+---
+
+## Project Overview
+
+<!-- Manual edit: Update the sections below to match your project -->
+
+**{{PROJECT_NAME}}** - [Add project description here]
+
+### Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| Backend | [Add backend stack] |
+| Frontend | [Add frontend stack] |
+| Database | [Add database] |
+| Testing | [Add test frameworks] |
+
+### Development Server Ports
+
+| Server | Port | URL |
+|--------|------|-----|
+| Frontend | [PORT] | http://localhost:[PORT] |
+| Backend | [PORT] | http://localhost:[PORT] |
+
+---
+
+## Skills (Read on demand)
+
+Located under `.codex/skills/`. Codex does not auto-discover them - refer to them as needed.
+
+| Skill | Path |
+|-------|------|
+| Server startup | `.codex/skills/project/server-startup/SKILL.md` |
+| Branch management | `.codex/skills/project/branch-workflow/SKILL.md` |
+| Backend implementation | `.codex/skills/project/backend-development/SKILL.md` |
+| Frontend implementation | `.codex/skills/project/frontend-development/SKILL.md` |
+| DB migration | `.codex/skills/project/database-migration/SKILL.md` |
+| Pre-push quality check | `.codex/skills/project/quality-check/SKILL.md` |
+| PR report generation | `.codex/skills/project/implementation-report/SKILL.md` |
+| UI verification | `.codex/skills/project/browser-agent/SKILL.md` |
+
+## Common Commands
+
+<!-- Manual edit: Add your project's common commands below -->
+
+### Backend
+```bash
+# Add your backend commands here
+```
+
+### Frontend
+```bash
+# Add your frontend commands here
+```
+
+## Reference Documents
+
+### Required (check before work)
+- **Development guidelines**: `documents/development/development-policy.md`
+- **Coding rules**: `documents/development/coding-rules/`
+
+### As Needed
+- **Error codes**: `documents/development/error-codes.md`
+- **Naming conventions**: `documents/development/naming-conventions.md`

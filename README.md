@@ -1,6 +1,6 @@
 # ai-dev-helm
 
-AI コーディングツール（Claude Code, Cursor）のための汎用開発基盤テンプレートです。
+AI コーディングツール（Claude Code, Cursor, Codex）のための汎用開発基盤テンプレートです。
 
 「AI に開発を手伝ってもらいたいけど、毎回同じことを教えるのが面倒」「チーム全員が同じ品質基準で AI を使いたい」——そんな課題を解決します。
 
@@ -10,7 +10,7 @@ AI コーディングツール（Claude Code, Cursor）のための汎用開発�
 - **ルール**: AI が守るべきコーディング規約。言語・フレームワークごとに定義
 - **レビューガイド**: AI がコードレビューする際のチェックリスト
 - **開発ドキュメント**: コーディング規約、命名規則、API 設計規約などのベストプラクティス集
-- **セットアップ自動化**: 1 コマンドでプロジェクトに導入。Claude Code と Cursor の両方に対応
+- **セットアップ自動化**: 1 コマンドでプロジェクトに導入。Claude Code / Cursor / Codex に対応
 
 ---
 
@@ -94,14 +94,14 @@ Project name: MyApp
 #### Step 2: AI ツールの選択
 
 ```
-Select AI tool(s):
-  1) Claude Code only
-  2) Cursor only
-  3) Claude Code + Cursor
-> 3
+Select AI tool(s) (enter numbers separated by spaces, e.g. "1 3"):
+  1) Claude Code
+  2) Cursor
+  3) Codex (OpenAI)
+> 1 3
 ```
 
-使用する AI ツールを選びます。両方使う場合は `3` を選択してください。
+使用する AI ツールを選びます（複数可、スペース区切り）。例えば Claude Code と Codex を併用したい場合は `1 3` と入力します。
 
 #### Step 3: スキル範囲の選択
 
@@ -183,13 +183,17 @@ Available options:
   2) Cursor global settings guide
      Copy recommended rules to clipboard
 
-Select options (space-separated): 1 2
+  3) Codex global settings
+     Merge ~/.codex/config.toml with safe defaults + rules
+
+Select options (space-separated): 1 2 3
 ```
 
 | 選択肢 | 何が起きるか |
 |--------|-------------|
 | 1) Claude Code | `~/.claude/settings.json` に破壊的コマンドのブロックルールを追加（既存設定は自動バックアップ） |
 | 2) Cursor | 推奨ルールをクリップボードにコピー（Cursor の設定画面に手動で貼り付け） |
+| 3) Codex | `~/.codex/config.toml` に安全デフォルト（approval_policy / sandbox_mode / model）と破壊的コマンド拒否 `[[rules]]` をマージ（既存設定は自動バックアップ） |
 
 **ブロックされるコマンドの例:**
 - `rm -rf /`, `rm -rf ~`, `rm -rf .`
@@ -391,6 +395,18 @@ ai-dev-helm personal --upgrade-model
 
 Cursor はコードベースでの設定が困難なため、推奨ルールをクリップボードにコピーする方式です（macOS: pbcopy, Windows: clip, Linux: xclip）。設定画面（Settings → Rules → User Rules）に手動で貼り付けてください。
 
+#### Codex グローバル設定
+
+`~/.codex/config.toml` に以下を安全にマージします（TOML フォーマット）。
+
+- **モデル**: `gpt-5.5`（既存設定は保持、`--upgrade-model` で強制上書き）
+- **推論レベル**: `model_reasoning_effort = "high"`
+- **承認ポリシー**: `approval_policy = "on-request"`
+- **サンドボックス**: `sandbox_mode = "read-only"`（プロジェクトごとに `workspace-write` 等へ昇格可能）
+- **破壊的コマンド拒否ルール**: `[[rules]]` テーブルとして `rm -rf /` / 強制 push / `git reset --hard` / `docker system prune` / `npm publish` 等をブロック
+
+既存ファイルがある場合はタイムスタンプ付きバックアップを自動作成し、`rules` リストは `name` をキーに union マージ（既存ルールを保持）します。
+
 ---
 
 ## リポジトリ構造
@@ -438,14 +454,19 @@ ai-dev-helm/
 ├── templates/                  # 生成ファイルの雛形
 │   ├── CLAUDE.md.template
 │   ├── cursorrules.template
+│   ├── AGENTS.md.template
 │   ├── settings.json.template
 │   ├── settings-global.json.template
+│   ├── codex-config.toml.template
+│   ├── codex-config-global.toml.template
+│   ├── codex-hooks.json.template
 │   ├── cursor-rule.mdc.template
 │   └── PULL_REQUEST_TEMPLATE.md
 │
 ├── configs/                    # AI ツール別ドキュメント
 │   ├── claude-code/README.md
-│   └── cursor/README.md
+│   ├── cursor/README.md
+│   └── codex/README.md
 │
 ├── scripts/
 │   └── transform-skills.sh    # superpowers スキル変換（CI 用）
@@ -504,16 +525,32 @@ your-project/
         └── backend-rules.md        # (java-springboot 選択時)
 ```
 
+### Codex を含めた場合の追加ファイル
+
+```
+your-project/
+├── AGENTS.md                       # Codex のメイン設定ファイル（プロジェクトルート）
+└── .codex/                         # Codex 用ディレクトリ
+    ├── skills -> ../skills         #   スキルへのシンボリックリンク
+    ├── rules/                      #   コーディングルール
+    ├── config.toml                 #   approval_policy / sandbox_mode
+    └── hooks.json                  #   PreToolUse フック（quality-check 強制）
+```
+
 ### 各ファイルの役割
 
 | ファイル | 役割 |
 |---------|------|
 | `CLAUDE.md` | Claude Code が会話開始時に読み込む設定ファイル。プロジェクト概要、ルール、コマンド一覧を記述 |
 | `.cursorrules` | Cursor が参照するプロジェクト設定ファイル |
+| `AGENTS.md` | Codex CLI が会話開始時に読み込む設定ファイル（プロジェクトルートからチェーンマージ） |
 | `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施の push をブロックするフックなど |
+| `.codex/config.toml` | Codex のプロジェクトローカル設定（approval/sandbox） |
+| `.codex/hooks.json` | Codex の PreToolUse フック設定。`.quality-check-passed` がないと push をブロック |
 | `.claude/rules/` | Claude Code が自動読み込みするコーディングルール |
 | `.cursor/rules/*.mdc` | Cursor が自動読み込みするコーディングルール（glob パターンで適用ファイルを制御） |
-| `skills/` | AI スキル。`.claude/skills` と `.cursor/skills` からシンボリックリンクで参照 |
+| `.codex/rules/` | Codex 用のコーディングルール（AGENTS.md から参照） |
+| `skills/` | AI スキル。`.claude/skills` / `.cursor/skills` / `.codex/skills` からシンボリックリンクで参照 |
 | `.github/review-*.md` | AI がコードレビューする際に参照するチェックリスト |
 | `documents/development/` | コーディング規約・命名規則などの開発ドキュメント |
 
@@ -733,9 +770,13 @@ GitHub の Actions タブから `Sync Superpowers Skills` ワークフローを�
 
 ## FAQ
 
-### Q: Claude Code と Cursor のどちらを使えばいいですか？
+### Q: Claude Code / Cursor / Codex のどれを使えばいいですか？
 
-どちらでも問題なく使えます。両方を併用する場合は、セットアップ時に `3) Claude Code + Cursor` を選択してください。スキルは共有ディレクトリ（`skills/`）を通じて両ツールで共有されます。
+どれでも問題なく使えます。複数併用する場合は、セットアップ時に対応する番号をスペース区切りで入力してください（例: `1 2 3` で 3 つすべて）。スキルは共有ディレクトリ（`skills/`）を通じて全ツールで共有されます。
+
+### Q: Codex でも push 前の品質チェックは強制されますか？
+
+されます。`.codex/hooks.json` の `PreToolUse` フックが `git push` をインターセプトし、`.quality-check-passed` フラグファイルがなければブロックします。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
 
 ### Q: セットアップ後に ai-dev-helm リポジトリは必要ですか？
 

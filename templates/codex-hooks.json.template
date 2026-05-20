@@ -1,0 +1,14 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "^Bash$",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "jq -r '.tool_input.command // \"\"' | grep -q '^git push' && { if [ ! -f .quality-check-passed ]; then echo '{\"decision\":\"block\",\"reason\":\"Quality check not passed. Run quality-check before pushing.\"}'; else rm -f .quality-check-passed; fi; } || true",
+          "timeout": 10
+        }
+      ]
+    }
+  ]
+}
