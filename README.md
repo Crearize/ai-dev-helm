@@ -364,7 +364,7 @@ Step 4 では、4 つの異なる専門家ペルソナが並列のサブエー�
 `~/.claude/settings.json` に以下を安全にマージします。
 
 - **破壊的コマンドのブロック**: プロジェクトレベルと同じブロックリスト
-- **モデル設定**: `claude-opus-4-7`
+- **モデル設定**: `claude-opus-4-8`
 - **Effort Level**: `high`（環境変数で `max` も設定）
 - **思考モード**: 常時有効（`alwaysThinkingEnabled: true`）
 
@@ -380,8 +380,8 @@ Step 4 では、4 つの異なる専門家ペルソナが並列のサブエー�
 
 ```
 Model version mismatch detected:
-  Current:  claude-opus-4-6
-  Template: claude-opus-4-7
+  Current:  claude-opus-4-7
+  Template: claude-opus-4-8
 Upgrade model? (y/N):
 ```
 
