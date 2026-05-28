@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0](https://github.com/Crearize/ai-dev-helm/compare/v1.4.0...v1.5.0) (2026-05-28)
+
+
+### Added
+
+* グローバル設定テンプレートのモデルを claude-opus-4-8 に更新 ([#28](https://github.com/Crearize/ai-dev-helm/issues/28)) ([a25c06b](https://github.com/Crearize/ai-dev-helm/commit/a25c06baa07304f92ab80c2909c8a561df46acad)), closes [#27](https://github.com/Crearize/ai-dev-helm/issues/27)
+
 ## [1.4.0](https://github.com/Crearize/ai-dev-helm/compare/v1.3.5...v1.4.0) (2026-05-20)
 
 
