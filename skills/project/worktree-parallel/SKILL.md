@@ -44,8 +44,16 @@ git worktree list
 
 `.worktrees/` は必ず Git 追跡対象外にする。
 
+**bash:**
 ```bash
-git check-ignore -q .worktrees || echo ".worktrees/" >> .gitignore
+# パスは末尾スラッシュ付きで指定すること（ディレクトリ未作成でも正しく判定するため）
+git check-ignore -q .worktrees/ || echo ".worktrees/" >> .gitignore
+```
+
+**PowerShell:**
+```powershell
+git check-ignore -q .worktrees/
+if ($LASTEXITCODE -ne 0) { Add-Content -Path .gitignore -Value ".worktrees/" }
 ```
 
 `.gitignore` を変更した場合は、worktree 作成前にその変更をコミット対象として扱う。未追跡の worktree 内容が誤ってコミットされないことを最優先する。
@@ -54,6 +62,7 @@ git check-ignore -q .worktrees || echo ".worktrees/" >> .gitignore
 
 ## Step 2: Worktree 作成
 
+**bash:**
 ```bash
 BRANCH_NAME="[type]/[description]-[issue-number]"
 WORKTREE_NAME="${BRANCH_NAME//\//-}"
@@ -62,7 +71,16 @@ WORKTREE_PATH=".worktrees/${WORKTREE_NAME}"
 git worktree add "${WORKTREE_PATH}" -b "${BRANCH_NAME}"
 ```
 
-既にブランチが存在する場合:
+**PowerShell:**
+```powershell
+$BranchName = "[type]/[description]-[issue-number]"
+$WorktreeName = $BranchName -replace '/', '-'
+$WorktreePath = ".worktrees/$WorktreeName"
+
+git worktree add $WorktreePath -b $BranchName
+```
+
+既にブランチが存在する場合は `-b` を外して同じパスに追加する:
 
 ```bash
 git worktree add "${WORKTREE_PATH}" "${BRANCH_NAME}"
@@ -76,10 +94,16 @@ git worktree add "${WORKTREE_PATH}" "${BRANCH_NAME}"
 
 worktree ごとのポートは、**メインチェックアウト直下**の `.worktrees/.ports.json` で管理する。
 
-worktree 内から見ると `.worktrees/.ports.json` は通常の相対パスでは参照できないため、作成時に絶対パスを控えてエージェントへ渡す。
+worktree 内からの相対パス（`../.ports.json` など）は worktree の配置に依存して壊れやすいため、メインチェックアウトで作成時に絶対パスを控えてエージェントへ渡す。
 
+**bash:**
 ```bash
 PORT_REGISTRY="$(pwd -P)/.worktrees/.ports.json"
+```
+
+**PowerShell:**
+```powershell
+$PortRegistry = Join-Path (Get-Location).Path ".worktrees/.ports.json"
 ```
 
 ### 形式
@@ -189,11 +213,13 @@ worktree 内で E2E テスト、ブラウザ検証、開発サーバー起動が
 
 ## Step 7: 完了・クリーンアップ
 
-PR がマージされた、または作業を破棄する判断をしたら、worktree を削除する。
+マージ / PR 作成 / 破棄の判断は `superpowers:finishing-a-development-branch` スキルに従う。
+PR がマージされた、または作業を破棄する判断をしたら、worktree とブランチを削除する。
 
 ```bash
 git worktree remove ".worktrees/<worktree-name>"
 git worktree prune
+git branch -d "<branch-name>"   # マージ済みを確認してから削除。破棄時のみ -D を使用
 ```
 
 メインチェックアウト直下の `.worktrees/.ports.json` から該当 worktree の割当を削除する。
@@ -215,4 +241,4 @@ git worktree prune
 - [ ] 依存関係のセットアップが完了している
 - [ ] 並列エージェントが worktree 外を変更しないよう指示されている
 - [ ] 作業完了時にサーバーを停止した
-- [ ] PR マージ後に worktree とポート割当を削除した
+- [ ] PR マージ後に worktree・ブランチ・ポート割当を削除した

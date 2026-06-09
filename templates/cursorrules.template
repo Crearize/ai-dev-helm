@@ -12,6 +12,7 @@ This file defines project-specific rules for Cursor.
 2. **Create branch** - `git checkout -b [type]/[description]-[issue-number]`
 3. **No work on main** - Direct work on main is prohibited
 4. **Include in PR** - `closes #[issue-number]`
+5. **Server ports are fixed** - Stop existing processes, use only configured ports, and stop servers after work
 
 ### Autonomy Principles
 

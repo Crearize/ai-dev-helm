@@ -5,21 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.0](https://github.com/Crearize/ai-dev-helm/compare/v1.5.0...v1.6.0) (2026-06-10)
-
-### Added
-
-- `worktree-parallel` スキルを追加し、Git worktree 並列開発時の配置、ポート割当、環境コピー、クリーンアップを標準化
-- `self-improvement` スキルを追加し、作業完了前に改善候補をユーザー判断でルール・スキル・ドキュメントへ反映するハーネスを導入
-- Claude / Codex / Cursor テンプレートに、自律動作原則とサーバーポート固定・停止確認ルールを追加
-
-### Changed
-
-- `quality-check` のレビューサイクルを最低3回から最低2回に変更し、レビューエージェントを4並列から6並列へ拡充
-- レビューペルソナにパフォーマンスエンジニアと要件・仕様整合性レビュアーを追加
-- `server-startup` スキルを強化し、E2E・ブラウザ検証・開発サーバー起動時の既存プロセス停止と作業後停止確認を必須化
-- README の SuperPowers 表記を現在同期中の v5.1.0 に更新
-
 ## [1.5.0](https://github.com/Crearize/ai-dev-helm/compare/v1.4.0...v1.5.0) (2026-05-28)
 
 
