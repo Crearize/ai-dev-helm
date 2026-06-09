@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0](https://github.com/Crearize/ai-dev-helm/compare/v1.5.0...v1.6.0) (2026-06-09)
+
+
+### Added
+
+* expand harness workflows for v1.6 ([#31](https://github.com/Crearize/ai-dev-helm/issues/31)) ([5668b70](https://github.com/Crearize/ai-dev-helm/commit/5668b70451e938bf84139d780613e4c40339c2f1))
+
 ## [1.5.0](https://github.com/Crearize/ai-dev-helm/compare/v1.4.0...v1.5.0) (2026-05-28)
 
 
