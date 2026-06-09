@@ -90,4 +90,29 @@ jobs:
         run: npm test
 
       - name: Publish to npm (Trusted Publishing / OIDC)
-        run: npm publish --access public --provenance
+        run: |
+          set +e
+          npm publish --access public --provenance 2>&1 | tee publish.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+
+          # npm can create the Sigstore tlog entry before the registry publish
+          # fails. Retrying with --provenance then hits the immutable tlog entry.
+          # Only use the non-provenance recovery path for that exact failure and
+          # only when the target package version is still absent from npm.
+          if ! grep -q 'TLOG_CREATE_ENTRY_ERROR' publish.log; then
+            exit "$status"
+          fi
+
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "@crearize/ai-dev-helm@$VERSION" version >/dev/null 2>&1; then
+            echo "Version $VERSION is already published on npm; treating publish as complete."
+            exit 0
+          fi
+
+          echo "Recovering from npm provenance tlog conflict by publishing $VERSION without provenance."
+          npm publish --access public
