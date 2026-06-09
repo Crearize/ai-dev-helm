@@ -32,9 +32,8 @@ A quick-reference checklist for AI tools when working on development tasks.
 ### Unit Tests
 - [ ] **Frontend tests passed**
 
-### Review Cycles (minimum 3 cycles)
-- [ ] **Multi-persona review completed** (Security / Architect / QA)
-- [ ] **Integrated architecture review completed**
+### Review Cycles (minimum 2 cycles)
+- [ ] **Multi-persona review completed** (Security / Architect / QA / Integration / Performance / Requirements)
 - [ ] **Must-fix items (Priority: High) = 0**
 - [ ] **Report data saved** (`.quality-check-report.json`)
 
@@ -43,6 +42,7 @@ A quick-reference checklist for AI tools when working on development tasks.
 
 ### Final Confirmation
 - [ ] Related documentation consistency verified
+- [ ] **Self-improvement candidates reviewed** (applied / skipped / not required)
 - [ ] PR created (with /implementation-report, closes #[issue-number])
 
 ## Documentation Update Checks

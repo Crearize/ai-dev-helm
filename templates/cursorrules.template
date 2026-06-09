@@ -13,6 +13,20 @@ This file defines project-specific rules for Cursor.
 3. **No work on main** - Direct work on main is prohibited
 4. **Include in PR** - `closes #[issue-number]`
 
+### Autonomy Principles
+
+AI should act autonomously by default.
+
+Ask the user only when:
+
+1. The answer cannot be determined after investigation
+2. An unexpected situation causes a loop or prevents reliable progress
+3. Design is complete and implementation approval is required
+
+Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
+
+When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask.
+
 ## Phase Design Workflow
 
 ### Phase 1: Requirements Analysis
@@ -35,6 +49,8 @@ This file defines project-specific rules for Cursor.
 ### Phase 5: Quality Verification
 - Run backend quality checks
 - Run frontend linting, formatting, build
+- Run 6-persona review for at least 2 cycles via `quality-check`
+- Run `self-improvement` before push/merge completion
 
 ### Phase 6: PR Creation
 - Commit message: `feat: [feature] (closes #[issue-number])`
@@ -57,3 +73,7 @@ This file defines project-specific rules for Cursor.
 |--------|------|-----|
 | Frontend | [PORT] | http://localhost:[PORT] |
 | Backend | [PORT] | http://localhost:[PORT] |
+
+Servers must always use the configured ports. Before starting E2E tests, browser verification, or development servers, stop any existing process on the configured ports. After work finishes, stop the servers and verify the ports are no longer LISTENING.
+
+For worktree-based parallel development, use the main checkout's `.worktrees/.ports.json` from the `worktree-parallel` skill and use only the allocated ports.

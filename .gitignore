@@ -19,6 +19,9 @@ coverage/
 # Superpowers plan/spec files (local-only, not committed)
 docs/superpowers/
 
+# Git worktrees (local-only, not committed)
+.worktrees/
+
 # Quality check artifacts
 .quality-check-report.json
 .quality-check-passed
