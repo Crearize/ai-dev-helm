@@ -33,6 +33,8 @@ This file is loaded by Claude Code at the start of each session.
 | Before completion / merge | `superpowers:verification-before-completion` | Evidence-based completion verification |
 | Post-completion integration | `superpowers:finishing-a-development-branch` | Merge/PR/cleanup decisions |
 | Feature isolation needed | `superpowers:using-git-worktrees` | Worktree isolation |
+| Parallel worktree development | `worktree-parallel` | Worktree placement, ports, env setup, cleanup |
+| Before push / merge completion | `self-improvement` | Apply approved harness improvements before completion |
 
 ### Plan Execution Rules
 
@@ -53,7 +55,7 @@ Change area detection (git diff)
     |
 Static checks + tests
     |
-Review cycles (persona + integrated review, minimum 3 cycles)
+Review cycles (6-persona review, minimum 2 cycles)
     |
 E2E tests (final verification)
     |
@@ -62,7 +64,7 @@ Report data saved -> .quality-check-passed created -> push allowed
 
 ### Multi-Persona Review
 
-4 specialist personas review in parallel as Agents:
+6 specialist personas review in parallel as Agents:
 
 | Persona | Focus Area |
 |---------|-----------|
@@ -70,9 +72,12 @@ Report data saved -> .quality-check-passed created -> push allowed
 | Software Architect | SOLID/DRY, layer responsibilities, dependencies, extensibility |
 | QA Engineer | Edge cases, test coverage, error handling |
 | Integration Architecture | Overall consistency, layer dependencies, existing patterns, side effects |
+| Performance Engineer | Algorithmic complexity, query performance, bundle size, caching |
+| Requirements Consistency Reviewer | Issue/design alignment, acceptance criteria, domain terminology |
 
-- **Completion criteria**: 0 must-fix items (Priority: High) from all 4 personas
-- Minimum 3 cycles, repeat until 0 must-fix items
+- **Completion criteria**: 0 must-fix items (Priority: High) from all 6 personas
+- Minimum 2 cycles, repeat until 0 must-fix items
+- Run `self-improvement` before creating `.quality-check-passed`
 
 ---
 
@@ -94,6 +99,7 @@ Report data saved -> .quality-check-passed created -> push allowed
 2. **No work on main** - Always create a new branch
 3. **Issue number required** - Branch name: `[type]/[description]-[issue-number]`
 4. **New error codes must be documented** - Add to error code list immediately
+5. **Server ports are fixed** - Stop existing processes, use only configured ports, and stop servers after work
 
 ### Level 2: Important
 
@@ -106,6 +112,22 @@ Report data saved -> .quality-check-passed created -> push allowed
 - Performance optimization
 - Security measures
 - Accessibility
+
+---
+
+## Autonomy Principles
+
+AI should act autonomously by default.
+
+Ask the user only when:
+
+1. The answer cannot be determined after investigation
+2. An unexpected situation causes a loop or prevents reliable progress
+3. Design is complete and implementation approval is required
+
+Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
+
+When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask.
 
 ---
 
@@ -143,6 +165,8 @@ Report data saved -> .quality-check-passed created -> push allowed
 | `frontend-development` | Frontend implementation |
 | `database-migration` | DB migration |
 | `quality-check` | Pre-push quality check |
+| `worktree-parallel` | Parallel worktree development |
+| `self-improvement` | Harness improvement before completion |
 | `implementation-report` | PR report generation |
 | `browser-agent` | UI verification |
 | `log-design` | Log design check (legal compliance) |
