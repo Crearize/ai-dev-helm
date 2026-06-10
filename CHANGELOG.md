@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0](https://github.com/Crearize/ai-dev-helm/compare/v1.6.0...v1.7.0) (2026-06-10)
+
+
+### Added
+
+* add subagent model selection guidance ([#37](https://github.com/Crearize/ai-dev-helm/issues/37)) ([e85583b](https://github.com/Crearize/ai-dev-helm/commit/e85583ba56a5334fc8b3041912b5bf6d3d404a37))
+* optimize worktree dependency setup with lazy install and shared caches (closes [#39](https://github.com/Crearize/ai-dev-helm/issues/39)) ([#46](https://github.com/Crearize/ai-dev-helm/issues/46)) ([0b95f3a](https://github.com/Crearize/ai-dev-helm/commit/0b95f3a465287bbb4fcb94672884be48f2c230dc))
+* record applied ai-dev-helm version in .ai-dev-helm.json (closes [#42](https://github.com/Crearize/ai-dev-helm/issues/42)) ([#47](https://github.com/Crearize/ai-dev-helm/issues/47)) ([369ff6d](https://github.com/Crearize/ai-dev-helm/commit/369ff6dacc04388637690d3bcfa95fc94b3ba14f))
+* reduce review cost for docs/infra-only changes and add persona review guides (closes [#38](https://github.com/Crearize/ai-dev-helm/issues/38), closes [#40](https://github.com/Crearize/ai-dev-helm/issues/40)) ([#45](https://github.com/Crearize/ai-dev-helm/issues/45)) ([75d6a8c](https://github.com/Crearize/ai-dev-helm/commit/75d6a8cf226adfd377e282e3b5fb9566c66123cb))
+
+
+### Fixed
+
+* harden push gate detection and add PowerShell command rules (closes [#43](https://github.com/Crearize/ai-dev-helm/issues/43)) ([#48](https://github.com/Crearize/ai-dev-helm/issues/48)) ([5dada2a](https://github.com/Crearize/ai-dev-helm/commit/5dada2adacbbef349db93bdede545b1c687e03b1))
+* recover npm publish from tlog conflicts ([#34](https://github.com/Crearize/ai-dev-helm/issues/34)) ([10bdbdd](https://github.com/Crearize/ai-dev-helm/commit/10bdbddb6e318ca20afd12e710a13c8055aab327)), closes [#33](https://github.com/Crearize/ai-dev-helm/issues/33)
+* widen outer code fences nested inside prompt templates (closes [#41](https://github.com/Crearize/ai-dev-helm/issues/41)) ([#44](https://github.com/Crearize/ai-dev-helm/issues/44)) ([7c30de6](https://github.com/Crearize/ai-dev-helm/commit/7c30de618681d8d1bcadeb53b0094899d44a1b28))
+
 ## [1.6.0](https://github.com/Crearize/ai-dev-helm/compare/v1.5.0...v1.6.0) (2026-06-09)
 
 
