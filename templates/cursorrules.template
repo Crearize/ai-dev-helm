@@ -50,7 +50,7 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 ### Phase 5: Quality Verification
 - Run backend quality checks
 - Run frontend linting, formatting, build
-- Run 6-persona review for at least 2 cycles via `quality-check`
+- Run multi-persona review via `quality-check` (code changes: 6 personas x 2+ cycles / docs+infra only: reduced personas x 1+ cycle)
 - Run `self-improvement` before push/merge completion
 
 ### Phase 6: PR Creation
