@@ -128,6 +128,7 @@ $PortRegistry = Join-Path (Get-Location).Path ".worktrees/.ports.json"
 
 - メインチェックアウトは常にプロジェクト標準のベースポートを使う
 - worktree は空いている `slot` を 2 から順に割り当てる
+- **同時に維持する worktree は最大 3 個（slot 2〜4）まで**。CPU・メモリ・ディスクの消費が worktree 数に比例するため、上限を超える場合は既存 worktree の完了・削除を待つか、ユーザーに判断を仰ぐ
 - `slot` ごとのポートは `base + ((slot - 1) * 10)` とする
 - 既存割当がある worktree は同じポートを再利用する
 - 割当ポートで既存プロセスが動いている場合、別ポートに逃げずに既存プロセスを停止する
@@ -158,20 +159,40 @@ worktree 作成後、メインチェックアウトから未追跡のローカ�
 - worktree ごとのポート割当がある場合、コピー後に PORT 系変数だけ上書きする
 - DB 名、Redis DB、キュー名など共有状態を壊す可能性がある値は worktree ごとに分離する
 
-依存関係はプロジェクトに応じて自動検出して準備する。
+### 依存セットアップの原則（遅延 + キャッシュ共有）
+
+worktree 作成直後に無条件で install / build を実行しない。
+
+- **遅延セットアップ**: install は、その worktree で最初にテスト・ビルド・サーバー起動が必要になった時点で実行する。ドキュメント修正やコードリーディングのみのタスクでは実行しない
+- **キャッシュ共有**: パッケージマネージャの共有キャッシュを必ず活用する（pnpm store / npm cache / Gradle ユーザーホームキャッシュはマシン内で worktree 間共有される）
+- **フルビルドをセットアップとして実行しない**: ビルドはテスト実行やサーバー起動が要求した時点で、必要なモジュールのみ行う
+
+### Node.js（install が必要になった時点で実行）
 
 ```bash
 if [ -f pnpm-lock.yaml ]; then
-  pnpm install
+  pnpm install --prefer-offline    # 共有 store からハードリンクされ高速
 elif [ -f yarn.lock ]; then
-  yarn install
+  yarn install --prefer-offline
 elif [ -f package-lock.json ]; then
-  npm ci
+  npm ci --prefer-offline
 elif [ -f package.json ]; then
-  npm install
+  npm install --prefer-offline
 fi
+```
 
-if [ -f build.gradle ] || [ -f build.gradle.kts ]; then ./gradlew build -x test; fi
+### Gradle（worktree 作成時にはビルドしない）
+
+Gradle のキャッシュ（`~/.gradle`）は worktree 間で共有されるため、事前のフルビルドは不要。テスト実行などでビルドが必要になった時点で実行する。
+
+```bash
+# ビルドが必要になった時点でのみ（例: テスト実行前）
+./gradlew build -x test --build-cache
+```
+
+### Python（install が必要になった時点で実行）
+
+```bash
 if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 if [ -f pyproject.toml ]; then poetry install; fi
 ```
@@ -237,8 +258,9 @@ git branch -d "<branch-name>"   # マージ済みを確認してから削除。�
 - [ ] `.worktrees/` が Git 追跡対象外である
 - [ ] worktree 名がブランチ名と対応している
 - [ ] メインチェックアウト直下の `.worktrees/.ports.json` に割当がある
+- [ ] 同時 worktree 数が上限（3 個）以内である
 - [ ] PORT 系 env が割当ポートに更新されている
-- [ ] 依存関係のセットアップが完了している
+- [ ] 依存セットアップが遅延 + キャッシュ共有の原則に従っている（無条件の install / build をしていない）
 - [ ] 並列エージェントが worktree 外を変更しないよう指示されている
 - [ ] 作業完了時にサーバーを停止した
 - [ ] PR マージ後に worktree・ブランチ・ポート割当を削除した
