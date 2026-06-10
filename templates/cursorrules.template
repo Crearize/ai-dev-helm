@@ -28,6 +28,18 @@ Do not ask questions that can be answered by reading code, docs, command output,
 
 When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask.
 
+### Subagent Model Selection
+
+Cursor can choose the model per subagent invocation. **When dispatching subagents, switch the model according to the nature of the request instead of always using the same one:**
+
+| Task Type | Model Choice | Examples |
+|-----------|--------------|----------|
+| Codebase exploration / context gathering | Fast, lightweight model | Understanding project structure in Phase 1, finding related implementations, tracing dependencies |
+| Simple mechanical search | Fastest available model | File/symbol lookup, listing usages |
+| Review / architecture / design judgment | Most capable model available (e.g. Fable, Opus class) | 6-persona quality-check review (Phase 5), architecture review (Phase 4), security analysis |
+
+When in doubt between two tiers, choose the more capable model. For review and architecture judgment, prefer the latest frontier-class model exposed by Cursor (currently Fable; otherwise Opus class).
+
 ## Phase Design Workflow
 
 ### Phase 1: Requirements Analysis
