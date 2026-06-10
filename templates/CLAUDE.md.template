@@ -42,6 +42,25 @@ This file is loaded by Claude Code at the start of each session.
 2. **Plan files are not committed** - Plan documents (`docs/superpowers/plans/*.md`) must NOT be committed or pushed to the repository.
 3. **Plan file lifecycle** - Plan files are kept locally during implementation. After the PR is merged, delete all plan files from the local workspace.
 
+### Subagent Model Selection
+
+**When dispatching subagents via the Task tool, always set the `model` parameter explicitly based on the nature of the task. Do not leave it to the default (`inherit`).**
+
+| Task Type | Model | Examples |
+|-----------|-------|----------|
+| Initial planning / design framing | `fable` | First-pass requirements decomposition, architecture option framing, implementation strategy design |
+| Codebase exploration / context gathering | `sonnet` | Understanding project structure during brainstorming/planning, finding related implementations, tracing dependencies |
+| Simple mechanical search | `haiku` | File/symbol lookup, listing usages, collecting file paths |
+| Review / verification / architecture critique | `claude-opus-4-8` | 6-persona quality-check review, code review, spec/plan document review, security analysis |
+
+Rules:
+
+1. **Initial planning/design subagents** -> `fable`. Use Fable only for the first planning/design framing pass, where broad option generation and architecture direction matter most.
+2. **Exploration subagents** (read-only research during planning) -> `sonnet`. Speed matters more than depth; results are distilled back to the main conversation.
+3. **Review subagents** (quality-check personas, code reviewers, document reviewers) -> `claude-opus-4-8`. Review quality directly gates push/merge, so do not use Fable for review.
+4. **Trivial lookup subagents** -> `haiku`. Do not spend a frontier model on pure search.
+5. When in doubt between two tiers, choose the more capable model, but keep Fable reserved for initial planning/design.
+
 ---
 
 ## Quality Check Rules
@@ -64,7 +83,7 @@ Report data saved -> .quality-check-passed created -> push allowed
 
 ### Multi-Persona Review
 
-6 specialist personas review in parallel as Agents:
+6 specialist personas review in parallel as Agents (each dispatched with `model: claude-opus-4-8` - see Subagent Model Selection):
 
 | Persona | Focus Area |
 |---------|-----------|

@@ -92,4 +92,9 @@ for skill in "${SKILLS[@]}"; do
     echo "  $skill"
 done
 
+# Upstream files nest code fences inside fenced prompt templates, which breaks
+# rendering in some Markdown viewers. Widen the outer fences after copying.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+find "$DEST" -name '*.md' -print0 | xargs -0 "$SCRIPT_DIR/fix-nested-fences.sh"
+
 echo "Done. Transformed ${#SKILLS[@]} skills."
