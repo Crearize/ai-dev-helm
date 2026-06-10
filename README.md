@@ -156,6 +156,8 @@ Setting up Cursor...
   .cursorrules created
   Cursor setup complete
 
+  .ai-dev-helm.json written (applied version: x.y.z)
+
 Setup complete!
 
 Next steps:
@@ -163,6 +165,20 @@ Next steps:
   2. Update tech stack and port information
   3. Add project-specific coding rules
   4. Commit the generated files
+```
+
+#### 適用バージョンの記録（`.ai-dev-helm.json`）
+
+init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成されます。取り込んだ ai-dev-helm のバージョン・ツール・スタック・適用日時が記録されるため、「今このプロジェクトは何バージョンを取り込んでいるか」をいつでも確認でき、次回の同期時に差分確認の起点として使えます。init を再実行すると最新の内容で上書きされます。
+
+```json
+{
+  "version": "1.6.0",
+  "tools": ["claude-code", "cursor"],
+  "stacks": ["nextjs-react"],
+  "skillScope": "all",
+  "appliedAt": "2026-06-10T08:00:00.000Z"
+}
 ```
 
 ### `ai-dev-helm personal` の対話フロー
