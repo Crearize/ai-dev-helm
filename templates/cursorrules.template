@@ -28,6 +28,19 @@ Do not ask questions that can be answered by reading code, docs, command output,
 
 When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask.
 
+### Subagent Model Selection
+
+Cursor can choose the model per subagent invocation. **When dispatching subagents, switch the model according to the nature of the request instead of always using the same one:**
+
+| Task Type | Model Choice | Examples |
+|-----------|--------------|----------|
+| Initial planning / design framing | Fable if available | First-pass requirements decomposition, architecture option framing, implementation strategy design |
+| Codebase exploration / context gathering | Fast, lightweight model | Understanding project structure in Phase 1, finding related implementations, tracing dependencies |
+| Simple mechanical search | Fastest available model | File/symbol lookup, listing usages |
+| Review / verification / architecture critique | Codex GPT-5.5 high or Claude Opus 4.8 | 6-persona quality-check review (Phase 5), code review, security analysis, architecture critique |
+
+When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. For reviews, prefer Codex GPT-5.5 with high reasoning or Claude Opus 4.8; do not use Fable for review agents.
+
 ## Phase Design Workflow
 
 ### Phase 1: Requirements Analysis
