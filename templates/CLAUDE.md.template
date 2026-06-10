@@ -74,7 +74,7 @@ Change area detection (git diff)
     |
 Static checks + tests
     |
-Review cycles (6-persona review, minimum 2 cycles)
+Review cycles (code changes: 6 personas x 2+ cycles / docs+infra only: reduced personas x 1+ cycle)
     |
 E2E tests (final verification)
     |
@@ -94,8 +94,9 @@ Report data saved -> .quality-check-passed created -> push allowed
 | Performance Engineer | Algorithmic complexity, query performance, bundle size, caching |
 | Requirements Consistency Reviewer | Issue/design alignment, acceptance criteria, domain terminology |
 
-- **Completion criteria**: 0 must-fix items (Priority: High) from all 6 personas
-- Minimum 2 cycles, repeat until 0 must-fix items
+- **Completion criteria**: 0 must-fix items (Priority: High) from all applied personas
+- Code changes: minimum 2 cycles. Docs/infra-only changes: reduced persona set, minimum 1 cycle (see `quality-check` skill)
+- Repeat until 0 must-fix items
 - Run `self-improvement` before creating `.quality-check-passed`
 
 ---
