@@ -49,7 +49,7 @@ See: https://developers.openai.com/codex/guides/agents-md
 |-----------|-------|------------------|----------|
 | Codebase exploration / context gathering | `gpt-5.4-mini` | `medium` | Understanding project structure during planning, read-heavy scans, finding related implementations |
 | Simple mechanical search | `gpt-5.4-mini` | `low` | File/symbol lookup, listing usages, collecting file paths |
-| Review / architecture / design judgment | `gpt-5.5` | `high` | 6-persona quality-check review, code review, security analysis, spec/plan review |
+| Review / verification / architecture critique | `gpt-5.5` | `high` | 6-persona quality-check review, code review, security analysis, spec/plan review |
 
 Rules:
 
