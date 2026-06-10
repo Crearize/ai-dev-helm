@@ -41,6 +41,23 @@ See: https://developers.openai.com/codex/guides/agents-md
 2. **Plan files are not committed** - `docs/superpowers/plans/*.md` must NOT be committed.
 3. **Plan file lifecycle** - Kept locally during implementation, deleted after PR merge.
 
+### Subagent Model Selection
+
+**When spawning subagents, always specify `model` and `model_reasoning_effort` explicitly based on the nature of the task. Do not rely on inheriting the parent session settings.**
+
+| Task Type | Model | Reasoning Effort | Examples |
+|-----------|-------|------------------|----------|
+| Codebase exploration / context gathering | `gpt-5.4-mini` | `medium` | Understanding project structure during planning, read-heavy scans, finding related implementations |
+| Simple mechanical search | `gpt-5.4-mini` | `low` | File/symbol lookup, listing usages, collecting file paths |
+| Review / verification / architecture critique | `gpt-5.5` | `high` | 6-persona quality-check review, code review, security analysis, spec/plan review |
+
+Rules:
+
+1. **Exploration subagents** (read-only research during planning) -> `gpt-5.4-mini` with `medium` effort. Speed matters more than depth; results are distilled back to the main session.
+2. **Review subagents** (quality-check personas, code reviewers) -> `gpt-5.5` with `high` effort. Review quality directly gates push/merge, so always use the most capable model.
+3. If reusable, define these as project agents under `.codex/agents/` (e.g. `explorer.toml` with `model = "gpt-5.4-mini"`, `reviewer.toml` with `model = "gpt-5.5"` / `model_reasoning_effort = "high"` / `sandbox_mode = "read-only"`). Otherwise, state the model explicitly in the spawn prompt.
+4. When in doubt between two tiers, choose the more capable model.
+
 ---
 
 ## Quality Check Rules
@@ -54,7 +71,7 @@ Change area detection (git diff)
     |
 Static checks + tests
     |
-Review cycles (6-persona review, minimum 2 cycles)
+Review cycles (code changes: 6 personas x 2+ cycles / docs+infra only: reduced personas x 1+ cycle)
     |
 E2E tests (final verification)
     |
@@ -68,7 +85,7 @@ When you run `git push`, Codex checks for `.quality-check-passed`. If missing, t
 
 ### Multi-Persona Review
 
-6 specialist personas review in parallel:
+6 specialist personas review in parallel (each spawned with `gpt-5.5` / `model_reasoning_effort = "high"` - see Subagent Model Selection):
 
 | Persona | Focus Area |
 |---------|------------|
@@ -79,7 +96,8 @@ When you run `git push`, Codex checks for `.quality-check-passed`. If missing, t
 | Performance Engineer | Algorithmic complexity, query performance, bundle size, caching |
 | Requirements Consistency Reviewer | Issue/design alignment, acceptance criteria, domain terminology |
 
-- Minimum 2 cycles, repeat until 0 must-fix items
+- Code changes: minimum 2 cycles. Docs/infra-only changes: reduced persona set, minimum 1 cycle (see `quality-check` skill)
+- Repeat until 0 must-fix items
 - Run `self-improvement` before creating `.quality-check-passed`
 
 ---

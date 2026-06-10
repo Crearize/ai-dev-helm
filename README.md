@@ -156,6 +156,8 @@ Setting up Cursor...
   .cursorrules created
   Cursor setup complete
 
+  .ai-dev-helm.json written (applied version: x.y.z)
+
 Setup complete!
 
 Next steps:
@@ -163,6 +165,20 @@ Next steps:
   2. Update tech stack and port information
   3. Add project-specific coding rules
   4. Commit the generated files
+```
+
+#### 適用バージョンの記録（`.ai-dev-helm.json`）
+
+init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成されます。取り込んだ ai-dev-helm のバージョン・ツール・スタック・適用日時が記録されるため、「今このプロジェクトは何バージョンを取り込んでいるか」をいつでも確認でき、次回の同期時に差分確認の起点として使えます。init を再実行すると最新の内容で上書きされます。
+
+```json
+{
+  "version": "1.6.0",
+  "tools": ["claude-code", "cursor"],
+  "stacks": ["nextjs-react"],
+  "skillScope": "all",
+  "appliedAt": "2026-06-10T08:00:00.000Z"
+}
 ```
 
 ### `ai-dev-helm personal` の対話フロー
@@ -323,9 +339,24 @@ Step 4 では、6 つの異なる専門家ペルソナが並列のサブエー�
 | **パフォーマンスエンジニア** | アルゴリズム計算量、クエリ、バンドルサイズ、キャッシュ、スケーラビリティ |
 | **要件・仕様整合性レビュアー** | Issue/要件/設計/受け入れ条件と実装の一致、過剰実装・不足実装、ドキュメント乖離 |
 
+パフォーマンスエンジニアと要件・仕様整合性レビュアーには専用のレビューガイド（`.github/review-performance.md` / `.github/review-requirements.md`）が配布されます。
+
+### サブエージェントのモデル切り替え
+
+サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。Fable は計画・設計の最初の方向付けに限定し、レビューでは Codex GPT-5.5 high または Claude Opus 4.8 を使います。
+
+| ハーネス | 計画・設計の初期判断 | 探索・コンテキスト収集 | レビュー・検証 |
+|---------|----------------------|----------------------|---------------|
+| Claude Code | Task ツールに `model: fable` を明示指定 | `model: sonnet`（単純検索は `haiku`）を明示指定 | `model: claude-opus-4-8` を明示指定 |
+| Codex | 親セッションまたは必要に応じて `gpt-5.5` / `high` | `gpt-5.4-mini` / `model_reasoning_effort = "medium"` を明示指定 | `gpt-5.5` / `model_reasoning_effort = "high"` を明示指定 |
+| Cursor | Fable を優先 | 依頼内容に応じて高速モデルを動的に選択 | Codex GPT-5.5 high または Claude Opus 4.8 を選択 |
+
+Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
+
 ### サイクルルール
 
-- **最低 2 サイクル実行**（指摘ゼロでも 2 回完走。拡充した 6 ペルソナで検出漏れを防ぐ）
+- **コード変更を含む場合は最低 2 サイクル実行**（指摘ゼロでも 2 回完走。拡充した 6 ペルソナで検出漏れを防ぐ）
+- **docs/infra のみの変更ではペルソナを 3〜5 に絞り、最低 1 サイクルに縮退**（レビューコスト最適化）
 - **必須修正（優先度: 高）が 0 件になるまで何度でも繰り返す**
 - 修正後は Step 2（静的チェック）から再実行
 - 10 サイクル到達時はユーザーに判断を仰ぐ

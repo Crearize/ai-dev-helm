@@ -19,6 +19,8 @@
 |-----------|-----|------|------|
 | `cycle_number` | `number` | 必須 | サイクル番号（1始まり） |
 | `findings` | `Finding[]` | 必須 | このサイクルで検出された指摘事項 |
+| `review_mode` | `"full" \| "reduced"` | 任意 | レビュー縮退の適用有無。`full`: 6ペルソナ / `reduced`: docs/infraのみの変更による縮退（省略時は `full` 扱い） |
+| `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `reduced` の場合は必須） |
 
 ### Finding オブジェクト
 
