@@ -28,6 +28,17 @@ Do not ask questions that can be answered by reading code, docs, command output,
 
 When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask.
 
+### Shell Command Rules (Windows / PowerShell)
+
+When the execution shell is PowerShell (default on Windows), bash idioms fail. Follow these rules:
+
+1. **No `&&` / `||` chaining** - Windows PowerShell 5.1 does not support them. Use `;` for unconditional sequencing, and check `$LASTEXITCODE` for conditional execution
+2. **No bash heredocs** (`<<EOF`) - use PowerShell here-strings (`$body = @'...'@`) instead
+3. **No bash test syntax** (`[ -f file ]`) - use `Test-Path` / `if (...)`
+4. **No `/dev/null`** - redirect with `2>$null` or pipe to `Out-Null`
+5. **Quote paths containing spaces** and prefer `Join-Path` for path construction
+6. **Complex one-liners break easily** (quoting, `?:` operator is PowerShell 7+ only) - write a temporary script file and execute it instead
+
 ## Phase Design Workflow
 
 ### Phase 1: Requirements Analysis

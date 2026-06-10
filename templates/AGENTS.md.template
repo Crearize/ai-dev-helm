@@ -116,6 +116,33 @@ When you run `git push`, Codex checks for `.quality-check-passed`. If missing, t
 
 ---
 
+## Shell Command Rules (Windows / PowerShell)
+
+When the execution shell is PowerShell (default on Windows), bash idioms fail. Follow these rules:
+
+1. **No `&&` / `||` chaining** - Windows PowerShell 5.1 does not support them. Use `;` for unconditional sequencing, and check `$LASTEXITCODE` for conditional execution:
+
+   ```powershell
+   git add .; git commit -m "msg"
+   git fetch; if ($LASTEXITCODE -eq 0) { git merge origin/main }
+   ```
+
+2. **No bash heredocs** (`<<EOF`) - use PowerShell here-strings instead:
+
+   ```powershell
+   $body = @'
+   multi-line
+   content
+   '@
+   ```
+
+3. **No bash test syntax** (`[ -f file ]`) - use `Test-Path` / `if (...)`
+4. **No `/dev/null`** - redirect with `2>$null` or pipe to `Out-Null`
+5. **Quote paths containing spaces** and prefer `Join-Path` for path construction
+6. **Complex one-liners break easily** (quoting, `?:` operator is PowerShell 7+ only) - write a temporary script file and execute it instead
+
+---
+
 ## Autonomy Principles
 
 AI should act autonomously by default.
