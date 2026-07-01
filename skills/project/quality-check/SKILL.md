@@ -129,7 +129,7 @@ git diff --name-only origin/main...HEAD
 |---------|---------------|
 | Claude Code | Taskツールの `model` パラメータに `claude-opus-4-8` を明示指定 |
 | Codex | サブエージェントに `model = "gpt-5.5"` / `model_reasoning_effort = "high"` を明示指定 |
-| Cursor | サブエージェント起動時に Codex GPT-5.5 high または Claude Opus 4.8 を選択（Fableはレビューでは使わない） |
+| Cursor | サブエージェント起動時に Claude Opus 4.8 を優先指定。次点で Claude Sonnet 5、Codex GPT-5.5 high はベンダー多様性のための代替肢（Fableはレビューでは使わない） |
 
 ### レビュー対象ガイドライン
 

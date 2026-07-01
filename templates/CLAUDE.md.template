@@ -48,14 +48,14 @@ This file is loaded by Claude Code at the start of each session.
 
 | Task Type | Model | Examples |
 |-----------|-------|----------|
-| Initial planning / design framing | `fable` | First-pass requirements decomposition, architecture option framing, implementation strategy design |
+| Initial planning / design framing | `fable` (fallback: `claude-opus-4-8`) | First-pass requirements decomposition, architecture option framing, implementation strategy design |
 | Codebase exploration / context gathering | `sonnet` | Understanding project structure during brainstorming/planning, finding related implementations, tracing dependencies |
 | Simple mechanical search | `haiku` | File/symbol lookup, listing usages, collecting file paths |
 | Review / verification / architecture critique | `claude-opus-4-8` | 6-persona quality-check review, code review, spec/plan document review, security analysis |
 
 Rules:
 
-1. **Initial planning/design subagents** -> `fable`. Use Fable only for the first planning/design framing pass, where broad option generation and architecture direction matter most.
+1. **Initial planning/design subagents** -> `fable` when available; otherwise use `claude-opus-4-8`. Use Fable only for the first planning/design framing pass, where broad option generation and architecture direction matter most.
 2. **Exploration subagents** (read-only research during planning) -> `sonnet`. Speed matters more than depth; results are distilled back to the main conversation.
 3. **Review subagents** (quality-check personas, code reviewers, document reviewers) -> `claude-opus-4-8`. Review quality directly gates push/merge, so do not use Fable for review.
 4. **Trivial lookup subagents** -> `haiku`. Do not spend a frontier model on pure search.

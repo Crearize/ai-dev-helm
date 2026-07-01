@@ -34,12 +34,12 @@ Cursor can choose the model per subagent invocation. **When dispatching subagent
 
 | Task Type | Model Choice | Examples |
 |-----------|--------------|----------|
-| Initial planning / design framing | Fable if available | First-pass requirements decomposition, architecture option framing, implementation strategy design |
+| Initial planning / design framing | Fable if available, otherwise Claude Opus 4.8 | First-pass requirements decomposition, architecture option framing, implementation strategy design |
 | Codebase exploration / context gathering | Fast, lightweight model | Understanding project structure in Phase 1, finding related implementations, tracing dependencies |
 | Simple mechanical search | Fastest available model | File/symbol lookup, listing usages |
-| Review / verification / architecture critique | Codex GPT-5.5 high or Claude Opus 4.8 | 6-persona quality-check review (Phase 5), code review, security analysis, architecture critique |
+| Review / verification / architecture critique | Claude Opus 4.8 first; Claude Sonnet 5 next; Codex GPT-5.5 high as cross-vendor fallback | 6-persona quality-check review (Phase 5), code review, security analysis, architecture critique |
 
-When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. For reviews, prefer Codex GPT-5.5 with high reasoning or Claude Opus 4.8; do not use Fable for review agents.
+When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 4.8 for planning/design. For reviews, prefer Claude Opus 4.8; use Claude Sonnet 5 as the strong lower-cost alternative, and Codex GPT-5.5 high when cross-vendor diversity is useful. Do not use Fable for review agents.
 
 ### Shell Command Rules (Windows / PowerShell)
 
