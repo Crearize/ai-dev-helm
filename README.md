@@ -343,15 +343,15 @@ Step 4 では、6 つの異なる専門家ペルソナが並列のサブエー�
 
 ### サブエージェントのモデル切り替え
 
-サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。Fable は計画・設計の最初の方向付けに限定し、レビューでは Codex GPT-5.5 high または Claude Opus 4.8 を使います。
+サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。Fable は計画・設計の最初の方向付けに限定し、利用できない場合は Claude Opus 4.8 にフォールバックします。レビューでは Claude Opus 4.8 を優先し、次点で Claude Sonnet 5、ベンダー多様性が有効な場合の代替肢として Codex GPT-5.5 high を使います。
 
 | ハーネス | 計画・設計の初期判断 | 探索・コンテキスト収集 | レビュー・検証 |
 |---------|----------------------|----------------------|---------------|
-| Claude Code | Task ツールに `model: fable` を明示指定 | `model: sonnet`（単純検索は `haiku`）を明示指定 | `model: claude-opus-4-8` を明示指定 |
+| Claude Code | Task ツールに `model: fable` を明示指定（不可なら `claude-opus-4-8`） | `model: sonnet`（単純検索は `haiku`）を明示指定 | `model: claude-opus-4-8` を明示指定 |
 | Codex | 親セッションまたは必要に応じて `gpt-5.5` / `high` | `gpt-5.4-mini` / `model_reasoning_effort = "medium"` を明示指定 | `gpt-5.5` / `model_reasoning_effort = "high"` を明示指定 |
-| Cursor | Fable を優先 | 依頼内容に応じて高速モデルを動的に選択 | Codex GPT-5.5 high または Claude Opus 4.8 を選択 |
+| Cursor | Fable を優先（不可なら Claude Opus 4.8） | 依頼内容に応じて高速モデルを動的に選択 | Claude Opus 4.8 を優先、次点で Claude Sonnet 5、代替で Codex GPT-5.5 high |
 
-Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
+Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Sonnet / Opus への切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
 
 ### サイクルルール
 
