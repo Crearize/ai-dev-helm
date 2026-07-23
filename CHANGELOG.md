@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.2](https://github.com/Crearize/ai-dev-helm/compare/v1.7.1...v1.7.2) (2026-07-23)
+
+
+### Fixed
+
+* make fix-nested-fences.sh executable and clean stale skill files on sync ([1d2a9e4](https://github.com/Crearize/ai-dev-helm/commit/1d2a9e43cc20bf749cc68c181778ed110ca513d5))
+* make fix-nested-fences.sh executable and clean stale skill files on sync ([3e09444](https://github.com/Crearize/ai-dev-helm/commit/3e09444c12febd015a55173e10a947e3778a48ad))
+* **superpowers:** sync skills to v6.1.1 ([6e53f6e](https://github.com/Crearize/ai-dev-helm/commit/6e53f6e8341044c1d7ce45efc15027afe4e69029))
+* **superpowers:** sync skills v5.1.0 → v6.1.1 ([45bd23f](https://github.com/Crearize/ai-dev-helm/commit/45bd23fbfc44683157dc6af218f5ceaae650a68e))
+
 ## [1.7.1](https://github.com/Crearize/ai-dev-helm/compare/v1.7.0...v1.7.1) (2026-07-01)
 
 
