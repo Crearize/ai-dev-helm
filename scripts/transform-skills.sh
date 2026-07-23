@@ -52,6 +52,8 @@ for skill in "${SKILLS[@]}"; do
         continue
     fi
 
+    # Remove the previous copy so files deleted upstream don't linger
+    rm -rf "$skill_dest"
     mkdir -p "$skill_dest"
 
     # Copy files, excluding patterns
