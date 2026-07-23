@@ -90,7 +90,7 @@ jobs:
       - name: Create Pull Request
         if: steps.check.outputs.needed == 'true'
         id: create-pr
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           title: "fix(superpowers): sync skills v${{ steps.current.outputs.version }} → v${{ steps.latest.outputs.version }}"
           body: |
