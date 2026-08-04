@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2](https://github.com/Crearize/ai-dev-helm/compare/v1.8.1...v1.8.2) (2026-08-04)
+
+
+### Fixed
+
+* restrict Haiku instead of Sonnet in subagent model selection ([cea6a1e](https://github.com/Crearize/ai-dev-helm/commit/cea6a1e724727b0e78422f7a6eb4101f1c5db50b))
+* restrict Haiku instead of Sonnet in subagent model selection ([ab57834](https://github.com/Crearize/ai-dev-helm/commit/ab578345b60168b556b24cfd17dab8982a8a1e43))
+
 ## [1.8.1](https://github.com/Crearize/ai-dev-helm/compare/v1.8.0...v1.8.1) (2026-08-04)
 
 
