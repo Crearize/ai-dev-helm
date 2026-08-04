@@ -343,13 +343,13 @@ Step 4 では、6 つの異なる専門家ペルソナが並列のサブエー�
 
 ### サブエージェントのモデル切り替え
 
-サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。Fable は計画・設計の最初の方向付けに限定し、利用できない場合や Codex 利用時は Claude Opus 5 または GPT-5.6-Sol にフォールバックします。実装などの具体的な作業は Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra（またはエフォートを下げた GPT-5.6-Sol）で行い、レビュー・検証は Claude Opus 5 または GPT-5.6-Sol high で行います。Claude Sonnet はどのフェーズでも使用しません。
+サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。Fable は計画・設計の最初の方向付けに限定し、利用できない場合や Codex 利用時は Claude Opus 5 または GPT-5.6-Sol にフォールバックします。実装などの具体的な作業は Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra（またはエフォートを下げた GPT-5.6-Sol）で行い、レビュー・検証は Claude Opus 5 または GPT-5.6-Sol high で行います。探索・コンテキスト収集には Claude Sonnet 5 を使用します（Sonnet は探索・検索用途に限定し、実装・レビュー・計画には使用しません）。Claude Haiku はどのフェーズでも使用しません。
 
 | ハーネス | 計画・設計の初期判断 | 探索・コンテキスト収集 | 実装・具体的な作業 | レビュー・検証 |
 |---------|----------------------|----------------------|--------------------|---------------|
-| Claude Code | Task ツールに `model: fable` を明示指定（不可なら `claude-opus-5`） | `model: haiku` を明示指定 | `model: claude-opus-5` を明示指定 | `model: claude-opus-5` を明示指定 |
+| Claude Code | Task ツールに `model: fable` を明示指定（不可なら `claude-opus-5`） | `model: sonnet` を明示指定 | `model: claude-opus-5` を明示指定 | `model: claude-opus-5` を明示指定 |
 | Codex | `gpt-5.6-sol` / `high` | `gpt-5.4-mini` / `model_reasoning_effort = "medium"` を明示指定 | `gpt-5.6-terra`（または `gpt-5.6-sol` でエフォートを `medium`/`low` に下げる） | `gpt-5.6-sol` / `model_reasoning_effort = "high"` を明示指定 |
-| Cursor | Fable を優先（不可なら Claude Opus 5 / GPT-5.6-Sol） | 依頼内容に応じて高速モデルを動的に選択 | Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra / 低エフォート GPT-5.6-Sol | Claude Opus 5 を優先、代替で GPT-5.6-Sol high |
+| Cursor | Fable を優先（不可なら Claude Opus 5 / GPT-5.6-Sol） | Claude Sonnet 5 などの高速モデル（Haiku は使用しない） | Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra / 低エフォート GPT-5.6-Sol | Claude Opus 5 を優先、代替で GPT-5.6-Sol high |
 
 Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
 

@@ -35,12 +35,12 @@ Cursor can choose the model per subagent invocation. **When dispatching subagent
 | Task Type | Model Choice | Examples |
 |-----------|--------------|----------|
 | Initial planning / design framing | Fable if available, otherwise Claude Opus 5 or GPT-5.6-Sol | First-pass requirements decomposition, architecture option framing, implementation strategy design |
-| Codebase exploration / context gathering | Fast, lightweight model | Understanding project structure in Phase 1, finding related implementations, tracing dependencies |
-| Simple mechanical search | Fastest available model | File/symbol lookup, listing usages |
+| Codebase exploration / context gathering | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | Understanding project structure in Phase 1, finding related implementations, tracing dependencies |
+| Simple mechanical search | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | File/symbol lookup, listing usages |
 | Implementation / concrete work | Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or GPT-5.6-Sol with lowered effort | Phase 2/3 implementation, test writing, refactoring |
 | Review / verification / architecture critique | Claude Opus 5 first; GPT-5.6-Sol high as cross-vendor alternative | 6-persona quality-check review (Phase 5), code review, security analysis, architecture critique |
 
-When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-5.6-Sol for planning/design. Implementation work should NOT run on Fable - use Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or a lowered-effort GPT-5.6-Sol. Do not use Claude Sonnet for any tier. For reviews, prefer Claude Opus 5, with GPT-5.6-Sol high when cross-vendor diversity is useful. Do not use Fable for review agents.
+When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-5.6-Sol for planning/design. Implementation work should NOT run on Fable - use Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or a lowered-effort GPT-5.6-Sol. Do not use Claude Haiku for any tier. Claude Sonnet is allowed only for exploration/search tasks - never use it for implementation, review, or planning. For reviews, prefer Claude Opus 5, with GPT-5.6-Sol high when cross-vendor diversity is useful. Do not use Fable for review agents.
 
 ### Shell Command Rules (Windows / PowerShell)
 
