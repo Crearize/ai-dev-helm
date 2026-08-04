@@ -53,7 +53,7 @@ Run `npx @crearize/ai-dev-helm personal` and pick option `3) Codex global settin
 - Merges `~/.codex/config.toml` with safe defaults:
   - `approval_policy = "on-request"`
   - `sandbox_mode = "read-only"`
-  - `model = "gpt-5.5"` (existing value preserved unless upgraded)
+  - `model = "gpt-5.6-sol"` (existing value preserved unless upgraded)
 - Adds `[[rules]]` entries that deny destructive commands (rm -rf /, force push to main, etc.)
 - Existing settings are preserved; a timestamped backup is created before any change.
 - Use `--upgrade-model` to force-overwrite the `model` field with the template value.

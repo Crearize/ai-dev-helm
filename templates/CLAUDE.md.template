@@ -25,7 +25,7 @@ This file is loaded by Claude Code at the start of each session.
 |----------|-------|-------|
 | Before new feature/change | `superpowers:brainstorming` | Explore requirements and design first |
 | Multi-step implementation planning | `superpowers:writing-plans` | Write plan before touching code |
-| Plan execution | `superpowers:executing-plans` | Always inline execution (see Plan Execution Rules below) |
+| Plan execution | `superpowers:subagent-driven-development` | Default execution method (see Plan Execution Rules below) |
 | Bug / test failure investigation | `superpowers:systematic-debugging` | Debug process before proposing fixes |
 | Testing implementation | `superpowers:test-driven-development` | TDD: test -> implementation order |
 | 2+ independent tasks | `superpowers:dispatching-parallel-agents` | Parallel agents for efficiency |
@@ -38,7 +38,7 @@ This file is loaded by Claude Code at the start of each session.
 
 ### Plan Execution Rules
 
-1. **Always inline execution** - Execute plans in the current conversation using `superpowers:executing-plans`. Do not use subagent-driven-development. No confirmation of execution method is needed.
+1. **Subagent-driven execution by default** - Execute plans with `superpowers:subagent-driven-development`: dispatch a fresh subagent per task in the current session and review between tasks. This is the SuperPowers default behavior - follow it unless the user explicitly instructs otherwise. Use `superpowers:executing-plans` (inline execution) only when the user explicitly requests it. No confirmation of execution method is needed.
 2. **Plan files are not committed** - Plan documents (`docs/superpowers/plans/*.md`) must NOT be committed or pushed to the repository.
 3. **Plan file lifecycle** - Plan files are kept locally during implementation. After the PR is merged, delete all plan files from the local workspace.
 
@@ -48,18 +48,20 @@ This file is loaded by Claude Code at the start of each session.
 
 | Task Type | Model | Examples |
 |-----------|-------|----------|
-| Initial planning / design framing | `fable` (fallback: `claude-opus-4-8`) | First-pass requirements decomposition, architecture option framing, implementation strategy design |
-| Codebase exploration / context gathering | `sonnet` | Understanding project structure during brainstorming/planning, finding related implementations, tracing dependencies |
+| Initial planning / design framing | `fable` (fallback: `claude-opus-5`) | First-pass requirements decomposition, architecture option framing, implementation strategy design |
+| Codebase exploration / context gathering | `haiku` | Understanding project structure during brainstorming/planning, finding related implementations, tracing dependencies |
 | Simple mechanical search | `haiku` | File/symbol lookup, listing usages, collecting file paths |
-| Review / verification / architecture critique | `claude-opus-4-8` | 6-persona quality-check review, code review, spec/plan document review, security analysis |
+| Implementation / concrete work | `claude-opus-5` | Task-by-task implementation subagents in subagent-driven-development, test writing, refactoring, migrations |
+| Review / verification / architecture critique | `claude-opus-5` | 6-persona quality-check review, code review, spec/plan document review, security analysis |
 
 Rules:
 
-1. **Initial planning/design subagents** -> `fable` when available; otherwise use `claude-opus-4-8`. Use Fable only for the first planning/design framing pass, where broad option generation and architecture direction matter most.
-2. **Exploration subagents** (read-only research during planning) -> `sonnet`. Speed matters more than depth; results are distilled back to the main conversation.
-3. **Review subagents** (quality-check personas, code reviewers, document reviewers) -> `claude-opus-4-8`. Review quality directly gates push/merge, so do not use Fable for review.
-4. **Trivial lookup subagents** -> `haiku`. Do not spend a frontier model on pure search.
-5. When in doubt between two tiers, choose the more capable model, but keep Fable reserved for initial planning/design.
+1. **Initial planning/design subagents** -> `fable` when available; otherwise use `claude-opus-5`. Use Fable only for the first planning/design framing pass, where broad option generation and architecture direction matter most.
+2. **Exploration / lookup subagents** (read-only research, file/symbol search) -> `haiku`. Speed matters more than depth; results are distilled back to the main conversation. Do not spend a frontier model on pure search.
+3. **Implementation subagents** (task executors in subagent-driven-development) -> `claude-opus-5`. Never run implementation on Fable - the main session plans and orchestrates; implementation happens in Opus 5 subagents.
+4. **Review subagents** (quality-check personas, code reviewers, document reviewers) -> `claude-opus-5`. Review quality directly gates push/merge, so do not use Fable for review.
+5. **Do not use Sonnet.** This workflow does not use `sonnet` for any subagent tier.
+6. When in doubt between two tiers, choose the more capable model, but keep Fable reserved for initial planning/design.
 
 ---
 
@@ -83,7 +85,7 @@ Report data saved -> .quality-check-passed created -> push allowed
 
 ### Multi-Persona Review
 
-6 specialist personas review in parallel as Agents (each dispatched with `model: claude-opus-4-8` - see Subagent Model Selection):
+6 specialist personas review in parallel as Agents (each dispatched with `model: claude-opus-5` - see Subagent Model Selection):
 
 | Persona | Focus Area |
 |---------|-----------|
@@ -110,7 +112,7 @@ Report data saved -> .quality-check-passed created -> push allowed
 1. **Create GitHub Issue** - `gh issue create` to get Issue number
 2. **Create branch** - `git checkout -b [type]/[description]-[issue-number]`
 3. **Include Issue/branch/PR in plans** - Phase 0: Issue/branch creation, final Phase: PR creation
-4. **Always inline execution** - Execute plans inline (in current conversation), not subagent-driven
+4. **Subagent-driven execution** - Execute plans via `superpowers:subagent-driven-development` (a fresh subagent per task), not inline
 5. **Run /quality-check before push** - All checks must pass before `git push`
 
 ### Level 1: Must Follow
