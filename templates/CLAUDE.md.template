@@ -49,18 +49,18 @@ This file is loaded by Claude Code at the start of each session.
 | Task Type | Model | Examples |
 |-----------|-------|----------|
 | Initial planning / design framing | `fable` (fallback: `claude-opus-5`) | First-pass requirements decomposition, architecture option framing, implementation strategy design |
-| Codebase exploration / context gathering | `haiku` | Understanding project structure during brainstorming/planning, finding related implementations, tracing dependencies |
-| Simple mechanical search | `haiku` | File/symbol lookup, listing usages, collecting file paths |
+| Codebase exploration / context gathering | `sonnet` | Understanding project structure during brainstorming/planning, finding related implementations, tracing dependencies |
+| Simple mechanical search | `sonnet` | File/symbol lookup, listing usages, collecting file paths |
 | Implementation / concrete work | `claude-opus-5` | Task-by-task implementation subagents in subagent-driven-development, test writing, refactoring, migrations |
 | Review / verification / architecture critique | `claude-opus-5` | 6-persona quality-check review, code review, spec/plan document review, security analysis |
 
 Rules:
 
 1. **Initial planning/design subagents** -> `fable` when available; otherwise use `claude-opus-5`. Use Fable only for the first planning/design framing pass, where broad option generation and architecture direction matter most.
-2. **Exploration / lookup subagents** (read-only research, file/symbol search) -> `haiku`. Speed matters more than depth; results are distilled back to the main conversation. Do not spend a frontier model on pure search.
+2. **Exploration / lookup subagents** (read-only research, file/symbol search) -> `sonnet`. Speed matters more than depth; results are distilled back to the main conversation. Do not spend a frontier model on pure search.
 3. **Implementation subagents** (task executors in subagent-driven-development) -> `claude-opus-5`. Never run implementation on Fable - the main session plans and orchestrates; implementation happens in Opus 5 subagents.
 4. **Review subagents** (quality-check personas, code reviewers, document reviewers) -> `claude-opus-5`. Review quality directly gates push/merge, so do not use Fable for review.
-5. **Do not use Sonnet.** This workflow does not use `sonnet` for any subagent tier.
+5. **Do not use Haiku.** This workflow does not use `haiku` for any subagent tier. `sonnet` is allowed only for exploration/search subagents - never use it for implementation, review, or planning.
 6. When in doubt between two tiers, choose the more capable model, but keep Fable reserved for initial planning/design.
 
 ---
