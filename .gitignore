@@ -19,6 +19,9 @@ coverage/
 # Superpowers plan/spec files (local-only, not committed)
 docs/superpowers/
 
+# SDD workspace (task briefs, review packages, progress ledger)
+.superpowers/
+
 # Git worktrees (local-only, not committed)
 .worktrees/
 

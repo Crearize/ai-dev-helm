@@ -347,9 +347,11 @@ Step 4 では、6 つの異なる専門家ペルソナが並列のサブエー�
 
 | ハーネス | 計画・設計の初期判断 | 探索・コンテキスト収集 | 実装・具体的な作業 | レビュー・検証 |
 |---------|----------------------|----------------------|--------------------|---------------|
-| Claude Code | Task ツールに `model: fable` を明示指定（不可なら `claude-opus-5`） | `model: sonnet` を明示指定 | `model: claude-opus-5` を明示指定 | `model: claude-opus-5` を明示指定 |
+| Claude Code | Task ツールに `model: fable` を明示指定（不可なら `opus`） | `model: sonnet` を明示指定 | `model: opus` を明示指定 | `model: opus` を明示指定 |
 | Codex | `gpt-5.6-sol` / `high` | `gpt-5.4-mini` / `model_reasoning_effort = "medium"` を明示指定 | `gpt-5.6-terra`（または `gpt-5.6-sol` でエフォートを `medium`/`low` に下げる） | `gpt-5.6-sol` / `model_reasoning_effort = "high"` を明示指定 |
 | Cursor | Fable を優先（不可なら Claude Opus 5 / GPT-5.6-Sol） | Claude Sonnet 5 などの高速モデル（Haiku は使用しない） | Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra / 低エフォート GPT-5.6-Sol | Claude Opus 5 を優先、代替で GPT-5.6-Sol high |
+
+Claude Code の Task ツールの `model` パラメータは短縮エイリアス（`fable` / `opus` / `sonnet` / `haiku`）のみを受理するため、テンプレートでは `claude-opus-5` などのフル ID ではなく短縮名で指定します。また、テンプレートのモデル表はスキル内のモデル選択ガイド（例: subagent-driven-development の Model Selection 節）より優先されます。
 
 Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
 
@@ -512,7 +514,8 @@ ai-dev-helm/
 │   └── codex/README.md
 │
 ├── scripts/
-│   └── transform-skills.sh    # superpowers スキル変換（CI 用）
+│   ├── transform-skills.sh    # superpowers スキル変換（CI 用）
+│   └── fix-nested-fences.sh   # ネストしたコードフェンスの補正（transform から呼び出し）
 │
 └── .github/workflows/
     └── sync-superpowers.yml   # superpowers 自動同期ワークフロー
@@ -554,6 +557,8 @@ your-project/
 │   ├── review-backend.md           #   バックエンドレビューガイド
 │   ├── review-docs.md              #   ドキュメントレビューガイド
 │   ├── review-infra.md             #   インフラレビューガイド
+│   ├── review-performance.md       #   パフォーマンスレビューガイド
+│   ├── review-requirements.md      #   要件・仕様整合性レビューガイド
 │   └── review-prompt.md            #   統合レビュー指示
 │
 └── documents/development/          # 開発ドキュメント
