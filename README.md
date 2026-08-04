@@ -505,6 +505,7 @@ ai-dev-helm/
 │   ├── codex-config.toml.template
 │   ├── codex-config-global.toml.template
 │   ├── codex-hooks.json.template
+│   ├── hooks/quality-gate.cjs      # 品質ゲートフック本体（Node 製・クロスプラットフォーム）
 │   ├── cursor-rule.mdc.template
 │   └── PULL_REQUEST_TEMPLATE.md
 │
@@ -539,6 +540,7 @@ your-project/
 │   ├── rules/                      #   コーディングルール
 │   │   ├── frontend/coding.md
 │   │   └── backend/coding.md
+│   ├── hooks/quality-gate.cjs      #   品質ゲートフック（Node 製）
 │   └── settings.json               #   フック・権限設定
 │
 ├── .cursor/                        # Cursor 用ディレクトリ
@@ -593,6 +595,7 @@ your-project/
 | `.cursorrules` | Cursor が参照するプロジェクト設定ファイル |
 | `AGENTS.md` | Codex CLI が会話開始時に読み込む設定ファイル（プロジェクトルートからチェーンマージ） |
 | `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施の push をブロックするフックなど |
+| `.claude/hooks/` / `.codex/hooks/` | 品質ゲートフック本体（`quality-gate.cjs`）。Node 製のため Windows / macOS / Linux で同一動作（`jq` 等の外部ツール不要） |
 | `.codex/config.toml` | Codex のプロジェクトローカル設定（approval/sandbox） |
 | `.codex/hooks.json` | Codex の PreToolUse フック設定。`.quality-check-passed` がないと push をブロック |
 | `.claude/rules/` | Claude Code が自動読み込みするコーディングルール |
