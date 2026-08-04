@@ -32,6 +32,8 @@ See: https://developers.openai.com/codex/guides/agents-md
 | Receiving code review | `.codex/skills/superpowers/receiving-code-review/SKILL.md` | Verify, not blind agree |
 | Before completion / merge | `.codex/skills/superpowers/verification-before-completion/SKILL.md` | Evidence-based |
 | Post-completion integration | `.codex/skills/superpowers/finishing-a-development-branch/SKILL.md` | Merge/PR/cleanup |
+| 2+ independent tasks | `.codex/skills/superpowers/dispatching-parallel-agents/SKILL.md` | Parallel agents for efficiency |
+| Feature isolation needed | `.codex/skills/superpowers/using-git-worktrees/SKILL.md` | Worktree isolation |
 | Parallel worktree development | `.codex/skills/project/worktree-parallel/SKILL.md` | Worktree placement, ports, env setup, cleanup |
 | Before push / merge completion | `.codex/skills/project/self-improvement/SKILL.md` | Apply approved harness improvements before completion |
 
@@ -44,6 +46,8 @@ See: https://developers.openai.com/codex/guides/agents-md
 ### Subagent Model Selection
 
 **When spawning subagents, always specify `model` and `model_reasoning_effort` explicitly based on the nature of the task. Do not rely on inheriting the parent session settings.**
+
+**This table takes precedence over any model-selection guidance inside individual skills** (e.g. the "Model Selection" section of `.codex/skills/superpowers/subagent-driven-development/SKILL.md`, which assumes a cheapest-model-per-role strategy). When they conflict, follow this table.
 
 | Task Type | Model | Reasoning Effort | Examples |
 |-----------|-------|------------------|----------|
@@ -221,6 +225,9 @@ Located under `.codex/skills/`. Codex does not auto-discover them - refer to the
 | Self improvement | `.codex/skills/project/self-improvement/SKILL.md` |
 | PR report generation | `.codex/skills/project/implementation-report/SKILL.md` |
 | UI verification | `.codex/skills/project/browser-agent/SKILL.md` |
+| Feature/knowledge documentation | `.codex/skills/project/feature-documentation/SKILL.md` |
+| Log design review | `.codex/skills/project/log-design/SKILL.md` |
+| CHANGELOG / release notes generation | `.codex/skills/project/generate-docs/SKILL.md` |
 
 ## Common Commands
 

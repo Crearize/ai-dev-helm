@@ -7,6 +7,8 @@ Check the files changed in this PR and review only the applicable areas:
 - Backend changes (backend/**) -> Refer to `.github/review-backend.md`
 - Frontend changes (frontend/**) -> Refer to `.github/review-frontend.md`
 - Infra/CI changes (.github/workflows/**, Dockerfile, etc.) -> Refer to `.github/review-infra.md`
+- Performance-sensitive changes (queries, loops over collections, bundle-affecting frontend changes) -> Also refer to `.github/review-performance.md`
+- Any code change tied to an Issue/requirement -> Also refer to `.github/review-requirements.md`
 
 Skip areas with no changes and do not output those sections.
 Each review should be a separate section with clear headings.

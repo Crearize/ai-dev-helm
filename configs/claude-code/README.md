@@ -64,6 +64,6 @@ Edit `.claude/settings.json` to add custom hooks or permissions.
 
 ## Personal Setup (Global)
 
-Run `./setup.sh personal` to add safety rules to `~/.claude/settings.json`:
+Run `npx @crearize/ai-dev-helm personal` to add safety rules to `~/.claude/settings.json`:
 - Blocks destructive commands (rm -rf /, force push to main, etc.)
 - Backs up existing settings before modification

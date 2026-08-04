@@ -26,21 +26,15 @@ SKILLS=(
     writing-skills
 )
 
-# Files to exclude (patterns)
+# Files to exclude (patterns).
+# Only exclude authoring noise that no skill document references.
+# Do NOT exclude content files or directories (scripts/, references/,
+# examples/, helper scripts): skill documents reference them by relative
+# path, and excluding them ships skills with dangling references
+# (see issue #63 — subagent-driven-development requires scripts/*).
 EXCLUDE_PATTERNS=(
     "CREATION-LOG.md"
     "test-*.md"
-    "find-polluter.sh"
-    "condition-based-waiting-example.ts"
-    "graphviz-conventions.dot"
-    "render-graphs.js"
-)
-
-# Directories to exclude
-EXCLUDE_DIRS=(
-    "scripts"
-    "examples"
-    "references"
 )
 
 for skill in "${SKILLS[@]}"; do
@@ -74,24 +68,20 @@ for skill in "${SKILLS[@]}"; do
         fi
     done
 
-    # Copy subdirectories, excluding specified ones
+    # Copy all subdirectories (scripts/, references/, examples/) — skill
+    # documents reference their contents by relative path (see issue #63)
     find "$skill_src" -mindepth 1 -maxdepth 1 -type d | while read -r dir; do
-        dirname=$(basename "$dir")
-        skip=false
-
-        for excluded in "${EXCLUDE_DIRS[@]}"; do
-            if [ "$dirname" = "$excluded" ]; then
-                skip=true
-                break
-            fi
-        done
-
-        if [ "$skip" = false ]; then
-            cp -r "$dir" "$skill_dest/"
-        fi
+        cp -r "$dir" "$skill_dest/"
     done
 
     echo "  $skill"
+done
+
+# Upstream uses a flat skills/<name>/ layout; this repo nests skills under
+# skills/superpowers/<name>/. Rewrite absolute-style upstream paths in the
+# copied documents so cross-skill references resolve in consuming projects.
+for skill in "${SKILLS[@]}"; do
+    find "$DEST" -name '*.md' -print0 | xargs -0 sed -i "s|skills/$skill/|skills/superpowers/$skill/|g"
 done
 
 # Upstream files nest code fences inside fenced prompt templates, which breaks

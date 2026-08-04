@@ -30,6 +30,11 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 
 ### Subagent Model Selection
 
+<!-- Note: unlike CLAUDE.md, this file intentionally has no "Plan Execution Rules"
+     section. Cursor has no Task-tool equivalent for subagent-driven plan execution,
+     so execution method is not specified here. Do not "fix" this asymmetry when
+     syncing templates. -->
+
 Cursor can choose the model per subagent invocation. **When dispatching subagents, switch the model according to the nature of the request instead of always using the same one:**
 
 | Task Type | Model Choice | Examples |
@@ -40,7 +45,7 @@ Cursor can choose the model per subagent invocation. **When dispatching subagent
 | Implementation / concrete work | Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or GPT-5.6-Sol with lowered effort | Phase 2/3 implementation, test writing, refactoring |
 | Review / verification / architecture critique | Claude Opus 5 first; GPT-5.6-Sol high as cross-vendor alternative | 6-persona quality-check review (Phase 5), code review, security analysis, architecture critique |
 
-When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-5.6-Sol for planning/design. Implementation work should NOT run on Fable - use Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or a lowered-effort GPT-5.6-Sol. Do not use Claude Haiku for any tier. Claude Sonnet is allowed only for exploration/search tasks - never use it for implementation, review, or planning. For reviews, prefer Claude Opus 5, with GPT-5.6-Sol high when cross-vendor diversity is useful. Do not use Fable for review agents.
+This table takes precedence over any model-selection guidance inside individual skills (e.g. the "Model Selection" section of subagent-driven-development). When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-5.6-Sol for planning/design. Implementation work should NOT run on Fable - use Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or a lowered-effort GPT-5.6-Sol. Do not use Claude Haiku for any tier. Claude Sonnet is allowed only for exploration/search tasks - never use it for implementation, review, or planning. For reviews, prefer Claude Opus 5, with GPT-5.6-Sol high when cross-vendor diversity is useful. Do not use Fable for review agents.
 
 ### Shell Command Rules (Windows / PowerShell)
 
@@ -81,6 +86,24 @@ When the execution shell is PowerShell (default on Windows), bash idioms fail. F
 ### Phase 6: PR Creation
 - Commit message: `feat: [feature] (closes #[issue-number])`
 - PR body: implementation details, review results, test results
+
+## Skills (Read on demand)
+
+Skills are installed under `.cursor/skills/` (symlink to `skills/`). Cursor does not auto-discover them - read the relevant `SKILL.md` when the scenario applies:
+
+| Scenario | Skill Path |
+|----------|------------|
+| Before new feature/change | `.cursor/skills/superpowers/brainstorming/SKILL.md` |
+| Multi-step implementation planning | `.cursor/skills/superpowers/writing-plans/SKILL.md` |
+| Plan execution | `.cursor/skills/superpowers/subagent-driven-development/SKILL.md` |
+| Bug / test failure investigation | `.cursor/skills/superpowers/systematic-debugging/SKILL.md` |
+| Testing implementation | `.cursor/skills/superpowers/test-driven-development/SKILL.md` |
+| Before completion / merge | `.cursor/skills/superpowers/verification-before-completion/SKILL.md` |
+| Pre-push quality check | `.cursor/skills/project/quality-check/SKILL.md` |
+| Harness improvement before completion | `.cursor/skills/project/self-improvement/SKILL.md` |
+| Parallel worktree development | `.cursor/skills/project/worktree-parallel/SKILL.md` |
+
+Other project skills (server-startup, branch-workflow, backend/frontend-development, database-migration, browser-agent, feature-documentation, log-design, generate-docs, implementation-report) live under `.cursor/skills/project/`.
 
 ## Reference Documents
 
