@@ -2,7 +2,7 @@
 # Merged by `ai-dev-helm personal`. Existing values are preserved.
 # Docs: https://developers.openai.com/codex/config-basic
 
-model = "gpt-5.5"
+model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 
 # Default policy: prompt only when needed

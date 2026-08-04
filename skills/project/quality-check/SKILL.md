@@ -127,9 +127,9 @@ git diff --name-only origin/main...HEAD
 
 | ハーネス | モデル指定方法 |
 |---------|---------------|
-| Claude Code | Taskツールの `model` パラメータに `claude-opus-4-8` を明示指定 |
-| Codex | サブエージェントに `model = "gpt-5.5"` / `model_reasoning_effort = "high"` を明示指定 |
-| Cursor | サブエージェント起動時に Claude Opus 4.8 を優先指定。次点で Claude Sonnet 5、Codex GPT-5.5 high はベンダー多様性のための代替肢（Fableはレビューでは使わない） |
+| Claude Code | Taskツールの `model` パラメータに `claude-opus-5` を明示指定 |
+| Codex | サブエージェントに `model = "gpt-5.6-sol"` / `model_reasoning_effort = "high"` を明示指定 |
+| Cursor | サブエージェント起動時に Claude Opus 5 を優先指定。Codex GPT-5.6-Sol high はベンダー多様性のための代替肢（Fableはレビューでは使わない） |
 
 ### レビュー対象ガイドライン
 

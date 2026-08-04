@@ -343,15 +343,17 @@ Step 4 では、6 つの異なる専門家ペルソナが並列のサブエー�
 
 ### サブエージェントのモデル切り替え
 
-サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。Fable は計画・設計の最初の方向付けに限定し、利用できない場合は Claude Opus 4.8 にフォールバックします。レビューでは Claude Opus 4.8 を優先し、次点で Claude Sonnet 5、ベンダー多様性が有効な場合の代替肢として Codex GPT-5.5 high を使います。
+サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。Fable は計画・設計の最初の方向付けに限定し、利用できない場合や Codex 利用時は Claude Opus 5 または GPT-5.6-Sol にフォールバックします。実装などの具体的な作業は Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra（またはエフォートを下げた GPT-5.6-Sol）で行い、レビュー・検証は Claude Opus 5 または GPT-5.6-Sol high で行います。Claude Sonnet はどのフェーズでも使用しません。
 
-| ハーネス | 計画・設計の初期判断 | 探索・コンテキスト収集 | レビュー・検証 |
-|---------|----------------------|----------------------|---------------|
-| Claude Code | Task ツールに `model: fable` を明示指定（不可なら `claude-opus-4-8`） | `model: sonnet`（単純検索は `haiku`）を明示指定 | `model: claude-opus-4-8` を明示指定 |
-| Codex | 親セッションまたは必要に応じて `gpt-5.5` / `high` | `gpt-5.4-mini` / `model_reasoning_effort = "medium"` を明示指定 | `gpt-5.5` / `model_reasoning_effort = "high"` を明示指定 |
-| Cursor | Fable を優先（不可なら Claude Opus 4.8） | 依頼内容に応じて高速モデルを動的に選択 | Claude Opus 4.8 を優先、次点で Claude Sonnet 5、代替で Codex GPT-5.5 high |
+| ハーネス | 計画・設計の初期判断 | 探索・コンテキスト収集 | 実装・具体的な作業 | レビュー・検証 |
+|---------|----------------------|----------------------|--------------------|---------------|
+| Claude Code | Task ツールに `model: fable` を明示指定（不可なら `claude-opus-5`） | `model: haiku` を明示指定 | `model: claude-opus-5` を明示指定 | `model: claude-opus-5` を明示指定 |
+| Codex | `gpt-5.6-sol` / `high` | `gpt-5.4-mini` / `model_reasoning_effort = "medium"` を明示指定 | `gpt-5.6-terra`（または `gpt-5.6-sol` でエフォートを `medium`/`low` に下げる） | `gpt-5.6-sol` / `model_reasoning_effort = "high"` を明示指定 |
+| Cursor | Fable を優先（不可なら Claude Opus 5 / GPT-5.6-Sol） | 依頼内容に応じて高速モデルを動的に選択 | Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra / 低エフォート GPT-5.6-Sol | Claude Opus 5 を優先、代替で GPT-5.6-Sol high |
 
-Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Sonnet / Opus への切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
+Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
+
+計画の実行はハーネスを問わず**サブエージェント駆動（subagent-driven-development）がデフォルト**です。メインセッション（Fable / GPT-5.6-Sol）は計画・オーケストレーションに専念し、実装タスクは Opus 5 等のサブエージェントに委譲することで、Fable のトークン消費を計画・設計に集中させます。インライン実行（executing-plans）はユーザーが明示的に指示した場合のみ使用します。
 
 ### サイクルルール
 
@@ -405,7 +407,7 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 `~/.claude/settings.json` に以下を安全にマージします。
 
 - **破壊的コマンドのブロック**: プロジェクトレベルと同じブロックリスト
-- **モデル設定**: `claude-opus-4-8`
+- **モデル設定**: `claude-fable-5`（メインセッションは計画・設計を担当。Fable が使えない場合は `claude-opus-5` を手動設定）
 - **Effort Level**: `high`（環境変数で `max` も設定）
 - **思考モード**: 常時有効（`alwaysThinkingEnabled: true`）
 
@@ -421,8 +423,8 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 
 ```
 Model version mismatch detected:
-  Current:  claude-opus-4-7
-  Template: claude-opus-4-8
+  Current:  claude-opus-4-8
+  Template: claude-fable-5
 Upgrade model? (y/N):
 ```
 
@@ -440,7 +442,7 @@ Cursor はコードベースでの設定が困難なため、推奨ルールを�
 
 `~/.codex/config.toml` に以下を安全にマージします（TOML フォーマット）。
 
-- **モデル**: `gpt-5.5`（既存設定は保持、`--upgrade-model` で強制上書き）
+- **モデル**: `gpt-5.6-sol`（既存設定は保持、`--upgrade-model` で強制上書き）
 - **推論レベル**: `model_reasoning_effort = "high"`
 - **承認ポリシー**: `approval_policy = "on-request"`
 - **サンドボックス**: `sandbox_mode = "read-only"`（プロジェクトごとに `workspace-write` 等へ昇格可能）
@@ -681,7 +683,7 @@ Cursor を選択した場合、スタック固有のコーディングルール�
 
 | レベル | 内容 | 例 |
 |-------|------|-----|
-| **Level 0: 自動実行** | AI が確認なしで自動実行すべき項目 | Issue 作成、ブランチ作成、品質チェック実行、計画のインライン実行 |
+| **Level 0: 自動実行** | AI が確認なしで自動実行すべき項目 | Issue 作成、ブランチ作成、品質チェック実行、計画のサブエージェント駆動実行 |
 | **Level 1: 必須** | 必ず守るべきルール | main で作業しない、ブランチ名に Issue 番号を含める、エラーコードの即時登録 |
 | **Level 2: 重要** | 品質を保つためのルール | コーディング規約の遵守、テスト実装、ドキュメント駆動開発 |
 | **Level 3: 推奨** | 余裕があれば対応 | パフォーマンス最適化、セキュリティ強化、アクセシビリティ |

@@ -26,7 +26,7 @@ See: https://developers.openai.com/codex/guides/agents-md
 |----------|------------|-------|
 | Before new feature/change | `.codex/skills/superpowers/brainstorming/SKILL.md` | Explore requirements first |
 | Multi-step implementation planning | `.codex/skills/superpowers/writing-plans/SKILL.md` | Plan before code |
-| Plan execution | `.codex/skills/superpowers/executing-plans/SKILL.md` | Inline execution |
+| Plan execution | `.codex/skills/superpowers/subagent-driven-development/SKILL.md` | Subagent-driven by default |
 | Bug / test failure investigation | `.codex/skills/superpowers/systematic-debugging/SKILL.md` | Debug before fix |
 | Testing implementation | `.codex/skills/superpowers/test-driven-development/SKILL.md` | TDD |
 | Receiving code review | `.codex/skills/superpowers/receiving-code-review/SKILL.md` | Verify, not blind agree |
@@ -37,7 +37,7 @@ See: https://developers.openai.com/codex/guides/agents-md
 
 ### Plan Execution Rules
 
-1. **Always inline execution** - Execute plans in the current conversation.
+1. **Subagent-driven execution by default** - Execute plans by spawning a fresh subagent per task and reviewing between tasks (see `.codex/skills/superpowers/subagent-driven-development/SKILL.md`). Use inline execution (`executing-plans`) only when the user explicitly requests it.
 2. **Plan files are not committed** - `docs/superpowers/plans/*.md` must NOT be committed.
 3. **Plan file lifecycle** - Kept locally during implementation, deleted after PR merge.
 
@@ -47,16 +47,20 @@ See: https://developers.openai.com/codex/guides/agents-md
 
 | Task Type | Model | Reasoning Effort | Examples |
 |-----------|-------|------------------|----------|
+| Initial planning / design framing | `gpt-5.6-sol` | `high` | First-pass requirements decomposition, architecture option framing, implementation strategy design |
 | Codebase exploration / context gathering | `gpt-5.4-mini` | `medium` | Understanding project structure during planning, read-heavy scans, finding related implementations |
 | Simple mechanical search | `gpt-5.4-mini` | `low` | File/symbol lookup, listing usages, collecting file paths |
-| Review / verification / architecture critique | `gpt-5.5` | `high` | 6-persona quality-check review, code review, security analysis, spec/plan review |
+| Implementation / concrete work | `gpt-5.6-terra` (alternative: `gpt-5.6-sol` with lowered effort) | `medium` | Task-by-task implementation subagents, test writing, refactoring, migrations |
+| Review / verification / architecture critique | `gpt-5.6-sol` | `high` | 6-persona quality-check review, code review, security analysis, spec/plan review |
 
 Rules:
 
-1. **Exploration subagents** (read-only research during planning) -> `gpt-5.4-mini` with `medium` effort. Speed matters more than depth; results are distilled back to the main session.
-2. **Review subagents** (quality-check personas, code reviewers) -> `gpt-5.5` with `high` effort. Review quality directly gates push/merge, so always use the most capable model.
-3. If reusable, define these as project agents under `.codex/agents/` (e.g. `explorer.toml` with `model = "gpt-5.4-mini"`, `reviewer.toml` with `model = "gpt-5.5"` / `model_reasoning_effort = "high"` / `sandbox_mode = "read-only"`). Otherwise, state the model explicitly in the spawn prompt.
-4. When in doubt between two tiers, choose the more capable model.
+1. **Planning/design subagents** -> `gpt-5.6-sol` with `high` effort. This is the Codex-side counterpart of Fable in Claude Code.
+2. **Exploration subagents** (read-only research during planning) -> `gpt-5.4-mini` with `medium` effort. Speed matters more than depth; results are distilled back to the main session.
+3. **Implementation subagents** (task executors in subagent-driven execution) -> `gpt-5.6-terra`, or `gpt-5.6-sol` with `model_reasoning_effort` lowered to `medium`/`low`. Do not spend high-effort frontier models on routine implementation.
+4. **Review subagents** (quality-check personas, code reviewers) -> `gpt-5.6-sol` with `high` effort. Review quality directly gates push/merge, so always use the most capable model.
+5. If reusable, define these as project agents under `.codex/agents/` (e.g. `implementer.toml` with `model = "gpt-5.6-terra"`, `reviewer.toml` with `model = "gpt-5.6-sol"` / `model_reasoning_effort = "high"` / `sandbox_mode = "read-only"`). Otherwise, state the model explicitly in the spawn prompt.
+6. When in doubt between two tiers, choose the more capable model.
 
 ---
 
@@ -85,7 +89,7 @@ When you run `git push`, Codex checks for `.quality-check-passed`. If missing, t
 
 ### Multi-Persona Review
 
-6 specialist personas review in parallel (each spawned with `gpt-5.5` / `model_reasoning_effort = "high"` - see Subagent Model Selection):
+6 specialist personas review in parallel (each spawned with `gpt-5.6-sol` / `model_reasoning_effort = "high"` - see Subagent Model Selection):
 
 | Persona | Focus Area |
 |---------|------------|
@@ -109,7 +113,7 @@ When you run `git push`, Codex checks for `.quality-check-passed`. If missing, t
 1. **Create GitHub Issue** - `gh issue create` to get Issue number
 2. **Create branch** - `git checkout -b [type]/[description]-[issue-number]`
 3. **Include Issue/branch/PR in plans** - Phase 0: Issue/branch creation, final Phase: PR creation
-4. **Always inline execution** - Execute plans inline (in current conversation)
+4. **Subagent-driven execution** - Execute plans via subagent-driven-development (a fresh subagent per task), not inline
 5. **Run quality-check before push** - All checks must pass before `git push`
 
 ### Level 1: Must Follow
