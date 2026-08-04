@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.3](https://github.com/Crearize/ai-dev-helm/compare/v1.8.2...v1.8.3) (2026-08-04)
+
+
+### Fixed
+
+* make quality-gate hook cross-platform via Node script ([42cc473](https://github.com/Crearize/ai-dev-helm/commit/42cc473067e0790c1e2fec15f54f3bb7250e5b2c))
+* resolve template/sync inconsistencies from subagent-driven default ([5958950](https://github.com/Crearize/ai-dev-helm/commit/59589505dc398bde7c8867bc86831ef131ae2822))
+* resolve template/sync inconsistencies from subagent-driven default (closes [#63](https://github.com/Crearize/ai-dev-helm/issues/63)) ([1a77e48](https://github.com/Crearize/ai-dev-helm/commit/1a77e480f911bdb286888a5642d0a335f94434aa))
+
 ## [1.8.2](https://github.com/Crearize/ai-dev-helm/compare/v1.8.1...v1.8.2) (2026-08-04)
 
 
