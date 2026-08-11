@@ -17,6 +17,8 @@ description: 作業完了前にセッション内の改善ポイントを抽出�
 
 `quality-check` の最終段階、`.quality-check-passed` を作成する前に必ず実行する。
 
+フラグはコミット紐付け型（作成時の HEAD を記録した JSON）であり、hook に消費されない。承認された改善の反映先が**ハーネスファイル**（`CLAUDE.md` / `AGENTS.md` / `.cursorrules` / `.claude/**` / `.codex/**` / `.cursor/**` / `skills/project/**` / `skills/superpowers/**` / `.github/review-*.md` / `documents/development/coding-rules/**`）のみであれば、フラグ作成後・マージ前に追加コミットしてもフラグは無効化されず、再レビューサイクルは不要。
+
 以下のタイミングでも必要に応じて実行する:
 
 - マージ依頼または PR 作成依頼を受けたとき
