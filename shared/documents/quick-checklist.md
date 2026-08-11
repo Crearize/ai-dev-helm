@@ -23,7 +23,9 @@ A quick-reference checklist for AI tools when working on development tasks.
   - When adding a new feature/service, requirement, prerequisite, or behavior change
   - Existing doc -> update; no doc yet -> create under `documents/` or `docs/`
 
-## Before Push (Required - via /quality-check)
+## Before Merge (Required - via /quality-check)
+
+> Feature-branch pushes are not gated. Run /quality-check before `gh pr merge`, `git merge` on main, or a direct push to main. Harness-only diffs skip the check entirely.
 
 ### Static Checks
 - [ ] **Backend quality check passed** (linting + static analysis + tests + coverage + build)
@@ -32,8 +34,8 @@ A quick-reference checklist for AI tools when working on development tasks.
 ### Unit Tests
 - [ ] **Frontend tests passed**
 
-### Review Cycles (minimum 2 cycles)
-- [ ] **Multi-persona review completed** (Security / Architect / QA / Integration / Performance / Requirements)
+### Review Cycles (minimum 1 cycle; repeat on High/Medium findings)
+- [ ] **Multi-persona review completed** (staged by diff size: <200 lines -> Security / QA / Integration, 200+ -> all 6 personas)
 - [ ] **Must-fix items (Priority: High) = 0**
 - [ ] **Report data saved** (`.quality-check-report.json`)
 

@@ -40,9 +40,9 @@ Files are merged with closer paths overriding earlier ones (combined size limit:
 `.codex/hooks.json` defines a `PreToolUse` hook that:
 
 1. Runs before every Bash tool invocation
-2. If the command starts with `git push`, checks for `.quality-check-passed`
-3. If the flag is missing, blocks the push with a reason
-4. If present, consumes the flag (one-time use)
+2. If the command is `gh pr merge`, `git merge` on main/master, or a push targeting main/master, validates `.quality-check-passed` (commit-bound JSON written by `/quality-check`)
+3. Blocks with a reason if the flag is missing, invalid, or non-harness code changed after the recorded commit
+4. The flag is not consumed; harness-only follow-up commits keep it valid. Pushes to feature branches are never gated, and harness-only diffs skip the gate entirely
 
 Project-local hooks only load when Codex marks the project as trusted.
 

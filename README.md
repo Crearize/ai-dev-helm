@@ -290,7 +290,7 @@ skills/
 ```yaml
 ---
 name: quality-check
-description: プッシュ前に必ず実行。静的チェック・テスト・レビューを実施。
+description: マージ前に必ず実行。静的チェック・テスト・レビューを実施。
 ---
 
 # Quality Check
@@ -391,14 +391,15 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 - `docker system prune`
 - `npm/pnpm/yarn publish`
 
-#### Push 前の品質チェック強制フック
+#### マージ前の品質チェック強制フック
 
-`settings.json` には `PreToolUse` フックが設定されており、`git push` を実行する際に `.quality-check-passed` フラグファイルの存在をチェックします。
+`settings.json` には `PreToolUse` フックが設定されており、`gh pr merge` / main 上での `git merge` / main への直接 `git push` を実行する際に `.quality-check-passed` フラグの有効性を検証します。**feature ブランチへの push はゲートされません**。
 
-- フラグファイルがない場合: push がブロックされ、品質チェックの実行を促すメッセージが表示される
-- フラグファイルがある場合: push が実行され、フラグファイルは自動削除される（ワンタイム）
+- フラグは `/quality-check` 通過時の HEAD を記録した JSON（`{branch, commit}`）で、消費（削除）されません
+- 記録コミット以降の変更がハーネスファイル（CLAUDE.md、スキル等）のみであればフラグは有効なまま。非ハーネスのコード変更が入ると無効になり、再チェックが必要です
+- 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます
 
-つまり、push のたびに品質チェックを通す必要があります。
+つまり、main に取り込むたびに品質チェックを通す必要がありますが、レビュー後のハーネス微修正で再チェックは発生しません。
 
 ### グローバルレベルの保護（personal コマンド）
 
@@ -594,10 +595,10 @@ your-project/
 | `CLAUDE.md` | Claude Code が会話開始時に読み込む設定ファイル。プロジェクト概要、ルール、コマンド一覧を記述 |
 | `.cursorrules` | Cursor が参照するプロジェクト設定ファイル |
 | `AGENTS.md` | Codex CLI が会話開始時に読み込む設定ファイル（プロジェクトルートからチェーンマージ） |
-| `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施の push をブロックするフックなど |
+| `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施のマージ（main への取り込み）をブロックするフックなど |
 | `.claude/hooks/` / `.codex/hooks/` | 品質ゲートフック本体（`quality-gate.cjs`）。Node 製のため Windows / macOS / Linux で同一動作（`jq` 等の外部ツール不要） |
 | `.codex/config.toml` | Codex のプロジェクトローカル設定（approval/sandbox） |
-| `.codex/hooks.json` | Codex の PreToolUse フック設定。`.quality-check-passed` がないと push をブロック |
+| `.codex/hooks.json` | Codex の PreToolUse フック設定。有効な `.quality-check-passed` がないと main へのマージ・直接 push をブロック |
 | `.claude/rules/` | Claude Code が自動読み込みするコーディングルール |
 | `.cursor/rules/*.mdc` | Cursor が自動読み込みするコーディングルール（glob パターンで適用ファイルを制御） |
 | `.codex/rules/` | Codex 用のコーディングルール（AGENTS.md から参照） |
@@ -827,9 +828,9 @@ GitHub の Actions タブから `Sync Superpowers Skills` ワークフローを�
 
 どれでも問題なく使えます。複数併用する場合は、セットアップ時に対応する番号をスペース区切りで入力してください（例: `1 2 3` で 3 つすべて）。スキルは共有ディレクトリ（`skills/`）を通じて全ツールで共有されます。
 
-### Q: Codex でも push 前の品質チェックは強制されますか？
+### Q: Codex でもマージ前の品質チェックは強制されますか？
 
-されます。`.codex/hooks.json` の `PreToolUse` フックが `git push` をインターセプトし、`.quality-check-passed` フラグファイルがなければブロックします。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
+されます。`.codex/hooks.json` の `PreToolUse` フックが `gh pr merge` / main 上での `git merge` / main への直接 push を検査し、有効な `.quality-check-passed` フラグ（commit 紐付け JSON）がなければブロックします。feature ブランチへの push はゲートされません。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
 
 ### Q: セットアップ後に ai-dev-helm リポジトリは必要ですか？
 
