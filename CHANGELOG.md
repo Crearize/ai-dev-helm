@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1](https://github.com/Crearize/ai-dev-helm/compare/v1.9.0...v1.9.1) (2026-08-12)
+
+
+### Fixed
+
+* close quality-gate bypass and mis-resolution paths in PreToolUse hook ([a586f8f](https://github.com/Crearize/ai-dev-helm/commit/a586f8fc771e79af984ac1c4ee1ec7896d906260))
+* close quality-gate bypass and mis-resolution paths in PreToolUse hook ([0b7271b](https://github.com/Crearize/ai-dev-helm/commit/0b7271b1246c7ca60c43215f3820d2b5dc7f278b))
+
 ## [1.9.0](https://github.com/Crearize/ai-dev-helm/compare/v1.8.3...v1.9.0) (2026-08-12)
 
 
