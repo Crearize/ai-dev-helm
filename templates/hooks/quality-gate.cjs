@@ -85,15 +85,23 @@ function positionalArgs(segment) {
 }
 
 function pushTargetsMain(command, branch) {
-  const m = command.match(GIT_PUSH_RE);
-  if (!m) return false;
-  // First positional arg is the remote; the rest are refspecs.
-  const refspecs = positionalArgs(m[2]).slice(1);
-  if (refspecs.length === 0) return isMainBranch(branch);
-  return refspecs.some((spec) => {
-    const dst = spec.includes(':') ? spec.split(':').pop() : spec;
-    return isMainBranch(dst.replace(/^\+/, '').replace(/^refs\/heads\//, ''));
-  });
+  // Scan every push segment in the command line, not just the first one:
+  // `git push origin feature && git push origin main` must gate on the second.
+  const segments = command.matchAll(new RegExp(GIT_PUSH_RE.source, 'g'));
+  for (const m of segments) {
+    // First positional arg is the remote; the rest are refspecs.
+    const refspecs = positionalArgs(m[2]).slice(1);
+    if (refspecs.length === 0) {
+      if (isMainBranch(branch)) return true;
+      continue;
+    }
+    const hit = refspecs.some((spec) => {
+      const dst = spec.includes(':') ? spec.split(':').pop() : spec;
+      return isMainBranch(dst.replace(/^\+/, '').replace(/^refs\/heads\//, ''));
+    });
+    if (hit) return true;
+  }
+  return false;
 }
 
 function isHarnessOnly(files) {
@@ -130,9 +138,13 @@ function readFlag() {
 
 // Determine the commit whose content is about to land on main.
 // Never derived from the flag (see spec A-3).
-function resolveSourceTip(command, branch, isPush) {
-  const mergeMatch = command.match(GIT_MERGE_RE);
-  if (mergeMatch) {
+// The merge argument is the tip only when the merge itself is the gated
+// operation (i.e. it runs on main). A non-gated merge on a feature branch
+// (e.g. `git merge origin/main && git push origin main`) must not hijack
+// tip resolution away from HEAD.
+function resolveSourceTip(command, branch, isPush, mergeGated) {
+  if (mergeGated) {
+    const mergeMatch = command.match(GIT_MERGE_RE);
     // Try each positional token until one resolves; skips -m message text
     // and other flag values that are not refs.
     for (const ref of positionalArgs(mergeMatch[2])) {
@@ -167,7 +179,20 @@ function resolveSourceTip(command, branch, isPush) {
 }
 
 function block(reason) {
-  console.log(JSON.stringify({ decision: 'block', reason }));
+  // Emit both the current PreToolUse schema (hookSpecificOutput.
+  // permissionDecision) and the legacy top-level decision field, so the
+  // gate keeps blocking on both new and old Claude Code versions.
+  console.log(
+    JSON.stringify({
+      decision: 'block',
+      reason,
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: reason,
+      },
+    })
+  );
 }
 
 let input = '';
@@ -192,14 +217,14 @@ process.stdin.on('end', () => {
   const branch = trySh('git branch --show-current');
   if (branch === null) return; // Not a git repo etc.: fail open.
 
-  let gated = false;
-  if (isGh) gated = true;
-  else if (isMerge && isMainBranch(branch) && !MERGE_CONTROL_RE.test(command)) {
-    gated = true; // --abort/--continue/--quit/--skip are conflict recovery, not merges
-  } else if (isPush && pushTargetsMain(command, branch)) gated = true;
+  // --abort/--continue/--quit/--skip are conflict recovery, not merges.
+  const mergeGated =
+    isMerge && isMainBranch(branch) && !MERGE_CONTROL_RE.test(command);
+  const gated =
+    isGh || mergeGated || (isPush && pushTargetsMain(command, branch));
   if (!gated) return;
 
-  const tip = resolveSourceTip(command, branch, isPush);
+  const tip = resolveSourceTip(command, branch, isPush, mergeGated);
   if (!tip) {
     return block(
       'Cannot verify the merge source. Run the merge from the feature branch, or re-run /quality-check.'
@@ -221,8 +246,11 @@ process.stdin.on('end', () => {
     );
   }
 
-  if (isPush && isMainBranch(branch)) {
+  if (isPush && isMainBranch(branch) && !mergeGated) {
     // Pushing an already-merged main: the checked commit must be part of it.
+    // Only valid when the push is the sole gated operation — when a merge is
+    // chained in (`git merge feat && git push origin main`) the merge tip is
+    // what lands on main and must be verified below instead.
     if (shOk(`git merge-base --is-ancestor ${flag.commit} HEAD`)) return;
     return block(
       'Code changed after the last quality check. Re-run /quality-check before merging.'
