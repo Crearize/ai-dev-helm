@@ -19,8 +19,9 @@
 |-----------|-----|------|------|
 | `cycle_number` | `number` | 必須 | サイクル番号（1始まり） |
 | `findings` | `Finding[]` | 必須 | このサイクルで検出された指摘事項 |
-| `review_mode` | `"full" \| "reduced"` | 任意 | レビュー縮退の適用有無。`full`: 6ペルソナ / `reduced`: docs/infraのみの変更による縮退（省略時は `full` 扱い） |
-| `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `reduced` の場合は必須） |
+| `review_mode` | `"full" \| "staged" \| "reduced"` | 任意 | 適用ペルソナセットの種別。`full`: 6ペルソナ / `staged`: 差分規模200行未満による3ペルソナ段階化 / `reduced`: docs/infraのみの変更による縮退（省略時は `full` 扱い） |
+| `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `staged` または `reduced` の場合は必須） |
+| `diff_line_count` | `number` | 任意 | 段階化判定に使った差分行数（追加+削除、生成ファイル除外後。`review_mode` が `staged` または `full` でコード変更を含む場合に記録） |
 
 ### Finding オブジェクト
 

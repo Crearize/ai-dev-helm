@@ -76,20 +76,28 @@ Rules:
 ### Flow
 
 ```
+Harness-only diff? -> skip quality-check entirely (the gate exempts it)
+    |
 Change area detection (git diff)
     |
 Static checks + tests
     |
-Review cycles (code changes: 6 personas x 2+ cycles / docs+infra only: reduced personas x 1+ cycle)
+Review cycles (staged personas by diff size, min 1 cycle; repeat only on High/Medium findings)
     |
 E2E tests (final verification)
     |
-Report data saved -> .quality-check-passed created -> push allowed
+Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
 ```
+
+### Merge Gate
+
+- The gate applies to `gh pr merge`, `git merge` on main, and direct pushes to main. **Pushes to feature branches are NOT gated** - push freely at any time.
+- `.quality-check-passed` is commit-bound JSON (`{branch, commit}`) and is not consumed. It stays valid while post-check commits touch only harness files, so `self-improvement` edits never force a re-review.
+- Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely.
 
 ### Multi-Persona Review
 
-6 specialist personas review in parallel as Agents (each dispatched with `model: opus` - see Subagent Model Selection):
+Specialist personas review in parallel as Agents (each dispatched with `model: opus` - see Subagent Model Selection):
 
 | Persona | Focus Area |
 |---------|-----------|
@@ -101,8 +109,9 @@ Report data saved -> .quality-check-passed created -> push allowed
 | Requirements Consistency Reviewer | Issue/design alignment, acceptance criteria, domain terminology |
 
 - **Completion criteria**: 0 must-fix items (Priority: High) from all applied personas
-- Code changes: minimum 2 cycles. Docs/infra-only changes: reduced persona set, minimum 1 cycle (see `quality-check` skill)
-- Repeat until 0 must-fix items
+- Code changes under 200 diff lines (generated files excluded): 3 personas (Security, QA, Integration Architecture). 200+ lines: all 6 personas. Docs/infra-only changes: reduced persona set (see `quality-check` skill)
+- Minimum 1 cycle. Run another cycle only if the previous one had High/Medium findings; repeat until 0 must-fix items
+- After fixes, re-verify only the affected scope (static checks + related tests + re-check by the personas that raised the findings) - no full restart
 - Run `self-improvement` before creating `.quality-check-passed`
 
 ---
@@ -117,7 +126,7 @@ Report data saved -> .quality-check-passed created -> push allowed
 2. **Create branch** - `git checkout -b [type]/[description]-[issue-number]`
 3. **Include Issue/branch/PR in plans** - Phase 0: Issue/branch creation, final Phase: PR creation
 4. **Subagent-driven execution** - Execute plans via `superpowers:subagent-driven-development` (a fresh subagent per task), not inline
-5. **Run /quality-check before push** - All checks must pass before `git push`
+5. **Run /quality-check before merging into main** - Required before `gh pr merge`, `git merge` on main, or a direct push to main. Feature-branch pushes need no check
 
 ### Level 1: Must Follow
 

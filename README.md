@@ -253,7 +253,7 @@ Select options (space-separated): 1 2 3
 | スキル名 | 概要 | いつ使うか |
 |---------|------|-----------|
 | **branch-workflow** | ブランチ作業フロー | 作業開始時の Issue 作成・ブランチ作成 |
-| **quality-check** | 品質チェック | push 前の静的チェック・テスト・レビュー |
+| **quality-check** | 品質チェック | マージ前の静的チェック・テスト・レビュー |
 | **server-startup** | サーバー起動 | E2E・ブラウザ検証・開発サーバーの起動/停止手順 |
 | **worktree-parallel** | Worktree 並列開発 | Git worktree の配置・ポート割当・環境コピー・クリーンアップ |
 | **backend-development** | バックエンド開発 | バックエンド実装時の規約・パターン |
@@ -290,7 +290,7 @@ skills/
 ```yaml
 ---
 name: quality-check
-description: プッシュ前に必ず実行。静的チェック・テスト・レビューを実施。
+description: マージ前に必ず実行。静的チェック・テスト・レビューを実施。
 ---
 
 # Quality Check
@@ -302,20 +302,22 @@ description: プッシュ前に必ず実行。静的チェック・テスト・�
 
 ## 品質チェック（quality-check）の詳細
 
-`quality-check` スキルは、push 前にローカルで品質を担保するための多段ゲートです。CI はビルド確認のみの位置づけで、静的チェック・テスト・レビューは全てローカルで完結します。
+`quality-check` スキルは、main へのマージ前にローカルで品質を担保するための多段ゲートです。CI はビルド確認のみの位置づけで、静的チェック・テスト・レビューは全てローカルで完結します。feature ブランチへの push はゲートされず、ハーネスファイル（CLAUDE.md、スキル等）のみの変更はチェック自体が不要です。
 
 ### 実行フロー
 
 ```
+Step -1: ハーネスのみ変更か判定（該当なら quality-check 不要）
+  ↓
 Step 1: 変更領域の判定（git diff でbackend/frontend/docs/infraを自動検出）
   ↓
 Step 2: 静的チェック（linter, formatter, build）
   ↓
 Step 3: ユニットテスト
   ↓
-Step 4: マルチペルソナ・レビュー（最低2サイクル）
-  ├── 指摘あり → 修正 → Step 2 に戻る
-  └── 指摘なし & 2回以上完了 → Step 5 へ
+Step 4: マルチペルソナ・レビュー（差分規模に応じ3〜6ペルソナ×最低1サイクル）
+  ├── 指摘あり → 修正 → 影響範囲のみ再検証（高/中指摘が出た場合のみ次サイクル）
+  └── 高/中指摘なし → Step 5 へ
   ↓
 Step 5: E2E テスト
   ↓
@@ -323,12 +325,12 @@ Step 5.5: サーバー停止
   ↓
 Step 5.75: 自己改善候補の確認
   ↓
-Step 6: レポート保存 + フラグファイル作成 → push 可能
+Step 6: レポート保存 + フラグファイル作成（commit 紐付け JSON）→ マージ可能
 ```
 
-### 6 つの専門ペルソナによるレビュー
+### 専門ペルソナによるレビュー
 
-Step 4 では、6 つの異なる専門家ペルソナが並列のサブエージェントとしてレビューを実施します。
+Step 4 では、専門家ペルソナが並列のサブエージェントとしてレビューを実施します。差分が200行未満（生成ファイル除外）ならセキュリティ・QA・統合アーキテクチャの3ペルソナ、200行以上なら以下の6ペルソナ全てを適用します。
 
 | ペルソナ | 重点観点 |
 |---------|---------|
@@ -359,10 +361,10 @@ Claude Code / Codex はサブエージェントごとのモデルをテンプレ
 
 ### サイクルルール
 
-- **コード変更を含む場合は最低 2 サイクル実行**（指摘ゼロでも 2 回完走。拡充した 6 ペルソナで検出漏れを防ぐ）
-- **docs/infra のみの変更ではペルソナを 3〜5 に絞り、最低 1 サイクルに縮退**（レビューコスト最適化）
+- **最低 1 サイクル実行**。2 周目以降は直前サイクルで優先度 高/中 の指摘があった場合のみ実施
+- **コード変更はペルソナを差分規模で段階化**（200 行未満: 3 ペルソナ / 200 行以上: 6 ペルソナ）。docs/infra のみの変更はペルソナを 3〜5 に絞って縮退（レビューコスト最適化）
 - **必須修正（優先度: 高）が 0 件になるまで何度でも繰り返す**
-- 修正後は Step 2（静的チェック）から再実行
+- 修正後は影響範囲のみ再検証（該当領域の静的チェック・関連テスト・指摘元ペルソナの再確認）
 - 10 サイクル到達時はユーザーに判断を仰ぐ
 
 ### 自己改善ハーネス
@@ -391,14 +393,15 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 - `docker system prune`
 - `npm/pnpm/yarn publish`
 
-#### Push 前の品質チェック強制フック
+#### マージ前の品質チェック強制フック
 
-`settings.json` には `PreToolUse` フックが設定されており、`git push` を実行する際に `.quality-check-passed` フラグファイルの存在をチェックします。
+`settings.json` には `PreToolUse` フックが設定されており、`gh pr merge` / main 上での `git merge` / main への直接 `git push` を実行する際に `.quality-check-passed` フラグの有効性を検証します。**feature ブランチへの push はゲートされません**。
 
-- フラグファイルがない場合: push がブロックされ、品質チェックの実行を促すメッセージが表示される
-- フラグファイルがある場合: push が実行され、フラグファイルは自動削除される（ワンタイム）
+- フラグは `/quality-check` 通過時の HEAD を記録した JSON（`{branch, commit}`）で、消費（削除）されません
+- 記録コミット以降の変更がハーネスファイル（CLAUDE.md、スキル等）のみであればフラグは有効なまま。非ハーネスのコード変更が入ると無効になり、再チェックが必要です
+- 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます
 
-つまり、push のたびに品質チェックを通す必要があります。
+つまり、main に取り込むたびに品質チェックを通す必要がありますが、レビュー後のハーネス微修正で再チェックは発生しません。
 
 ### グローバルレベルの保護（personal コマンド）
 
@@ -594,10 +597,10 @@ your-project/
 | `CLAUDE.md` | Claude Code が会話開始時に読み込む設定ファイル。プロジェクト概要、ルール、コマンド一覧を記述 |
 | `.cursorrules` | Cursor が参照するプロジェクト設定ファイル |
 | `AGENTS.md` | Codex CLI が会話開始時に読み込む設定ファイル（プロジェクトルートからチェーンマージ） |
-| `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施の push をブロックするフックなど |
+| `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施のマージ（main への取り込み）をブロックするフックなど |
 | `.claude/hooks/` / `.codex/hooks/` | 品質ゲートフック本体（`quality-gate.cjs`）。Node 製のため Windows / macOS / Linux で同一動作（`jq` 等の外部ツール不要） |
 | `.codex/config.toml` | Codex のプロジェクトローカル設定（approval/sandbox） |
-| `.codex/hooks.json` | Codex の PreToolUse フック設定。`.quality-check-passed` がないと push をブロック |
+| `.codex/hooks.json` | Codex の PreToolUse フック設定。有効な `.quality-check-passed` がないと main へのマージ・直接 push をブロック |
 | `.claude/rules/` | Claude Code が自動読み込みするコーディングルール |
 | `.cursor/rules/*.mdc` | Cursor が自動読み込みするコーディングルール（glob パターンで適用ファイルを制御） |
 | `.codex/rules/` | Codex 用のコーディングルール（AGENTS.md から参照） |
@@ -615,7 +618,7 @@ your-project/
 |---------|------|
 | **development-policy.md** | AI 駆動開発の基本方針、開発フロー（ブランチ確認→プロンプト→実装→PR→レビュー→マージ）、プロジェクト構造、API 設計（RESTful エンドポイント規約）、エラーハンドリング（統一レスポンス形式）、ログ戦略（レベル定義、機密情報マスキング）、テスト戦略（カバレッジ目標: 全体 80%+、ビジネスロジック 90%+） |
 | **naming-conventions.md** | ファイル・クラス・メソッド・DB・API・Git など全領域の命名規約を統一的に定義。Java（UpperCamelCase/lowerCamelCase）、TypeScript/React（PascalCase コンポーネント、use プレフィックス Hook）、DB（snake_case、複数形テーブル名）、API（/api/v1/resources）など |
-| **quick-checklist.md** | 作業前（Issue 作成、ブランチ確認）・作業中（規約遵守、テスト記述）・push 前（quality-check 実行）・PR 作成（implementation-report 実行）のクイックリファレンス |
+| **quick-checklist.md** | 作業前（Issue 作成、ブランチ確認）・作業中（規約遵守、テスト記述）・マージ前（quality-check 実行）・PR 作成（implementation-report 実行）のクイックリファレンス |
 | **error-codes.md** | エラーコード体系の定義。`[FEATURE]_[TYPE]_[DETAIL]` 形式で HTTP ステータスコードとの対応（400/401/403/404/409/500）を含む |
 | **coding-rules/common-rules.md** | Git/GitHub 規約（Conventional Commits 形式）、コメント規約（TODO/FIXME にデッドライン必須）、環境変数管理、セキュリティルール（OWASP Top 10 全項目の対策指針、CSRF 対策、依存パッケージセキュリティ）、パフォーマンスルール（N+1 防止、インデックス設計、ページネーション必須） |
 | **coding-rules/api-design-rules.md** | REST API 設計ルール。エンドポイント命名（lowercase + hyphen-case、複数形）、URL ネスト上限（2 階層まで）、HTTP メソッドと冪等性、パス vs クエリパラメータの使い分け、ページネーション仕様（page/size/sort）、エラーレスポンス統一形式、後方互換性ポリシー |
@@ -827,9 +830,9 @@ GitHub の Actions タブから `Sync Superpowers Skills` ワークフローを�
 
 どれでも問題なく使えます。複数併用する場合は、セットアップ時に対応する番号をスペース区切りで入力してください（例: `1 2 3` で 3 つすべて）。スキルは共有ディレクトリ（`skills/`）を通じて全ツールで共有されます。
 
-### Q: Codex でも push 前の品質チェックは強制されますか？
+### Q: Codex でもマージ前の品質チェックは強制されますか？
 
-されます。`.codex/hooks.json` の `PreToolUse` フックが `git push` をインターセプトし、`.quality-check-passed` フラグファイルがなければブロックします。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
+されます。`.codex/hooks.json` の `PreToolUse` フックが `gh pr merge` / main 上での `git merge` / main への直接 push を検査し、有効な `.quality-check-passed` フラグ（commit 紐付け JSON）がなければブロックします。feature ブランチへの push はゲートされません。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
 
 ### Q: セットアップ後に ai-dev-helm リポジトリは必要ですか？
 

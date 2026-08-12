@@ -36,7 +36,7 @@ Skills are invoked via the `Skill` tool:
 ```
 /brainstorming    - Start design exploration
 /writing-plans    - Create implementation plan
-/quality-check    - Run pre-push quality checks
+/quality-check    - Run pre-merge quality checks
 ```
 
 ## Customization

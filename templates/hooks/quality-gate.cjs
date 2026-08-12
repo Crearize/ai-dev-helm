@@ -1,23 +1,174 @@
 #!/usr/bin/env node
 'use strict';
 
-// PreToolUse hook: block `git push` until the quality check has passed.
+// PreToolUse hook: gate merges into main/master (and direct pushes to
+// main/master) behind a passing quality check.
 //
-// Reads the hook payload from stdin, and if the Bash command is a git push,
-// requires the .quality-check-passed flag file (created by /quality-check)
-// to exist in the project root. The flag is consumed on a successful push
-// so every push requires a fresh quality check.
+// The .quality-check-passed flag is JSON written by /quality-check:
+//   { "branch": "<branch at check time>", "commit": "<HEAD sha at check time>" }
+// `branch` is informational only — authorization uses `commit` alone.
+// The flag is NOT consumed here. It stays valid while everything that changed
+// after flag.commit is a harness file; /quality-check deletes and recreates
+// it on each run.
 //
-// Implemented in Node (a documented prerequisite of ai-dev-helm) instead of
-// jq/bash so the hook works identically on Windows (cmd/PowerShell), macOS,
-// and Linux. See https://github.com/Crearize/ai-dev-helm/issues/63.
+// Gated commands (nothing else is touched):
+//   - gh pr merge ...
+//   - git merge ...            while the current branch is main/master
+//   - git push targeting main/master (explicit refspec or current branch)
+// Pushes to feature branches always pass.
+//
+// Failure policy: git failures during command detection (not a repo, empty
+// branch name) fail open; verification failures after a command is confirmed
+// gated (unresolvable source tip, gh errors) fail closed.
+//
+// Implemented in Node (a documented prerequisite of ai-dev-helm) so the hook
+// works identically on Windows (cmd/PowerShell), macOS, and Linux.
 
 const fs = require('fs');
+const { execSync } = require('child_process');
 
 const FLAG_FILE = '.quality-check-passed';
-// A git push anywhere in the command line, including chained commands
-// (`cd x && git push`), subshells, and `git -C <dir> push`.
-const GIT_PUSH_RE = /(^|[;&|(])\s*git\s+(-C\s+\S+\s+)?push([\s;&|)]|$)/;
+
+// Subcommand detection anywhere in the command line, including chained
+// commands, subshells, and `git -C <dir> ...`. Group 2 captures the argument
+// segment up to the next shell operator.
+const GIT_PUSH_RE = /(^|[;&|(])\s*git\s+(?:-C\s+\S+\s+)?push\b([^;&|()]*)/;
+const GIT_MERGE_RE = /(^|[;&|(])\s*git\s+(?:-C\s+\S+\s+)?merge\b([^;&|()]*)/;
+const GH_PR_MERGE_RE = /(^|[;&|(])\s*gh\s+pr\s+merge\b([^;&|()]*)/;
+const MERGE_CONTROL_RE = /\s--(abort|continue|quit|skip)\b/;
+
+// Merges/pushes whose entire (non-empty) diff matches these paths skip the
+// gate. Aligned with the self-improvement skill's reflection targets, minus
+// user-facing docs (README/docs/documents stay under the reduced review).
+const HARNESS_PATTERNS = [
+  /(^|\/)CLAUDE\.md$/,
+  /(^|\/)AGENTS\.md$/,
+  /^\.cursorrules$/,
+  /^\.claude\//,
+  /^\.codex\//,
+  /^\.cursor\//,
+  /^skills\/(project|superpowers)\//,
+  /^\.github\/review-[^/]*\.md$/,
+  /^documents\/development\/coding-rules\//,
+];
+
+function trySh(cmd, timeoutMs = 5000) {
+  try {
+    return execSync(cmd, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: timeoutMs,
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function shOk(cmd, timeoutMs = 5000) {
+  try {
+    execSync(cmd, { stdio: 'ignore', timeout: timeoutMs });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isMainBranch(name) {
+  return name === 'main' || name === 'master';
+}
+
+function positionalArgs(segment) {
+  return segment
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t && !t.startsWith('-'));
+}
+
+function pushTargetsMain(command, branch) {
+  const m = command.match(GIT_PUSH_RE);
+  if (!m) return false;
+  // First positional arg is the remote; the rest are refspecs.
+  const refspecs = positionalArgs(m[2]).slice(1);
+  if (refspecs.length === 0) return isMainBranch(branch);
+  return refspecs.some((spec) => {
+    const dst = spec.includes(':') ? spec.split(':').pop() : spec;
+    return isMainBranch(dst.replace(/^\+/, '').replace(/^refs\/heads\//, ''));
+  });
+}
+
+function isHarnessOnly(files) {
+  return (
+    files.length > 0 &&
+    files.every((f) => HARNESS_PATTERNS.some((re) => re.test(f)))
+  );
+}
+
+function diffFiles(range) {
+  const out = trySh(`git diff --name-only ${range}`);
+  if (out === null) return null;
+  return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+}
+
+function mergeBaseRef() {
+  for (const ref of ['origin/main', 'origin/master']) {
+    if (trySh(`git rev-parse --verify --quiet ${ref}`)) return ref;
+  }
+  return null;
+}
+
+function readFlag() {
+  try {
+    const flag = JSON.parse(fs.readFileSync(FLAG_FILE, 'utf8'));
+    if (flag && typeof flag.commit === 'string' && /^[0-9a-f]{7,40}$/i.test(flag.commit)) {
+      return flag;
+    }
+  } catch {
+    // Missing, legacy empty file, or malformed JSON — all invalid.
+  }
+  return null;
+}
+
+// Determine the commit whose content is about to land on main.
+// Never derived from the flag (see spec A-3).
+function resolveSourceTip(command, branch, isPush) {
+  const mergeMatch = command.match(GIT_MERGE_RE);
+  if (mergeMatch) {
+    // Try each positional token until one resolves; skips -m message text
+    // and other flag values that are not refs.
+    for (const ref of positionalArgs(mergeMatch[2])) {
+      const sha = trySh(`git rev-parse --verify --quiet "${ref}"`);
+      if (sha) return sha;
+    }
+    return null;
+  }
+  if (!isMainBranch(branch) || isPush) {
+    // Feature-branch gh pr merge / any gated push: HEAD is the content.
+    return trySh('git rev-parse --verify --quiet HEAD');
+  }
+  // gh pr merge while on main: resolve the PR head via gh (network call,
+  // bounded timeout; failure means "cannot verify" and blocks).
+  const ghMatch = command.match(GH_PR_MERGE_RE);
+  if (ghMatch) {
+    const prArg = positionalArgs(ghMatch[2])[0];
+    if (prArg) {
+      const head = trySh(
+        `gh pr view "${prArg}" --json headRefName --jq .headRefName`,
+        3000
+      );
+      if (head) {
+        return (
+          trySh(`git rev-parse --verify --quiet "origin/${head}"`) ||
+          trySh(`git rev-parse --verify --quiet "${head}"`)
+        );
+      }
+    }
+  }
+  return null;
+}
+
+function block(reason) {
+  console.log(JSON.stringify({ decision: 'block', reason }));
+}
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -30,23 +181,62 @@ process.stdin.on('end', () => {
     const payload = JSON.parse(input);
     command = (payload.tool_input && payload.tool_input.command) || '';
   } catch {
-    // Malformed payload: never block unrelated commands.
-    return;
+    return; // Malformed payload: never block unrelated commands.
   }
 
-  if (!GIT_PUSH_RE.test(command)) {
-    return;
-  }
+  const isGh = GH_PR_MERGE_RE.test(command);
+  const isMerge = GIT_MERGE_RE.test(command);
+  const isPush = GIT_PUSH_RE.test(command);
+  if (!isGh && !isMerge && !isPush) return;
 
-  if (!fs.existsSync(FLAG_FILE)) {
-    console.log(
-      JSON.stringify({
-        decision: 'block',
-        reason: 'Quality check not passed. Run /quality-check before pushing.',
-      })
+  const branch = trySh('git branch --show-current');
+  if (branch === null) return; // Not a git repo etc.: fail open.
+
+  let gated = false;
+  if (isGh) gated = true;
+  else if (isMerge && isMainBranch(branch) && !MERGE_CONTROL_RE.test(command)) {
+    gated = true; // --abort/--continue/--quit/--skip are conflict recovery, not merges
+  } else if (isPush && pushTargetsMain(command, branch)) gated = true;
+  if (!gated) return;
+
+  const tip = resolveSourceTip(command, branch, isPush);
+  if (!tip) {
+    return block(
+      'Cannot verify the merge source. Run the merge from the feature branch, or re-run /quality-check.'
     );
-    return;
   }
 
-  fs.rmSync(FLAG_FILE, { force: true });
+  // Harness-only exemption: a non-empty diff made up entirely of harness
+  // files needs no quality check at all.
+  const base = mergeBaseRef();
+  if (base) {
+    const files = diffFiles(`${base}...${tip}`);
+    if (files !== null && isHarnessOnly(files)) return;
+  }
+
+  const flag = readFlag();
+  if (!flag) {
+    return block(
+      'Quality check not passed. Run /quality-check before merging into main.'
+    );
+  }
+
+  if (isPush && isMainBranch(branch)) {
+    // Pushing an already-merged main: the checked commit must be part of it.
+    if (shOk(`git merge-base --is-ancestor ${flag.commit} HEAD`)) return;
+    return block(
+      'Code changed after the last quality check. Re-run /quality-check before merging.'
+    );
+  }
+
+  const changed = diffFiles(`${flag.commit}..${tip}`);
+  if (changed === null) {
+    return block(
+      'Cannot verify changes since the last quality check. Re-run /quality-check.'
+    );
+  }
+  if (changed.length === 0 || isHarnessOnly(changed)) return;
+  return block(
+    'Code changed after the last quality check. Re-run /quality-check before merging.'
+  );
 });

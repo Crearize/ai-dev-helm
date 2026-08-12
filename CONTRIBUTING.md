@@ -20,7 +20,7 @@ This project uses the [superpowers](https://github.com/obra/superpowers) skill s
 
 - `/brainstorming` — Explore requirements and design before implementation
 - `/writing-plans` — Create implementation plans before writing code
-- `/quality-check` — Run quality checks before pushing
+- `/quality-check` — Run quality checks before merging
 
 ## Pull Request Process
 
