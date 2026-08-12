@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0](https://github.com/Crearize/ai-dev-helm/compare/v1.8.3...v1.9.0) (2026-08-12)
+
+
+### Added
+
+* lighten quality-check cycles and bind flag to commit ([#70](https://github.com/Crearize/ai-dev-helm/issues/70)) ([03bf027](https://github.com/Crearize/ai-dev-helm/commit/03bf027fa460579b9c27abc2d9b27f22dd954d00))
+* migrate quality gate from push to merge with commit-bound flag ([#70](https://github.com/Crearize/ai-dev-helm/issues/70)) ([aac209e](https://github.com/Crearize/ai-dev-helm/commit/aac209e226c4ac7ac0a706b4bc080a6c7b09bd47))
+* migrate quality gate to merge-time with commit-bound flag ([635f465](https://github.com/Crearize/ai-dev-helm/commit/635f4650a32eedf16a88c22422db6992a2c5948a))
+
+
+### Documentation
+
+* align self-improvement and implementation-report with merge gate ([#70](https://github.com/Crearize/ai-dev-helm/issues/70)) ([40ed249](https://github.com/Crearize/ai-dev-helm/commit/40ed249f07f8c619e6782fd75d914aa6fdf7e71b))
+* sweep remaining push-gate wording in README ([#70](https://github.com/Crearize/ai-dev-helm/issues/70)) ([d1f80e6](https://github.com/Crearize/ai-dev-helm/commit/d1f80e674744d7538cfac13f4646357fb5d69baf))
+* sync harness templates with merge-gate workflow ([#70](https://github.com/Crearize/ai-dev-helm/issues/70)) ([e728dda](https://github.com/Crearize/ai-dev-helm/commit/e728dda936fbddd718d8794c29b72117fa64acf7))
+* update gate documentation for merge-based workflow ([#70](https://github.com/Crearize/ai-dev-helm/issues/70)) ([2696148](https://github.com/Crearize/ai-dev-helm/commit/2696148198b0825f9428b240ceb91d57d06772d0))
+
 ## [1.8.3](https://github.com/Crearize/ai-dev-helm/compare/v1.8.2...v1.8.3) (2026-08-04)
 
 
