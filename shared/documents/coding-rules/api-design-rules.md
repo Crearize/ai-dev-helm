@@ -2,6 +2,8 @@
 
 REST API design rules for this project.
 
+> `> Catalog:` 注記の読み方は `common-rules.md`「Catalog 注記の読み方」を参照。
+
 ## 1. Endpoint Naming
 
 ### Basic Rules
@@ -51,7 +53,7 @@ GET /api/v1/payments?studentId={studentId}&courseId={courseId}
 
 ## 5. Pagination
 
-> Catalog: D1（ページネーション欠落・無制限クエリの検出。フェーズ3で Lint 化予定 — 現在は AI レビュー担保）
+> Catalog: D1（ページネーション欠落・無制限クエリの検出。フェーズ3で Lint 化予定）
 
 ### Request Parameters
 | Parameter | Type | Default | Description |
@@ -127,7 +129,8 @@ Unified error response format:
 
 ## 8. API Response Design
 
-> Catalog: D1 / B1（リスト取得のページネーション必須は D1、レスポンスへの機密・個人情報混入禁止は B1。フェーズ3で Lint 化予定 — 現在は AI レビュー担保）
+> Catalog: D1 — リスト取得のページネーション必須 / B1 — レスポンスへの機密・個人情報混入禁止。いずれもフェーズ3で Lint 化予定。
+> ステータスコードの選択・レスポンスフィールド命名規則はカタログ対応なし — AI レビュー恒久担保。
 
 ### 成功レスポンスの一貫性
 - 単体取得: リソースオブジェクトを直接返す
@@ -144,7 +147,9 @@ Unified error response format:
 
 ## Checklist
 
-> Catalog: D1（ページネーション関連項目）/ B1（レスポンスの機密情報混入）（フェーズ3で Lint 化予定 — 現在は AI レビュー担保）
+> Catalog: D1 — ページネーション関連項目（「Pagination uses page/size/sort parameters」「新規エンドポイントにページネーション対応（リスト系）」）。フェーズ3で Lint 化予定。
+> 上記以外の項目（エンドポイント命名・URL ネスト・HTTP メソッド選択・エラーレスポンス形式・breaking change 判定・レスポンス形式と命名規則）はカタログ対応なし。AI レビュー恒久担保とし、フェーズ3以降もこのチェックリストに残す。
+> フェーズ3では Lint 担保済みの項目をこのチェックリストから削除する。それまでは移行形として現状維持する。既存の静的チェックで担保済みの項目は Lint 担保として扱う（カタログ §4.1）。
 
 - [ ] Endpoints use lowercase + hyphen-case
 - [ ] Resource names are plural
