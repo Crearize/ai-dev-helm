@@ -1,0 +1,20 @@
+# Detects catch clauses whose block contains no statements. A comment-only
+# body is still empty: the inner `pattern: $STMT` matches any named node
+# (comments included), so we additionally require the node NOT to be a
+# comment (line_comment / block_comment in the Java grammar) before counting
+# the block as non-empty.
+id: no-empty-catch-java
+language: Java
+severity: error
+message: "Empty catch block swallows the exception. Handle it, rethrow it, or log with context. (Catalog: A3)"
+rule:
+  kind: catch_clause
+  has:
+    kind: block
+    not:
+      has:
+        pattern: $STMT
+        not:
+          any:
+            - kind: line_comment
+            - kind: block_comment

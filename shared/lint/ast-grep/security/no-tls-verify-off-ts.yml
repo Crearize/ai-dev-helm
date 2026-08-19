@@ -1,0 +1,16 @@
+# Detects the object property `rejectUnauthorized: false`, which disables TLS
+# certificate verification and makes the connection trivially interceptable.
+# Matched as a pair node so it fires wherever the option is set - https.Agent
+# options, request options, a pool config object. Conservative by design -
+# only the literal `false` is flagged; a value read from configuration is a
+# different node and is left to review.
+id: no-tls-verify-off-ts
+language: TypeScript
+severity: error
+message: "rejectUnauthorized: false disables TLS certificate verification and exposes the connection to interception. Trust a proper CA instead. (Catalog: B2)"
+rule:
+  # A bare `key: value` pattern would parse as a labeled statement, so the
+  # pattern is given object-literal context and the `pair` node is selected.
+  pattern:
+    context: "const opts = { rejectUnauthorized: false }"
+    selector: pair

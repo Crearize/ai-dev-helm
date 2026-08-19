@@ -45,6 +45,7 @@
     "yargs": "^18.0.0"
   },
   "devDependencies": {
+    "@ast-grep/cli": "^0.45.1",
     "vitest": "^4.1.3"
   }
 }

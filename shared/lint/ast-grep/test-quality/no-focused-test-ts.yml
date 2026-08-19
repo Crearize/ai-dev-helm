@@ -1,0 +1,15 @@
+# Detects a focused test - describe.only / it.only / test.only. A single
+# focused test silently disables every other test in the file, so a
+# left-behind `.only` turns a green suite into a meaningless one.
+# Conservative by design - only the three standard runner entry points are
+# matched, so an unrelated `foo.only(...)` helper is not flagged.
+id: no-focused-test-ts
+language: TypeScript
+severity: error
+message: "A focused test (.only) silently skips every other test in the file. Remove .only before committing. (Catalog: E2)"
+rule:
+  kind: call_expression
+  any:
+    - pattern: describe.only($$$ARGS)
+    - pattern: it.only($$$ARGS)
+    - pattern: test.only($$$ARGS)

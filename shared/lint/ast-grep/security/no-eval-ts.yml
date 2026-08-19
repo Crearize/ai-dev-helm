@@ -1,0 +1,15 @@
+# Detects dynamic code execution: a bare `eval(...)` call or `new Function(...)`.
+# Both compile attacker-controllable strings into executable code.
+# Conservative by design - only the global identifiers are matched; a method
+# named `eval` on some object (`parser.eval(...)`) is a different node and is
+# not flagged.
+id: no-eval-ts
+language: TypeScript
+severity: error
+message: "Dynamic code execution (eval / new Function) lets input become code. Use a parser or an explicit dispatch table. (Catalog: B2)"
+rule:
+  any:
+    - kind: call_expression
+      pattern: eval($$$ARGS)
+    - kind: new_expression
+      pattern: new Function($$$ARGS)

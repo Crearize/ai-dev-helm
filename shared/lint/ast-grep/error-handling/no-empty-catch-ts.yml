@@ -1,0 +1,17 @@
+# Detects catch clauses whose block contains no statements. A comment-only
+# body is still empty: the inner `pattern: $STMT` matches any named node
+# (comments included), so we additionally require the node NOT to be a
+# comment before counting the block as non-empty.
+id: no-empty-catch-ts
+language: TypeScript
+severity: error
+message: "Empty catch block swallows the error. Handle it, rethrow it, or log with context. (Catalog: A3)"
+rule:
+  kind: catch_clause
+  has:
+    kind: statement_block
+    not:
+      has:
+        pattern: $STMT
+        not:
+          kind: comment

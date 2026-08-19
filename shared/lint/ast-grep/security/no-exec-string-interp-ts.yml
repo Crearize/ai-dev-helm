@@ -1,0 +1,28 @@
+# Detects a shell command built by string interpolation and handed to
+# exec / execSync: anything that reaches the interpolated slot becomes shell
+# syntax (command injection). The first argument must be a template literal
+# that actually contains a `${...}` substitution - a constant template
+# literal with no substitution is safe and is not flagged. The receiver is
+# left open so both `exec(...)` and `childProcess.exec(...)` are covered.
+id: no-exec-string-interp-ts
+language: TypeScript
+severity: error
+message: "Shell command assembled by string interpolation allows command injection. Use execFile/spawn with an argument array. (Catalog: B2)"
+rule:
+  kind: call_expression
+  any:
+    # `$CMD, $$$REST` does not match a single-argument call in ast-grep
+    # 0.45, so the one-argument form is spelled out separately.
+    - pattern: exec($CMD)
+    - pattern: execSync($CMD)
+    - pattern: $RECV.exec($CMD)
+    - pattern: $RECV.execSync($CMD)
+    - pattern: exec($CMD, $$$REST)
+    - pattern: execSync($CMD, $$$REST)
+    - pattern: $RECV.exec($CMD, $$$REST)
+    - pattern: $RECV.execSync($CMD, $$$REST)
+constraints:
+  CMD:
+    kind: template_string
+    has:
+      kind: template_substitution

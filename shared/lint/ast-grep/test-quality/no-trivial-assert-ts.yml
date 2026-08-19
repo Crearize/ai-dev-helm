@@ -1,0 +1,19 @@
+# Detects a tautological assertion - `expect(<literal>).toBe(<same literal>)`.
+# It always passes and proves nothing, so it hides the fact that the case is
+# untested. The repeated $LIT metavariable makes ast-grep require both sides
+# to be the same text, and the constraint restricts it to boolean and number
+# literals. Conservative by design - `expect(result).toBe(true)` compares a
+# real value against a literal and is NOT flagged.
+id: no-trivial-assert-ts
+language: TypeScript
+severity: error
+message: "Tautological assertion always passes and tests nothing. Assert against the value under test. (Catalog: E1)"
+rule:
+  kind: call_expression
+  pattern: expect($LIT).toBe($LIT)
+constraints:
+  LIT:
+    any:
+      - kind: "true"
+      - kind: "false"
+      - kind: number

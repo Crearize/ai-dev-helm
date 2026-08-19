@@ -1,0 +1,18 @@
+# Detects MD5 / SHA-1 digests obtained from MessageDigest.getInstance. The
+# algorithm name is matched with a `constraints` regex on the argument node,
+# covering the common JCA spellings (MD5, SHA1, SHA-1) case-insensitively in
+# one rule. Conservative by design - only a literal argument is matched; an
+# algorithm name held in a variable or constant is out of scope for a pure
+# AST rule.
+id: no-weak-hash-java
+language: Java
+severity: error
+message: "MD5 and SHA-1 are broken for security use. Use SHA-256 or better, or a password KDF such as bcrypt/argon2. (Catalog: B2)"
+rule:
+  kind: method_invocation
+  any:
+    - pattern: MessageDigest.getInstance($ALGO)
+    - pattern: MessageDigest.getInstance($ALGO, $PROVIDER)
+constraints:
+  ALGO:
+    regex: "^\"(?i:md5|sha-?1)\"$"

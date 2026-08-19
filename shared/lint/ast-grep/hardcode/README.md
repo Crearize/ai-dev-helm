@@ -1,0 +1,3 @@
+# hardcode
+
+Rules in this category detect environment-specific values baked into source, starting with a string literal that is a whole IPv4 address. Such a value works in the environment it was written for and silently breaks everywhere else, and it cannot be rotated without a code change. Reserved addresses that are not environment-specific (loopback, wildcard bind, broadcast) are excluded. Adoption is per-directory: a product opts these rules in or out for the directories it wants covered, so fixture and infrastructure-sample directories can stay excluded. Catalog categories covered: C6 (hardcoded environment values).

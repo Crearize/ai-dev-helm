@@ -1,0 +1,3 @@
+# security
+
+Rules in this category detect code that hands control or trust to untrusted input: dynamic code execution (`eval`, `new Function`), broken digests (MD5 and SHA-1 via `createHash` or `MessageDigest.getInstance`), TLS certificate verification turned off with `rejectUnauthorized: false`, and shell commands assembled by string interpolation and passed to `exec` / `execSync`. Adoption is per-directory: a product opts these rules in or out for the directories it wants covered, so a build script directory can be treated differently from request-handling code. Catalog categories covered: B2 (security-sensitive constructs).
