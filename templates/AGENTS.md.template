@@ -251,7 +251,9 @@ Located under `.codex/skills/`. Codex does not auto-discover them - refer to the
 ### Required (check before work)
 - **Development guidelines**: `documents/development/development-policy.md`
 - **Coding rules**: `documents/development/coding-rules/`
+- **Quality policy**: `documents/development/quality-policy.md` (risk levels, gates, loop protection)
 
 ### As Needed
 - **Error codes**: `documents/development/error-codes.md`
 - **Naming conventions**: `documents/development/naming-conventions.md`
+- **Static check standard**: `documents/development/static-check-standard.md` (static check standard catalog)

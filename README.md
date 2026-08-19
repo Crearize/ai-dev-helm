@@ -304,6 +304,8 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 `quality-check` スキルは、main へのマージ前にローカルで品質を担保するための多段ゲートです。CI はビルド確認のみの位置づけで、静的チェック・テスト・レビューは全てローカルで完結します。feature ブランチへの push はゲートされず、ハーネスファイル（CLAUDE.md、スキル等）のみの変更はチェック自体が不要です。
 
+判断基準そのものは共有ドキュメント側に定義されています。リスクレベル（High/Medium/Low）とレベル別のゲート強度、テストオラクル原則、反復工程の打ち切り基準は `shared/documents/quality-policy.md`、静的チェックで機械的に担保すべき項目の標準（A1〜F2 の25カテゴリ）は `shared/documents/static-check-standard.md` を参照してください。
+
 ### 実行フロー
 
 ```
@@ -495,6 +497,8 @@ ai-dev-helm/
 │       ├── quick-checklist.md
 │       ├── error-codes.md
 │       ├── naming-conventions.md
+│       ├── quality-policy.md
+│       ├── static-check-standard.md
 │       └── coding-rules/
 │           ├── common-rules.md
 │           └── api-design-rules.md
@@ -571,6 +575,8 @@ your-project/
     ├── quick-checklist.md
     ├── error-codes.md
     ├── naming-conventions.md
+    ├── quality-policy.md
+    ├── static-check-standard.md
     └── coding-rules/
         ├── common-rules.md
         ├── api-design-rules.md
@@ -620,7 +626,9 @@ your-project/
 | **naming-conventions.md** | ファイル・クラス・メソッド・DB・API・Git など全領域の命名規約を統一的に定義。Java（UpperCamelCase/lowerCamelCase）、TypeScript/React（PascalCase コンポーネント、use プレフィックス Hook）、DB（snake_case、複数形テーブル名）、API（/api/v1/resources）など |
 | **quick-checklist.md** | 作業前（Issue 作成、ブランチ確認）・作業中（規約遵守、テスト記述）・マージ前（quality-check 実行）・PR 作成（implementation-report 実行）のクイックリファレンス |
 | **error-codes.md** | エラーコード体系の定義。`[FEATURE]_[TYPE]_[DETAIL]` 形式で HTTP ステータスコードとの対応（400/401/403/404/409/500）を含む |
-| **coding-rules/common-rules.md** | Git/GitHub 規約（Conventional Commits 形式）、コメント規約（TODO/FIXME にデッドライン必須）、環境変数管理、セキュリティルール（OWASP Top 10 全項目の対策指針、CSRF 対策、依存パッケージセキュリティ）、パフォーマンスルール（N+1 防止、インデックス設計、ページネーション必須） |
+| **quality-policy.md** | 「何をもって品質を確認したと言えるか」を定義する品質ポリシー。リスクレベル定義（High/Medium/Low）、レベル別ゲートマトリクス（静的チェック、ユニットテスト、test-design、ミューテーションテスト、ペルソナレビュー、E2E）、テスト層選択の原則（テストトロフィー）、テストオラクル原則、反復工程のループ防護（打ち切り基準） |
+| **static-check-standard.md** | 静的チェック基準カタログ。決定的チェック（Lint / 静的解析）で担保すべき項目を A1〜F2 の25カテゴリ（正しさ・セキュリティ・設計/保守性・パフォーマンス・テスト品質・その他）に整理し、必須 / 推奨 / 任意の採用基準と、AI 生成コードで頻発するカテゴリ（🤖）を定義 |
+| **coding-rules/common-rules.md** | Git/GitHub 規約（Conventional Commits 形式）、コメント規約（TODO/FIXME にデッドライン必須）、環境変数管理、セキュリティルール（OWASP Top 10 全項目の対策指針、CSRF 対策、依存パッケージセキュリティ）、パフォーマンスルール（N+1 防止、インデックス設計、ページネーション必須）、アーキテクチャ・設計原則（レイヤー責務、DRY、仕様ベースのテスト）、言語横断の禁止パターン（ワイルドカード import、完全修飾名の直書き、未使用 import、マジックナンバー）。各項目には静的チェック基準カタログの対応カテゴリを示す `> Catalog:` 注記が付く |
 | **coding-rules/api-design-rules.md** | REST API 設計ルール。エンドポイント命名（lowercase + hyphen-case、複数形）、URL ネスト上限（2 階層まで）、HTTP メソッドと冪等性、パス vs クエリパラメータの使い分け、ページネーション仕様（page/size/sort）、エラーレスポンス統一形式、後方互換性ポリシー |
 
 ---

@@ -2,6 +2,15 @@
 
 > **Tech Stack**: [STACK_NAME]
 
+<!--
+移行注記ブロック（スタックに合わせて埋める）。パスはすべて配布後のプロダクト側表記
+（ハーネスリポジトリとの対応表はカタログ §5）。
+-->
+
+> 本書は [STACK_NAME] の**詳細規約**である。言語・FW 非依存の汎用原則は `documents/development/coding-rules/common-rules.md` を正とし、Lint で担保可能な項目の**恒久の正**はカタログ（`documents/development/static-check-standard.md`）A1〜F2 とする。
+> 本書には汎用ルールの言語固有表現が重複して残っている場合がある（移行形）。`> Catalog:` 注記の読み方は common-rules.md「Catalog 注記の読み方」を参照。**スタック別文書の項目は削除せず**、フェーズ3で Lint 資産が配線された後に「項目名 + カタログ番号 + Lint 資産参照」の形式へ縮約する（カタログ §4.1）。
+> 要点版のルールは `.claude/rules/[領域]/coding.md`（配布後の AI ツール別ルール）を参照。
+
 ## Overview
 
 <!-- Describe the coding rules scope -->

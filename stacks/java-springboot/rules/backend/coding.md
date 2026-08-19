@@ -2,60 +2,53 @@
 
 > **Tech Stack**: Java + Spring Boot
 
+> 言語横断の禁止パターン（ワイルドカード import・完全修飾名の直書き・未使用 import・マジックナンバー）は**カタログ A1・C3・C6（`documents/development/static-check-standard.md`）を恒久の正**とする。移行期（フェーズ3まで）の本文は `documents/development/coding-rules/common-rules.md` §7 を参照（同 §7 は Lint 配線の確認後に削除される）。
+> レイヤー責務・DRY・仕様ベーステストの一般原則は common-rules.md §6、セキュリティ・パフォーマンスの汎用原則は同 §4 / §5 を参照。本書が持つのは Java + Spring Boot 固有の具体のみである。
+> `> Catalog:` 注記の読み方は common-rules.md「Catalog 注記の読み方」を参照。ただし**スタック別ルール文書の項目はカタログへは移さず**、フェーズ3で Lint 資産が配線された後に「項目名 + カタログ番号 + Lint 資産参照」の短縮形へ縮約する（削除はしない）。そのため本書の注記は `（フェーズ3で Lint 資産提供予定）` 形式を用いる。
+> **パス表記について**: 本書が挙げるパスはすべて**配布後のプロダクト側表記**である。ハーネスリポジトリでの対応は `documents/development/static-check-standard.md` → `shared/documents/static-check-standard.md`、`documents/development/coding-rules/common-rules.md` → `shared/documents/coding-rules/common-rules.md`、`documents/development/coding-rules/backend-rules.md` → `stacks/java-springboot/documents/coding-rules/backend-rules.md`。完全な対応表はカタログ §5。
+
 ## Prohibited Patterns
-
-### Wildcard imports prohibited
-
-```java
-// NG
-import java.util.*;
-
-// OK
-import java.util.List;
-import java.util.Map;
-```
-
-### Full package name usage prohibited
-
-Always add import statements and use short names.
-
-```java
-// NG
-java.util.Map<String, Object> data = new java.util.HashMap<>();
-
-// OK
-import java.util.Map;
-import java.util.HashMap;
-Map<String, Object> data = new HashMap<>();
-```
 
 ### Unnecessary try-catch prohibited
 
-Delegate to the common exception handler. Only use try-catch for special cases (resource management, etc.).
+> Catalog: A3 — 空 catch・握りつぶし・過度に広い catch の機械検出のみフェーズ3で Lint 資産提供予定（PMD / ast-grep）。
+> どこで捕捉し何を返すかの設計判断はカタログ対応なし — AI レビュー恒久担保。
 
-## Layer Architecture
+Delegate to the common exception handler (`@RestControllerAdvice`). Only use try-catch for special cases (resource management, etc.).
 
-- **Controller**: Routing and validation only. No business logic.
-- **Service**: Business logic aggregation. Transaction management.
-- **Repository**: Data access only. No `SELECT *`. Avoid N+1 problems.
+## Layer Architecture (Spring mapping)
+
+> Catalog: C1 — レイヤー境界・依存方向、およびアノテーションの有無（フェーズ3で ArchUnit の Lint 資産提供予定）。
+> ArchUnit で機械検出できるのはそこまでであり、読み取り処理に `readOnly = true` が適切か・トランザクション境界の切り方が妥当かといった判断はカタログ対応なし — AI レビュー恒久担保。
+> 責務分割・依存方向・トランザクション境界の所在といった一般原則は common-rules.md §6.1 を正とする。本節はその Spring における対応のみを示す。
+
+| 汎用レイヤー（common-rules.md §6.1） | Spring での対応 | Spring 固有の具体 |
+|---|---|---|
+| Presentation | `@RestController` | Routing と `@Valid` による入力検証のみ。Repository を直接呼ばない |
+| Business logic | `@Service` | `@Transactional`（読み取りは `readOnly = true`）でトランザクション境界を持つ |
+| Data access | `@Repository` / Spring Data | データ入出力のみ。クエリ品質の規約は common-rules.md §5（カタログ D1）を参照 |
+
+Spring 規約の詳細（Controller / Service / DTO / Repository の具体的な書き方とコード例）は `documents/development/coding-rules/backend-rules.md` §2 を参照。
 
 ## Coding Conventions
 
+> Catalog: C4 / C7 — Google Java Style Guide 準拠（行長・ファイルサイズは C4、命名・構造は C7。google-java-format / Checkstyle）/ A1 — フィールドインジェクション（`@Autowired` フィールド）禁止（Checkstyle 等の禁止パターン検出）。いずれもフェーズ3で Lint 資産提供予定。
+
 - Google Java Style Guide compliance
-- Constructor injection (`@RequiredArgsConstructor`)
-- DRY principle - check existing utilities before writing new code
-- Specification-based testing (test functional requirements, not internal state)
+- Constructor injection (`@RequiredArgsConstructor`) — no field injection
+
+> DRY 原則は common-rules.md §6.2、仕様ベーステストの原則は同 §6.3 を参照。
 
 ## Performance Requirements
 
-- No SELECT * (specify required columns only)
-- N+1 problem prevention (JOIN or batch fetch)
-- Pagination required for list endpoints
-- Index design for frequently queried columns
+> 汎用のクエリ品質規約は common-rules.md §5 を正とする。カバレッジは同節のカーブアウトに従い分割される — N+1 防止・`SELECT *` 禁止・ページネーションはカタログ D1（フェーズ3で Lint 化予定。N+1 は静的検出のみでは担保済みとみなさない）、インデックス設計はカタログ対応なし — AI レビュー恒久担保。
+> JPA / jOOQ 固有の具体（JOIN FETCH・バッチフェッチ・DTO プロジェクション・バルク操作等）は `documents/development/coding-rules/backend-rules.md` §6 を参照。
 
 ## Security Requirements
 
-- All endpoints require authentication/authorization checks
-- IDOR prevention (verify resource access rights)
-- No sensitive data in logs (passwords, tokens, PII)
-- CORS whitelist explicit (no wildcard `*` in production)
+> 汎用のセキュリティ原則（全エンドポイントでの認証・認可、IDOR 防止、ログへの機密データ出力禁止、OWASP Top 10 観点）は common-rules.md §4 を正とする。本節は Spring 固有の実現手段のみを持つ。
+> Catalog: B2 — CORS の `*` 直書き等、機械検出可能な設定パターンのみフェーズ3で Lint 資産提供予定。
+> 許可オリジン集合の妥当性・FilterChain の認可設計はカタログ対応なし — AI レビュー恒久担保。
+
+- Spring Security FilterChain で全エンドポイントの認証・認可を設定する
+- CORS: 許可オリジンをホワイトリストで明示（本番環境でワイルドカード `*` は禁止）

@@ -153,6 +153,9 @@ DELETE /api/v1/resources/{id}     # Delete resource
 ## 9. Testing Strategy
 
 ### Coverage Targets
+
+> カバレッジ目標は**下限**であり、テスト十分性の**証明ではない**。テスト層の選択（Failure Mode 起点）とテストオラクル（期待値の根拠）の原則は `quality-policy.md` §3 / §4 を参照。
+
 - Overall: 80%+
 - Business logic (Service layer): 90%+
 - Utilities: 100%

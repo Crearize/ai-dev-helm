@@ -2,6 +2,10 @@
 
 > **Tech Stack**: Java + Spring Boot
 
+> 本書は Java + Spring Boot の**詳細規約**である。言語・FW 非依存の汎用原則は `documents/development/coding-rules/common-rules.md` を正とし、Lint で担保可能な項目の**恒久の正**はカタログ（`documents/development/static-check-standard.md`）A1〜F2 とする。
+> 本書には汎用ルールの言語固有表現が重複して残っている（移行形）。`> Catalog:` 注記の読み方は common-rules.md「Catalog 注記の読み方」を参照。**スタック別文書の項目は削除せず**、フェーズ3で Lint 資産が配線された後に「項目名 + カタログ番号 + Lint 資産参照」の形式へ縮約する（カタログ §4.1）。
+> 要点版のルールは `.claude/rules/backend/coding.md`（配布後の AI ツール別ルール）を参照。パスはすべて配布後のプロダクト側表記（対応表はカタログ §5）。
+
 ## Basic Policy
 
 - Google Java Style Guide compliance
@@ -29,6 +33,8 @@
 | Constant | UPPER_SNAKE_CASE | `MAX_RETRY_COUNT`, `DEFAULT_TIMEOUT` |
 
 ### 1.3 Class Design Principles
+
+> Catalog: A1 — 「No wildcard imports」（正は common-rules.md §7.1。フェーズ3で Lint 化予定）。本節の他項目（単一責務・DI・不変性）はカタログ対応なし — AI レビュー恒久担保。
 
 - **Single Responsibility**: 1 class = 1 responsibility
 - **Dependency Injection**: Prefer constructor injection
