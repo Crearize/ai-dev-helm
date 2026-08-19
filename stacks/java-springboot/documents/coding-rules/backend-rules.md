@@ -34,10 +34,11 @@
 
 ### 1.3 Class Design Principles
 
-> Catalog: A1 — 「No wildcard imports」（正は common-rules.md §7.1。フェーズ3で Lint 化予定）。本節の他項目（単一責務・DI・不変性）はカタログ対応なし — AI レビュー恒久担保。
+> Catalog: A1（フェーズ3で Lint 化予定）— 「No wildcard imports」（正は common-rules.md §7.1）と「Field injection prohibited」（Java/Spring 固有、正は本書のみ）の2項目が対応。本節の他項目（単一責務・不変性・DI スタイルの設計判断）はカタログ対応なし — AI レビュー恒久担保。
 
 - **Single Responsibility**: 1 class = 1 responsibility
-- **Dependency Injection**: Prefer constructor injection
+- **Field Injection Prohibited**: `@Autowired` on a field is prohibited; use constructor injection. Machine-detectable (Catalog A1).
+- **Dependency Injection Design**: How injection is structured beyond that (e.g. when a growing constructor signals a responsibility split, optional/provider injection) is a design judgment — no catalog correspondence, permanent AI review.
 - **Immutability**: Use final where possible for DTOs and entities
 - **No wildcard imports**: `import java.util.*;` is prohibited
 
