@@ -110,6 +110,7 @@ Thresholds, cycle caps and time budgets are defined in `documents/development/qu
 
 - The gate applies to `gh pr merge`, `git merge` on main, and direct pushes to main. **Pushes to feature branches are NOT gated** - push freely at any time.
 - `.quality-check-passed` is commit-bound JSON (`{branch, commit}`) and is not consumed. It stays valid while post-check commits touch only harness files, so `self-improvement` edits never force a re-review.
+- If main advanced independently after the flag was issued, the merged main (feature + main combined) is unverified: the merge may succeed but the push to main is blocked. Re-run `/quality-check` on the merged main, then push.
 - Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths. It must go through quality-check (a reduced-persona review at minimum).
 
 <!-- Quality Gate Overrides (optional). Uncomment only the key(s) you want to change and

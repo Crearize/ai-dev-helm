@@ -56,6 +56,7 @@ Closes #
 <!-- Write "None" explicitly when nothing applies -->
 - Gate parameter overrides (`gate_parameter_overrides`):
 - Abort approval (`gate_override`):
+- Risk level downgrade (`risk_level_downgrade`):
 
 ### Review Feedback Response
 | Cycle | Feedback | Persona | Response |

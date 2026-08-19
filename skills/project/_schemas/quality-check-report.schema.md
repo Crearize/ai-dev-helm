@@ -19,6 +19,7 @@
 | `test_design` | `TestDesign` | フェーズ2必須 [^lifecycle] | Step 3 のテスト設計メモ（`test-design` スキル）との照合結果（quality-policy.md §4）。詳細は § TestDesign オブジェクト を参照 |
 | `gate_parameter_overrides` | `GateParameterOverrides \| null` | 必須（発生時） [^lifecycle] | ゲートパラメータ（ミューテーション閾値・実行時間バジェット）を既定値から上書きした場合の記録（quality-policy.md §2「上書きの契約」）。上書きがなければ `null`。**打ち切り承認を記録する `gate_override` とは別物**（詳細は § GateParameterOverrides オブジェクト を参照） |
 | `gate_override` | `GateOverride \| null` | 必須（発生時） [^lifecycle] | 打ち切り・閾値未達で終了した工程をユーザーの明示承認のもとで通した場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6）。**ゲートパラメータの上書きを記録する `gate_parameter_overrides` とは別物** |
+| `risk_level_downgrade` | `RiskLevelDowngrade \| null` | 必須（発生時） [^lifecycle] | `test-design` メモの自己判定より低いリスクレベルを Step 1 で採用した場合の記録。該当がなければ `null`（記録なしの引き下げは不可 — `quality-check` SKILL.md Step 1） |
 
 [^lifecycle]: 「フェーズ2必須」「必須（発生時）」は必須／任意と同じ軸ではなく、**いつから必須になるか**（フィールドのライフサイクル）を併記したもの。「フェーズ2必須」の SKILL.md 側の出力配線はフェーズ2で完了しており、以降に生成されるレポートでは必須。「必須（発生時）」は承認・上書きが発生した場合に必ず記録する（発生しなければ `null`）。
 
@@ -119,6 +120,16 @@ quality-policy.md §2「上書きの契約」に基づき、プロダクトの�
 | `reason` | `string` | 必須 | 上書きの理由 |
 
 キー名はハーネス設定ファイルの `### Quality Gate Overrides` 記法（`mutation_threshold_high` / `mutation_threshold_medium` / `mutation_budget_minutes`）と一致させる。
+
+### RiskLevelDowngrade オブジェクト
+
+`test-design` メモ冒頭の自己判定レベルより低いレベルを Step 1 の実差分判定で採用した場合にのみ記録する（`quality-check` SKILL.md Step 1「リスクレベル判定」）。該当がなければトップレベル `risk_level_downgrade` を `null` にする。引き下げはゲート強度そのものを弱める操作であるため、`gate_parameter_overrides` と同様に必ず追跡可能にする。
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `memo_level` | `"high" \| "medium"` | 必須 | テスト設計メモ冒頭に記録された自己判定レベル |
+| `adopted_level` | `"medium" \| "low"` | 必須 | Step 1 の実差分判定で採用したレベル（= `risk_level` と一致する） |
+| `reason` | `string` | 必須 | 引き下げの根拠（実差分のどの点が quality-policy.md §1 のどの基準に照らして低いと判断したか） |
 
 ### GateOverride オブジェクト
 
@@ -246,6 +257,7 @@ High リスクの backend 変更で、Step 3.5 が閾値を満たして完走し
     "mutation_budget_minutes": 20,
     "reason": "認証まわりの差分規模が大きく、既定値ではドライラン段階でバジェット超過が見込まれたため延長"
   },
-  "gate_override": null
+  "gate_override": null,
+  "risk_level_downgrade": null
 }
 ```
