@@ -37,15 +37,22 @@ const GIT_MERGE_RE = /(^|[;&|(])\s*git\s+(?:-C\s+\S+\s+)?merge\b([^;&|()]*)/;
 const GH_PR_MERGE_RE = /(^|[;&|(])\s*gh\s+pr\s+merge\b([^;&|()]*)/;
 const MERGE_CONTROL_RE = /\s--(abort|continue|quit|skip)\b/;
 
-// Merges/pushes whose entire (non-empty) diff matches these paths skip the
-// gate. Aligned with the self-improvement skill's reflection targets, minus
-// user-facing docs (README/docs/documents stay under the reduced review).
-// Exception: diffs that change gate parameters never skip the gate — see
-// GATE_PARAM_RE below.
-const HARNESS_PATTERNS = [
+// Harness config files that may carry a `### Quality Gate Overrides` block
+// (quality-policy.md §2「上書きの契約」). Spread into HARNESS_PATTERNS below so
+// the two lists cannot drift apart.
+const GATE_CONFIG_PATTERNS = [
   /(^|\/)CLAUDE\.md$/,
   /(^|\/)AGENTS\.md$/,
   /^\.cursorrules$/,
+];
+
+// Merges/pushes whose entire (non-empty) diff matches these paths skip the
+// gate. Aligned with the self-improvement skill's reflection targets, minus
+// user-facing docs (README/docs/documents stay under the reduced review).
+// Exception: changes to gate parameters never skip the gate — see
+// GATE_PARAM_KEYS below.
+const HARNESS_PATTERNS = [
+  ...GATE_CONFIG_PATTERNS,
   /^\.claude\//,
   /^\.codex\//,
   /^\.cursor\//,
@@ -54,22 +61,19 @@ const HARNESS_PATTERNS = [
   /^documents\/development\/coding-rules\//,
 ];
 
-// Harness config files that may carry a `### Quality Gate Overrides` block
-// (quality-policy.md §2「上書きの契約」).
-const GATE_CONFIG_PATTERNS = [
-  /(^|\/)CLAUDE\.md$/,
-  /(^|\/)AGENTS\.md$/,
-  /^\.cursorrules$/,
-];
-
 // The only recognized gate-parameter keys, per quality-policy.md §2
-// 「上書きの契約」. A diff touching any of them is excluded from the
-// harness-only exemption: weakening a threshold must never merge unchecked.
-const GATE_PARAM_RE =
-  /(mutation_threshold_high|mutation_threshold_medium|mutation_budget_minutes)/;
+// 「上書きの契約」. A change to any of them is excluded from the harness-only
+// exemption: weakening a threshold must never merge unchecked.
+const GATE_PARAM_KEYS = [
+  'mutation_threshold_high',
+  'mutation_threshold_medium',
+  'mutation_budget_minutes',
+];
+const GATE_PARAM_RE = new RegExp(`(${GATE_PARAM_KEYS.join('|')})\\s*:\\s*(\\S+)`, 'g');
+const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 
 // Paths that cannot be quoted safely for the shell — fail closed instead of
-// guessing at their diff.
+// guessing at their content.
 const UNSAFE_PATH_RE = /["'`$\\]/;
 
 function trySh(cmd, timeoutMs = 5000) {
@@ -124,79 +128,45 @@ function pushTargetsMain(command, branch) {
   return false;
 }
 
-// Walk one line, tracking HTML comment state (`<!--` / `-->`), and report
-// whether a gate-parameter key appears outside a comment. Comment state is
-// carried across the diff's lines per side and reset at each hunk header, so
-// an unseen opener reads as "not commented" — i.e. fail closed.
-function scanGateLine(line, inComment) {
-  let hit = false;
-  let i = 0;
-  while (i <= line.length) {
-    if (inComment) {
-      const end = line.indexOf('-->', i);
-      if (end === -1) break;
-      i = end + 3;
-      inComment = false;
-    } else {
-      const start = line.indexOf('<!--', i);
-      if (GATE_PARAM_RE.test(start === -1 ? line.slice(i) : line.slice(i, start))) {
-        hit = true;
-      }
-      if (start === -1) break;
-      i = start + 4;
-      inComment = true;
-    }
+// The gate parameters `file` actually declares at `rev`, as a canonical
+// string. Whole-file extraction, not diff lines: only comparing both sides
+// catches an edit that flips an existing block between commented and live
+// without touching any `mutation_*` line. HTML comments are stripped first,
+// so a commented-out template declares nothing. Returns null when the content
+// cannot be established (fail closed); a path missing at `rev` is a legitimate
+// "declares nothing" and yields the empty state.
+function overrideState(rev, file) {
+  if (UNSAFE_PATH_RE.test(file)) return null;
+  let src = trySh(`git show ${rev}:"${file}"`);
+  if (src === null) {
+    // Distinguish "absent at rev" (new file) from an unreadable blob.
+    if (trySh(`git cat-file -t ${rev}`) === null) return null;
+    if (trySh(`git cat-file -t ${rev}:"${file}"`) !== null) return null;
+    src = '';
   }
-  return { hit, inComment };
+  const found = {};
+  for (const m of src.replace(HTML_COMMENT_RE, '').matchAll(GATE_PARAM_RE)) {
+    found[m[1]] = m[2];
+  }
+  // Fixed key order: a reordered block is not a parameter change.
+  return JSON.stringify(found, GATE_PARAM_KEYS);
 }
 
-// True when the diff of `file` over `range` adds or removes a gate-parameter
-// line. Fail closed: an unusable path or an unreadable diff counts as touched.
-function touchesGateParams(range, file) {
-  if (UNSAFE_PATH_RE.test(file)) return true;
-  const out = trySh(`git diff ${range} -- "${file}"`);
-  if (out === null) return true;
-  let added = false; // inside an HTML comment on the post-image
-  let removed = false; // ... on the pre-image
-  for (const raw of out.split(/\r?\n/)) {
-    if (raw.startsWith('@@')) {
-      added = false;
-      removed = false;
-      continue;
-    }
-    const body = raw.slice(1).replace(/\r$/, '');
-    if (raw.startsWith('+')) {
-      if (raw.startsWith('+++')) continue;
-      const r = scanGateLine(body, added);
-      if (r.hit) return true;
-      added = r.inComment;
-    } else if (raw.startsWith('-')) {
-      if (raw.startsWith('---')) continue;
-      const r = scanGateLine(body, removed);
-      if (r.hit) return true;
-      removed = r.inComment;
-    } else if (raw.startsWith(' ')) {
-      added = scanGateLine(body, added).inComment;
-      removed = scanGateLine(body, removed).inComment;
-    }
-  }
-  return false;
-}
-
-function isHarnessOnly(files, range) {
+function isHarnessOnly(files, baseRev, tipRev) {
   if (
     files.length === 0 ||
     !files.every((f) => HARNESS_PATTERNS.some((re) => re.test(f)))
   ) {
     return false;
   }
-  // quality-policy.md §2「上書きの契約」 carve-out: harness config files whose
-  // diff changes a gate parameter are not exempt from the quality check.
-  return !files.some(
-    (f) =>
-      GATE_CONFIG_PATTERNS.some((re) => re.test(f)) &&
-      touchesGateParams(range, f)
-  );
+  // quality-policy.md §2「上書きの契約」 carve-out: a harness config file whose
+  // declared gate parameters change is not exempt from the quality check.
+  return !files.some((f) => {
+    if (!GATE_CONFIG_PATTERNS.some((re) => re.test(f))) return false;
+    const before = overrideState(baseRev, f);
+    const after = overrideState(tipRev, f);
+    return before === null || after === null || before !== after;
+  });
 }
 
 function diffFiles(range) {
@@ -323,9 +293,11 @@ process.stdin.on('end', () => {
   // files needs no quality check at all.
   const base = mergeBaseRef();
   if (base) {
-    const range = `${base}...${tip}`;
-    const files = diffFiles(range);
-    if (files !== null && isHarnessOnly(files, range)) return;
+    const files = diffFiles(`${base}...${tip}`);
+    // The gate-parameter carve-out compares two revs, so use the same
+    // merge-base the `...` diff is taken against.
+    const mergeBase = trySh(`git merge-base ${base} ${tip}`);
+    if (files !== null && mergeBase && isHarnessOnly(files, mergeBase, tip)) return;
   }
 
   const flag = readFlag();
@@ -346,14 +318,13 @@ process.stdin.on('end', () => {
     );
   }
 
-  const flagRange = `${flag.commit}..${tip}`;
-  const changed = diffFiles(flagRange);
+  const changed = diffFiles(`${flag.commit}..${tip}`);
   if (changed === null) {
     return block(
       'Cannot verify changes since the last quality check. Re-run /quality-check.'
     );
   }
-  if (changed.length === 0 || isHarnessOnly(changed, flagRange)) return;
+  if (changed.length === 0 || isHarnessOnly(changed, flag.commit, tip)) return;
   return block(
     'Code changed after the last quality check. Re-run /quality-check before merging.'
   );
