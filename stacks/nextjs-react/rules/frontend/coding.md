@@ -2,10 +2,11 @@
 
 > **Tech Stack**: Next.js + React + TypeScript
 
-> 言語横断の禁止パターン（ワイルドカード import・完全修飾名の直書き・未使用 import・マジックナンバー）は `documents/development/coding-rules/common-rules.md` §7 / カタログ A1・C3・C6 を参照。
-> レイヤー責務・DRY・仕様ベーステストの一般原則は同 §6、セキュリティ・パフォーマンスの汎用原則は同 §4 / §5 を参照。本書が持つのは Next.js / React / TypeScript 固有の具体のみである。
+> 言語横断の禁止パターン（未使用 import・マジックナンバー・ワイルドカード import 等）は**カタログ A1・C3・C6（`documents/development/static-check-standard.md`）を恒久の正**とする。移行期（フェーズ3まで）の本文は `documents/development/coding-rules/common-rules.md` §7 を参照（同 §7 は Lint 配線の確認後に削除される）。
+> DRY 原則は common-rules.md §6.2、仕様ベーステストの原則は同 §6.3、セキュリティの汎用原則は同 §4 を参照。**レイヤー責務（同 §6.1）と DB クエリ品質（同 §5）はサーバーサイドのデータアクセス層を持つプロダクト向けであり、本スタックの構造規約（Server Component / Server Actions 等の責務分割）は本書と `documents/development/coding-rules/frontend-rules.md` を正とする。**
+> フロントエンド性能はカタログ D3 を正とし、具体（再レンダリング防止・バンドルサイズ・データフェッチ）は frontend-rules.md §9、アクセシビリティの詳細は同 §10 を参照。本書が持つのは Next.js / React / TypeScript 固有の要点のみである。
 > `> Catalog:` 注記の読み方は common-rules.md「Catalog 注記の読み方」を参照。ただし**スタック別ルール文書の項目はカタログへは移さず**、フェーズ3で Lint 資産が配線された後に「項目名 + カタログ番号 + Lint 資産参照」の短縮形へ縮約する（削除はしない）。そのため本書の注記は `（フェーズ3で Lint 資産提供予定）` 形式を用いる。
-> 上記のパスは**配布後のプロダクト側表記**（カタログ §5 の対応表）。ハーネスリポジトリでは `shared/documents/coding-rules/common-rules.md`。
+> **パス表記について**: 本書が挙げるパスはすべて**配布後のプロダクト側表記**である。ハーネスリポジトリでの対応は `documents/development/static-check-standard.md` → `shared/documents/static-check-standard.md`、`documents/development/coding-rules/common-rules.md` → `shared/documents/coding-rules/common-rules.md`、`documents/development/coding-rules/frontend-rules.md` → `stacks/nextjs-react/documents/coding-rules/frontend-rules.md`。完全な対応表はカタログ §5。
 
 ## Prohibited Patterns
 
@@ -57,3 +58,5 @@ const Button = ({ ref, ...props }: Props & { ref?: React.Ref<HTMLButtonElement> 
 - Form inputs must have associated labels (`htmlFor` or `aria-label`)
 - Icon-only buttons must have `aria-label`
 - Color contrast must meet WCAG 2.1 AA (4.5:1 text, 3:1 large text)
+
+見出し階層・ランドマーク・フォーカストラップ・代替テキスト等の詳細は `documents/development/coding-rules/frontend-rules.md` §10 を参照。

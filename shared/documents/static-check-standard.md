@@ -133,6 +133,7 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 - レビューガイドからのカタログ項目の除外は、対応する Lint が（ハーネスの Lint 資産・プロダクト既存設定のいずれであれ）実際にプロダクトへ配線されていることを確認した後に行う
 - **フェーズ3までは、Lint 担保予定の項目を規約文書から削除せず、`> Catalog: <番号>` 参照を付けた移行形で残す。** 完全削除は対応する Lint 資産が配線された後に行う
 - 「Lint 担保済み項目は規約文書に記載しない」最終形は本カタログの新設時点から方針として適用するが、その項目のチェックが失われないよう、移行期間中は上記の移行形と AI レビュー側の観点で担保を維持する
+- **スタック別ルール文書（`stacks/<stack>/rules/`）の項目は Lint 配線後も削除せず、「項目名 + カタログ番号 + Lint 資産参照」の形式に縮約する（削除は汎用規約文書側のみ）。** これらの項目は §4 のとおり本カタログへ移さないため、削除するとルールの本体が失われる
 
 ### 4.2 汎用化の昇格ルール
 
@@ -168,6 +169,7 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 |---|---|
 | `shared/documents/`（本カタログ・`quality-policy.md` 等） | `documents/development/` |
 | `shared/documents/coding-rules/` | `documents/development/coding-rules/` |
+| `stacks/<stack>/documents/coding-rules/`（スタック別の詳細規約） | `documents/development/coding-rules/` |
 | `stacks/<stack>/rules/` | AI ツール別に `.claude/rules/` / `.cursor/rules/` / `.codex/rules/` |
 | `shared/review-guides/` / `stacks/<stack>/review-guides/` | `.github/review-*.md` |
 | `shared/lint/` / `stacks/<stack>/lint/` | フェーズ3の配布実装でプロダクト側パスを確定する（未定） |
