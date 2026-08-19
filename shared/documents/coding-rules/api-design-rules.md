@@ -51,6 +51,8 @@ GET /api/v1/payments?studentId={studentId}&courseId={courseId}
 
 ## 5. Pagination
 
+> Catalog: D1（ページネーション欠落・無制限クエリの検出。フェーズ3で Lint 化予定 — 現在は AI レビュー担保）
+
 ### Request Parameters
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -125,6 +127,8 @@ Unified error response format:
 
 ## 8. API Response Design
 
+> Catalog: D1 / B1（リスト取得のページネーション必須は D1、レスポンスへの機密・個人情報混入禁止は B1。フェーズ3で Lint 化予定 — 現在は AI レビュー担保）
+
 ### 成功レスポンスの一貫性
 - 単体取得: リソースオブジェクトを直接返す
 - リスト取得: ページネーション情報付きのラッパーオブジェクトで返す
@@ -139,6 +143,8 @@ Unified error response format:
 - ID は文字列型（UUID）: `"id": "550e8400-e29b-41d4-a716-446655440000"`
 
 ## Checklist
+
+> Catalog: D1（ページネーション関連項目）/ B1（レスポンスの機密情報混入）（フェーズ3で Lint 化予定 — 現在は AI レビュー担保）
 
 - [ ] Endpoints use lowercase + hyphen-case
 - [ ] Resource names are plural
