@@ -27,6 +27,7 @@ This file is loaded by Claude Code at the start of each session.
 | Multi-step implementation planning | `superpowers:writing-plans` | Write plan before touching code |
 | Plan execution | `superpowers:subagent-driven-development` | Default execution method (see Plan Execution Rules below) |
 | Bug / test failure investigation | `superpowers:systematic-debugging` | Debug process before proposing fixes |
+| Test design before implementation (High/Medium risk) | `test-design` | Define test oracles and falsification items before writing code (see quality policy §4) |
 | Testing implementation | `superpowers:test-driven-development` | TDD: test -> implementation order |
 | 2+ independent tasks | `superpowers:dispatching-parallel-agents` | Parallel agents for efficiency |
 | Receiving code review | `superpowers:receiving-code-review` | No blind agreement, technical verification required |
@@ -38,9 +39,16 @@ This file is loaded by Claude Code at the start of each session.
 
 ### Plan Execution Rules
 
-1. **Subagent-driven execution by default** - Execute plans with `superpowers:subagent-driven-development`: dispatch a fresh subagent per task in the current session and review between tasks. This is the SuperPowers default behavior - follow it unless the user explicitly instructs otherwise. Use `superpowers:executing-plans` (inline execution) only when the user explicitly requests it. No confirmation of execution method is needed.
+1. **Subagent-driven execution by default** - Execute plans with `superpowers:subagent-driven-development`: dispatch a fresh subagent per task in the current session. This is the SuperPowers default behavior - follow it unless the user explicitly instructs otherwise. Use `superpowers:executing-plans` (inline execution) only when the user explicitly requests it. No confirmation of execution method is needed.
 2. **Plan files are not committed** - Plan documents (`docs/superpowers/plans/*.md`) must NOT be committed or pushed to the repository.
 3. **Plan file lifecycle** - Plan files are kept locally during implementation. After the PR is merged, delete all plan files from the local workspace.
+
+**Review consolidation** (quality policy §5.5 - review loops exist at exactly two points: document creation and the merge gate):
+
+4. **No in-development reviews** - During plan execution (subagent or inline), do NOT dispatch spec-conformance or quality reviewers for individual tasks. This overrides **both** review stages in `superpowers:subagent-driven-development`: the per-task two-stage review loop **and the final whole-branch code review at plan end** (including its fix-dispatch / scoped re-review follow-up) - the latter covers the same full diff that the merge-gate `quality-check` Step 4 already reviews, so running it would be a duplicate. The implementer's self-review (run the tests, verify the diff against the task text) is the only per-task check; the orchestrating session spot-checks the diff and moves on. Quality assurance happens once, at the merge-gate `quality-check`.
+5. **Document reviews stay** - The spec-document and plan-document review loops (during brainstorming / writing-plans) are retained: dispatch a document reviewer, with the iteration cap and escalation rule defined in `documents/development/quality-policy.md` §5.5 (read them there - do not restate the numbers here). **This overrides the "fix inline, no need to re-review" guidance in `superpowers:brainstorming` / `superpowers:writing-plans`** - the reviewer loop is required here even though those skills do not run one. A wrong design or plan compounds through every task and cannot be repaired by the final gate.
+6. **Subagent budget in the plan** - Every implementation plan must state an expected subagent-dispatch count (target and cap). When the run is projected to exceed it, escalate to the user instead of continuing silently.
+7. **The merge gate is not relaxed** - The final `quality-check` gate (Step 4) keeps its own rule that every High/Medium finding is addressed. If the gate produces many findings, do not reinstate per-task reviews; route the causes instead (mechanically detectable issues to the lint layer, design-level issues into the spec/plan review checklists).
 
 ### Subagent Model Selection
 
@@ -56,15 +64,16 @@ The `model` parameter accepts short aliases only (`fable` / `opus` / `sonnet` / 
 | Codebase exploration / context gathering | `sonnet` | Understanding project structure during brainstorming/planning, finding related implementations, tracing dependencies |
 | Simple mechanical search | `sonnet` | File/symbol lookup, listing usages, collecting file paths |
 | Implementation / concrete work | `opus` | Task-by-task implementation subagents in subagent-driven-development, test writing, refactoring, migrations |
-| Review / verification / architecture critique | `opus` | 6-persona quality-check review, code review, spec/plan document review, security analysis |
+| Document review (spec / plan documents) | `sonnet` | Spec-document and plan-document reviewers during brainstorming / writing-plans |
+| Quality / architecture review, quality-check personas | `opus` | 6-persona quality-check review, code review, architecture critique, security analysis |
 
 Rules:
 
 1. **Initial planning/design subagents** -> `fable` when available; otherwise use `opus`. Use Fable only for the first planning/design framing pass, where broad option generation and architecture direction matter most.
 2. **Exploration / lookup subagents** (read-only research, file/symbol search) -> `sonnet`. Speed matters more than depth; results are distilled back to the main conversation. Do not spend a frontier model on pure search.
 3. **Implementation subagents** (task executors in subagent-driven-development) -> `opus`. Never run implementation on Fable - the main session plans and orchestrates; implementation happens in Opus 5 subagents.
-4. **Review subagents** (quality-check personas, code reviewers, document reviewers) -> `opus`. Review quality directly gates push/merge, so do not use Fable for review.
-5. **Do not use Haiku.** This workflow does not use `haiku` for any subagent tier. `sonnet` is allowed only for exploration/search subagents - never use it for implementation, review, or planning. Where a skill's guidance says "cheapest tier" or "fast, cheap model", read that as `sonnet` under this workflow - never `haiku`.
+4. **Review subagents are split by review type** (quality policy §5.5, model tiering): **document reviews** (spec-document / plan-document reviewers) run on `sonnet`. **The quality-check personas** run on `opus`, because that review directly gates push/merge. Per-task reviewers are not dispatched at all (Plan Execution Rule 4). Never use Fable for review, and never downgrade quality-check personas to `sonnet`.
+5. **Do not use Haiku.** This workflow does not use `haiku` for any subagent tier. `sonnet` is allowed only for exploration/search subagents and document reviews - never use it for implementation, quality-check personas, or planning. Where a skill's guidance says "cheapest tier" or "fast, cheap model", read that as `sonnet` under this workflow - never `haiku`.
 6. When in doubt between two tiers, choose the more capable model, but keep Fable reserved for initial planning/design.
 
 ---
@@ -76,24 +85,45 @@ Rules:
 ### Flow
 
 ```
-Harness-only diff? -> skip quality-check entirely (the gate exempts it)
+Harness-only diff? -> skip quality-check entirely (the gate exempts it;
+                      gate-parameter changes are NOT exempt - see Merge Gate)
     |
-Change area detection (git diff)
+Step 1: Change area + risk level detection (git diff; risk levels per quality policy §1)
     |
-Static checks + tests
+Step 2/3: Static checks + tests (High/Medium: cross-check the test-design memo)
     |
-Review cycles (staged personas by diff size, min 1 cycle; repeat only on High/Medium findings)
+Step 3.5: Mutation testing on the changed diff (High/Medium risk only; skipped when not configured)
     |
-E2E tests (final verification)
+Step 4: Review cycles (staged personas by diff size, min 1 cycle; the QA persona works
+        falsification-first - hunt for inputs that prove the implementation wrong;
+        repeat only on High/Medium findings)
     |
-Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
+Step 5: E2E tests (final verification)
+    |
+Step 6: Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
 ```
+
+Thresholds, cycle caps and time budgets are defined in `documents/development/quality-policy.md` (§1 risk levels, §2 gate matrix, §5 loop protection). Do not restate the numbers here - read them from the policy.
 
 ### Merge Gate
 
 - The gate applies to `gh pr merge`, `git merge` on main, and direct pushes to main. **Pushes to feature branches are NOT gated** - push freely at any time.
 - `.quality-check-passed` is commit-bound JSON (`{branch, commit}`) and is not consumed. It stays valid while post-check commits touch only harness files, so `self-improvement` edits never force a re-review.
-- Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely.
+- If main advanced independently after the flag was issued, the merged main (feature + main combined) is unverified: the merge may succeed but the push to main is blocked. Re-run `/quality-check` on the merged main, then push.
+- Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths. It must go through quality-check (a reduced-persona review at minimum). The same applies to **gate control-plane files** - `skills/project/quality-check/**` and `skills/project/_schemas/**` (and their `.claude/skills/...` copies when skills are copied rather than linked), `.github/review-*.md`, the hooks directory (`.claude/hooks/**`), and the hook registration (the `hooks` block of `.claude/settings.json` - unregistering the hook disables the gate just as surely as editing it): with in-development reviews consolidated into the merge gate, these must never change with zero review (hook enforcement of this control-plane carve-out lands in a later phase; until then it binds via this rule).
+
+<!-- Quality Gate Overrides (optional). Uncomment only the key(s) you want to change and
+     write your value. Defaults are deliberately NOT written here - they live in
+     documents/development/quality-policy.md §2 (single source). Weakening a High-risk
+     gate is prohibited, and changing these keys is never exempt from the merge gate.
+     These three keys are the only recognized override keys. While commented out (or
+     inside a code span/fence) the block declares nothing and the policy defaults apply.
+
+### Quality Gate Overrides
+- mutation_threshold_high: <percent>
+- mutation_threshold_medium: <percent>
+- mutation_budget_minutes: <minutes>
+-->
 
 ### Multi-Persona Review
 
@@ -226,6 +256,7 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 | `backend-development` | Backend implementation |
 | `frontend-development` | Frontend implementation |
 | `database-migration` | DB migration |
+| `test-design` | Pre-implementation test design (test oracles) |
 | `quality-check` | Pre-push quality check |
 | `worktree-parallel` | Parallel worktree development |
 | `self-improvement` | Harness improvement before completion |

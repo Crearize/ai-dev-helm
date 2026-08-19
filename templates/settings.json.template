@@ -29,7 +29,8 @@
           {
             "type": "command",
             "command": "node .claude/hooks/quality-gate.cjs",
-            "statusMessage": "Checking quality check flag..."
+            "statusMessage": "Checking quality check flag...",
+            "timeout": 30
           }
         ]
       }
