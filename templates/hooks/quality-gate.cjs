@@ -8,8 +8,9 @@
 //   { "branch": "<branch at check time>", "commit": "<HEAD sha at check time>" }
 // `branch` is informational only — authorization uses `commit` alone.
 // The flag is NOT consumed here. It stays valid while everything that changed
-// after flag.commit is a harness file; /quality-check deletes and recreates
-// it on each run.
+// after flag.commit is a harness file — except gate-parameter and gate
+// control-plane changes, which no flag issued before them can have reviewed;
+// /quality-check deletes and recreates it on each run.
 //
 // Gated commands (nothing else is touched):
 //   - gh pr merge ...
@@ -921,18 +922,24 @@ process.stdin.on('end', () => {
     //
     // Ancestry alone only proves the check happened somewhere in history, not
     // that nothing landed after it, so the same post-flag diff rules as the
-    // merge path apply — including the §2 gate-parameter carve-out.
+    // merge path apply — including the §2 gate-parameter carve-out and the
+    // §5.5 control-plane carve-out.
     if (!gitOk(['merge-base', '--is-ancestor', flag.commit, 'HEAD'])) {
       // The checked commit is not in main's history at all: nothing about
       // this push was ever checked.
       return block(STALE_REASON);
     }
     const since = diffFiles(`${flag.commit}..HEAD`);
-    if (
-      since !== null &&
-      (since.length === 0 || isHarnessOnly(since, flag.commit, 'HEAD'))
-    ) {
-      return;
+    if (since !== null && (since.length === 0 || isHarnessOnly(since, flag.commit, 'HEAD'))) {
+      const hits =
+        since.length === 0 ? [] : gateControlFiles(since, flag.commit, 'HEAD');
+      if (hits.length === 0) return;
+      // A post-flag control-plane commit is unreviewed by definition: the
+      // flag only covers content up to flag.commit. The harness-only
+      // staleness exemption exists so self-improvement edits never force a
+      // re-review; gate control-plane edits are exactly the class it must
+      // not cover.
+      return block(gateControlReason(hits));
     }
     return block(STALE_MAIN_REASON);
   }
@@ -943,6 +950,14 @@ process.stdin.on('end', () => {
       'Cannot verify changes since the last quality check. Re-run /quality-check.'
     );
   }
-  if (changed.length === 0 || isHarnessOnly(changed, flag.commit, tip)) return;
+  if (changed.length === 0) return;
+  if (isHarnessOnly(changed, flag.commit, tip)) {
+    // Same rule as the push path above: the flag stays valid across harness
+    // commits, except gate control-plane commits, which no flag issued
+    // before them can have reviewed.
+    const hits = gateControlFiles(changed, flag.commit, tip);
+    if (hits.length === 0) return;
+    return block(gateControlReason(hits));
+  }
   return block(STALE_REASON);
 });
