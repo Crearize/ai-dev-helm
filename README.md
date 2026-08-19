@@ -59,6 +59,20 @@ npx @crearize/ai-dev-helm init
 npx @crearize/ai-dev-helm personal
 ```
 
+### 3. テキストレベル Lint の実行（任意）
+
+言語を問わずテキストレベルで横断チェックする linter を実行します。ハードコードされたシークレット、コメントアウトされたコード塊、期限なし TODO/FIXME、存在しない import、ファイル・ブランチ・コミットメッセージの命名規約を検査します。
+
+```bash
+npx @crearize/ai-dev-helm lint [paths..]
+
+# 例: 特定チェックのみ・JSON 出力
+npx @crearize/ai-dev-helm lint --checks secrets,import-exists --json
+```
+
+- 設定はプロジェクトルートの `.ai-dev-helm-lint.json` で調整できます（`exclude` グロブ、チェックごとの `enabled` / オプション）
+- 終了コード: `0` = 問題なし / `1` = 違反あり / `2` = 実行エラー（設定不正など）
+
 ### ローカルインストールで実行する場合
 
 ```bash

@@ -1,0 +1,11 @@
+{
+  "exclude": [
+    "test/fixtures/**",
+    "**/*.test.js",
+    "skills/**",
+    "shared/documents/coding-rules/common-rules.md",
+    "lib/lint/checks/commented-code.js",
+    "lib/lint/checks/todo-deadline.js",
+    "templates/hooks/quality-gate.cjs"
+  ]
+}
