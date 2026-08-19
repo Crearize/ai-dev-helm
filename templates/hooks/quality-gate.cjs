@@ -81,6 +81,10 @@ const GATE_PARAM_KEYS = [
 // the same declaration. Matching only the canonical spelling let every
 // variant land as "declares nothing". Applied to already-normalized
 // (lowercased, whitespace-collapsed) text.
+const GATE_PARAM_KEY_RES = GATE_PARAM_KEYS.map((k) => ({
+  key: k,
+  re: new RegExp(k.replace(/_/g, '[-_ ]'), 'i'),
+}));
 const GATE_PARAM_KEY_RE = new RegExp(
   `(?:${GATE_PARAM_KEYS.map((k) => k.replace(/_/g, '[-_ ]')).join('|')})`,
   'i'
@@ -88,9 +92,11 @@ const GATE_PARAM_KEY_RE = new RegExp(
 // `### Quality Gate Overrides` at any heading level, any case/separator.
 const QGO_HEADING_RE = /quality[-_\s]*gate[-_\s]*overrides/i;
 
-// A markdown fence opener/closer. Checked before anything else on a line.
 const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
 const HEADING_RE = /^\s{0,3}#{1,6}\s+(.*)$/;
+// Markdown decoration that can dress up a heading (ATX hashes, emphasis,
+// backticks, setext underlines, table pipes) without changing what it says.
+const HEADING_DECORATION_RE = /[`*_#|=~-]/g;
 
 const MAX_BUFFER = 32 * 1024 * 1024;
 // Blobs above this are not parsed: a harness config file that large is not a
@@ -215,7 +221,7 @@ function pushTargetsMain(command, branch) {
 // --------------------------------------------------------------------------
 
 const revExistsCache = new Map();
-const treeCache = new Map();
+const pathProbeCache = new Map();
 const overrideStateCache = new Map();
 
 function revExists(rev) {
@@ -225,18 +231,19 @@ function revExists(rev) {
   return revExistsCache.get(rev);
 }
 
-// Every path in the tree at `rev`. NUL-delimited so paths containing quotes,
-// spaces or non-ASCII bytes come back verbatim instead of git-quoted.
-// Returns null when the listing itself fails.
-function treeFiles(rev) {
-  if (!treeCache.has(rev)) {
-    const out = tryGit(['ls-tree', '-r', '--name-only', '-z', rev], 5000);
-    treeCache.set(
-      rev,
-      out === null ? null : new Set(out.split('\0').filter(Boolean))
-    );
+// Is `file` in the tree at `rev`? true / false / null (unknowable).
+// A single-path pathspec probe rather than a full `ls-tree -r` listing: the
+// evidence is identical but the cost is O(path) instead of O(repo), so the
+// answer cannot start flipping on repo size in a large monorepo. `--` keeps a
+// path that begins with `-` a path; `-z` keeps it verbatim rather than
+// git-quoted.
+function pathPresentAt(rev, file) {
+  const key = `${rev}\0${file}`;
+  if (!pathProbeCache.has(key)) {
+    const out = tryGit(['ls-tree', '-z', rev, '--', file], 5000);
+    pathProbeCache.set(key, out === null ? null : out.length > 0);
   }
-  return treeCache.get(rev);
+  return pathProbeCache.get(key);
 }
 
 // Decode a blob to text. A harness config file is legitimately authorable in
@@ -288,8 +295,10 @@ function maskCodeSpans(line) {
   return out;
 }
 
-// The part of `line` that is outside an HTML comment, carrying comment state
-// across lines via `state.inComment`.
+// The part of `line` that is outside an HTML comment, starting from a state
+// where no comment is open, and updating `state.inComment` for the caller.
+// Only used on the not-currently-in-a-comment path: once a comment IS open,
+// closing it is a raw scan (see extractOverrideEntries).
 function liveText(line, state) {
   const masked = maskCodeSpans(line);
   let live = '';
@@ -305,7 +314,9 @@ function liveText(line, state) {
       state.inComment = true;
       i = open + 4;
     } else {
-      const close = masked.indexOf('-->', i);
+      // A comment opened earlier on this same line: no inline processing
+      // applies inside it, so the raw `-->` ends it.
+      const close = line.indexOf('-->', i);
       if (close === -1) break;
       state.inComment = false;
       i = close + 3;
@@ -318,27 +329,50 @@ function normalizeLine(text) {
   return text.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-// What a harness config file *declares* about gate parameters, as an ordered
-// list of `[context, line]` entries — the contract of quality-policy.md §2
-// 「上書きの契約」 is about the declaration a reader sees, not about the raw
-// bytes of any single line. Hence:
+// Which gate-parameter keys a normalized line mentions, as a stable id.
+// Empty string means "none".
+function matchedKeyId(norm) {
+  return GATE_PARAM_KEY_RES.filter((k) => k.re.test(norm))
+    .map((k) => k.key)
+    .join('+');
+}
+
+// Does this line read as a `Quality Gate Overrides` heading once markdown
+// decoration is stripped? Covers setext headings (`Quality Gate Overrides`
+// over a `======` rule), which are headings just as much as the ATX form is.
+function readsAsOverridesHeading(norm) {
+  return QGO_HEADING_RE.test(norm.replace(HEADING_DECORATION_RE, ' '));
+}
+
+// What a harness config file *declares* about gate parameters — the contract
+// of quality-policy.md §2「上書きの契約」 is about the declaration a reader
+// sees, not about the raw bytes of any single line. Returns a list of
+// `{context, keyId, line}` entries, or null when the document cannot be read
+// with confidence. Hence:
 //
-//  - Fence state is resolved BEFORE comment state. §2 itself shows the
-//    override block inside a fenced example, so fenced content is
-//    illustrative and inert; and because it is inert, a `<!--` inside a fence
-//    is literal text that must not open a comment. Doing comments first let a
-//    fenced `<!--` pair with a later real `-->` and swallow a live block.
-//  - Entries are context-tagged ("block" inside a `### Quality Gate Overrides`
+//  - FIRST-OPENED CONTEXT WINS. Fenced content and commented content are both
+//    inert, and whichever of the two opened first owns everything until its
+//    own closer. So inside an open fence a `<!--` is literal (it must not
+//    comment out the live block that follows the fence), and inside an open
+//    comment a ``` is literal (it must not swallow the `-->` that ends the
+//    comment and hide the live block below). Giving either one fixed priority
+//    leaves the other direction open as a bypass; both were reproduced.
+//  - Inside an open comment there is no inline processing at all (CommonMark
+//    treats an HTML block as raw text), so a backtick-wrapped `` `-->` ``
+//    still closes it. Protecting code spans there kept a comment open across
+//    a live override block.
+//  - Entries are context-tagged ("block" inside a `Quality Gate Overrides`
 //    section, "outside" elsewhere). The same line means different things in
 //    the two places, so moving an otherwise unchanged line into the overrides
-//    section is a change of what the file declares.
+//    section is a change of what the file declares. Setext headings count as
+//    headings; so, fail-closed, does any line that simply reads as an
+//    overrides heading once decoration is stripped. Over-opening the section
+//    is the safe direction.
 //  - A key line ending in `:` absorbs the next live line as its value, since
 //    markdown renders `key:` / newline / `value` as one declaration.
-//  - Entries stay in document order rather than being sorted: with a
-//    duplicated key the later declaration wins, so swapping two duplicate
-//    lines changes the effective threshold. The cost is that reordering
-//    distinct keys also reads as a change — that direction is fail-closed and
-//    only ever asks for a quality check that was already cheap to run.
+//  - An unterminated fence or comment at EOF yields null, not an empty
+//    declaration: one stray delimiter would otherwise permanently hide every
+//    gate-parameter change below it.
 //
 // Deliberately over-inclusive: any live line that so much as mentions a key
 // counts. Prose that discusses a key without declaring it belongs inside an
@@ -347,40 +381,88 @@ function extractOverrideEntries(src) {
   const entries = [];
   const commentState = { inComment: false };
   let fenceChar = null;
+  let fenceLen = 0;
   let inOverridesBlock = false;
   let pending = -1;
 
   for (const raw of src.split(/\r?\n/)) {
-    const fence = raw.match(FENCE_RE);
-    if (fence) {
-      const ch = fence[1][0];
-      if (fenceChar === null) fenceChar = ch;
-      else if (ch === fenceChar) fenceChar = null;
-      continue;
-    }
-    if (fenceChar !== null) continue; // Inert: illustrative, not declarative.
+    let live;
 
-    const live = liveText(raw, commentState);
-
-    const heading = live.match(HEADING_RE);
-    if (heading) {
-      pending = -1; // A heading terminates a pending `key:` value.
-      inOverridesBlock = QGO_HEADING_RE.test(heading[1].replace(/[`*_]/g, ''));
+    if (commentState.inComment) {
+      // A comment is open: raw text until the first literal `-->`.
+      const close = raw.indexOf('-->');
+      if (close === -1) continue;
+      commentState.inComment = false;
+      // The rest of the line is live again, and may open a new comment.
+      live = liveText(raw.slice(close + 3), commentState);
+    } else if (fenceChar !== null) {
+      // A fence is open: only its own closer (same marker, at least as long)
+      // ends it. Everything else, `<!--` included, is literal and inert.
+      const fence = raw.match(FENCE_RE);
+      if (fence && fence[1][0] === fenceChar && fence[1].length >= fenceLen) {
+        fenceChar = null;
+      }
       continue;
+    } else {
+      const fence = raw.match(FENCE_RE);
+      if (fence) {
+        fenceChar = fence[1][0];
+        fenceLen = fence[1].length;
+        continue;
+      }
+      live = liveText(raw, commentState);
     }
 
     const norm = normalizeLine(live);
     if (norm === '') continue;
+
+    const atxHeading = live.match(HEADING_RE);
+    if (atxHeading) {
+      pending = -1; // A heading terminates a pending `key:` value.
+      inOverridesBlock = readsAsOverridesHeading(normalizeLine(atxHeading[1]));
+      continue;
+    }
+
+    const keyId = matchedKeyId(norm);
+    if (keyId === '' && readsAsOverridesHeading(norm)) {
+      // Setext or otherwise undecorated overrides heading.
+      pending = -1;
+      inOverridesBlock = true;
+      continue;
+    }
+
     if (pending >= 0) {
-      entries[pending][1] += ' ' + norm;
+      entries[pending].line += ' ' + norm;
       pending = -1;
     }
-    if (GATE_PARAM_KEY_RE.test(norm)) {
-      entries.push([inOverridesBlock ? 'block' : 'outside', norm]);
+    if (keyId !== '') {
+      entries.push({
+        context: inOverridesBlock ? 'block' : 'outside',
+        keyId,
+        line: norm,
+      });
       if (norm.endsWith(':')) pending = entries.length - 1;
     }
   }
+
+  if (fenceChar !== null || commentState.inComment) return null;
   return entries;
+}
+
+// Canonical form of an entry list: per (context, key) the LAST declaration
+// wins — that is what any reader of the document applies — and the resulting
+// map is sorted, so it does not depend on document order.
+//
+// This is what separates the two orderings §2 distinguishes: swapping two
+// lines that declare the SAME key changes which one is last, i.e. changes the
+// effective threshold, and is not exempt; reordering two DISTINCT keys
+// declares exactly the same thing and stays exempt.
+function canonicalizeEntries(entries) {
+  const lastPerKey = new Map();
+  for (const e of entries) lastPerKey.set(`${e.context}\0${e.keyId}`, e.line);
+  return JSON.stringify(
+    [...lastPerKey.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+  );
 }
 
 // The gate parameters `file` actually declares at `rev`, as a canonical
@@ -411,16 +493,18 @@ function computeOverrideState(rev, file) {
     // buffer) into "this file declares nothing" and opened the gate. Prove
     // absence from the tree listing instead.
     if (!revExists(rev)) return null;
-    const tree = treeFiles(rev);
-    if (tree === null) return null; // Cannot prove either way.
-    if (tree.has(file)) return null; // Present but unreadable.
+    const present = pathPresentAt(rev, file);
+    if (present === null) return null; // Cannot prove either way.
+    if (present) return null; // Present but unreadable.
     src = '';
   } else {
     if (buf.length > MAX_BLOB_BYTES) return null;
     src = decodeBlob(buf);
     if (src === null) return null;
   }
-  return JSON.stringify(extractOverrideEntries(src));
+  const entries = extractOverrideEntries(src);
+  if (entries === null) return null;
+  return canonicalizeEntries(entries);
 }
 
 function matchesHarnessPatterns(files) {
@@ -540,6 +624,13 @@ function block(reason) {
 const STALE_REASON =
   'Code changed after the last quality check. Re-run /quality-check before merging.';
 
+// The push-to-main case: the content is already committed on main, so
+// "before merging" is impossible advice. Name what actually happened instead.
+const STALE_MAIN_REASON =
+  'main contains changes that were not part of the last quality check (the ' +
+  'merge brought in commits made after the flag). Re-run /quality-check on ' +
+  'the current main, then push.';
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
@@ -608,16 +699,19 @@ process.stdin.on('end', () => {
     // Ancestry alone only proves the check happened somewhere in history, not
     // that nothing landed after it, so the same post-flag diff rules as the
     // merge path apply — including the §2 gate-parameter carve-out.
-    if (gitOk(['merge-base', '--is-ancestor', flag.commit, 'HEAD'])) {
-      const since = diffFiles(`${flag.commit}..HEAD`);
-      if (
-        since !== null &&
-        (since.length === 0 || isHarnessOnly(since, flag.commit, 'HEAD'))
-      ) {
-        return;
-      }
+    if (!gitOk(['merge-base', '--is-ancestor', flag.commit, 'HEAD'])) {
+      // The checked commit is not in main's history at all: nothing about
+      // this push was ever checked.
+      return block(STALE_REASON);
     }
-    return block(STALE_REASON);
+    const since = diffFiles(`${flag.commit}..HEAD`);
+    if (
+      since !== null &&
+      (since.length === 0 || isHarnessOnly(since, flag.commit, 'HEAD'))
+    ) {
+      return;
+    }
+    return block(STALE_MAIN_REASON);
   }
 
   const changed = diffFiles(`${flag.commit}..${tip}`);
