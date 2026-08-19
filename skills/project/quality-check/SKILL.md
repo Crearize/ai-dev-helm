@@ -26,7 +26,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ただしハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）の差分がゲートパラメータ（quality-check の閾値・実行時間バジェット等。キー名は `documents/development/quality-policy.md` §2「上書きの契約」の `Quality Gate Overrides` 記法）の変更を含む場合、この免除は適用しない。この場合は本スキルを実行し（最低でも縮退レビュー）、フラグを作成する。hook 側もこのカーブアウトを免除判定に反映するため、フラグなしでのマージはブロックされうる。
 
-同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`.github/review-*.md`・ツールの hooks ディレクトリ（`.claude/hooks/**` 等の quality-gate 実体）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（最低でも縮退レビューを実施しフラグを作成する。本カーブアウトの hook 側への反映はフェーズ3で行う — それまでは本スキルの規定としてのみ拘束する）。
+同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`.github/review-*.md`・ツールの hooks ディレクトリ（`.claude/hooks/**` 等の quality-gate 実体）**および hook 登録ファイル（`.claude/settings.json` の `hooks` ブロック、`.codex/hooks.json` 等 — 登録を外せば実体を守っても同じため）**。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（最低でも縮退レビューを実施しフラグを作成する。本カーブアウトの hook 側への反映はフェーズ3で行う — それまでは本スキルの規定としてのみ拘束する）。
 
 README や `documents/` 配下の利用者向けドキュメントはハーネスファイルに**含まれない**（docs 縮退レビューの対象）。
 
