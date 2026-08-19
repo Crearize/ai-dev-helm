@@ -23,6 +23,8 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 | 一般的な実現手段 | 代表的なツール・ルール。プロダクトのスタックに応じて読み替える |
 | 採用基準 | どのようなプロダクトで必須 / 推奨 / 任意か（下記） |
 
+**カテゴリ ID の安定性**: A1〜F2 は安定識別子であり、**再採番しない**。カテゴリを追加する場合は各グループ（A〜F）の末尾に採番し、廃止する場合は欠番として残す（他文書からの `> Catalog:` 参照が壊れないようにするため）。
+
 **「チェック内容の例」は代表例であり、そのカテゴリで担保すべきルールを尽くしていない。** カタログの例に載っていない Lint 担保可能なルールは、プロダクト側で Lint 設定・追加規約として定義してよい（その際は該当するカテゴリ番号を付記し、どのカテゴリの具体化かを辿れるようにする）。
 
 ### 🤖 マークの意味
@@ -64,7 +66,7 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 | # | カテゴリ | チェック内容の例 | 一般的な実現手段 | 採用基準 |
 |---|---|---|---|---|
 | B1 | シークレット・機密 🤖 | API キー・パスワードのハードコード、ログへの PII / トークン出力 | 横断リンター（正規表現）/ gitleaks | 必須（全プロダクト） |
-| B2 | コードレベル脆弱性パターン 🤖 | `eval` / 動的コード実行、`dangerouslySetInnerHTML`、SQL 文字列結合、パストラバーサル（ユーザー入力の fs 操作）、弱い暗号（MD5/SHA1）、非暗号乱数の秘匿用途使用、ReDoS になりうる正規表現、オープンリダイレクト、ログインジェクション（CR/LF） | ast-grep ルール / eslint-plugin-security / PMD | 必須（全プロダクト） |
+| B2 | コードレベル脆弱性パターン 🤖 | `eval` / 動的コード実行、`dangerouslySetInnerHTML`、SQL 文字列結合、OS コマンドインジェクション（ユーザー入力のシェル実行）、パストラバーサル（ユーザー入力の fs 操作）、SSRF（ユーザー入力 URL の内部リクエスト化）、弱い暗号（MD5/SHA1）、非暗号乱数の秘匿用途使用、TLS 検証の無効化、安全でないデシリアライゼーション / XXE、危険なセキュリティデフォルト（CSRF 無効化・CORS `*`・Cookie 属性欠落）、ReDoS になりうる正規表現、オープンリダイレクト、ログインジェクション（CR/LF） | ast-grep ルール / eslint-plugin-security / PMD | 必須（全プロダクト） |
 | B3 | 依存の健全性 🤖 | 存在しないパッケージの import（ハルシネーション / typosquatting）、廃止・非推奨 API の使用、lockfile 不整合、禁止依存リスト | 横断リンター（import 実在検証）/ depcheck / npm audit | 必須（全プロダクト） |
 
 ### C. 設計・保守性（Code Smell / Maintainability）
@@ -126,6 +128,8 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 
 **プロダクトが当該 Lint を採用しない場合**、`lint-scaffolding` のカバレッジマップで該当カテゴリを「AI レビュー担保」に割り当て、レビューガイド（プロダクトでは `.github/review-*.md`）側に観点として残す。カテゴリを採用しないことでチェック自体が消えることはない。
 
+**レビューガイドへの記載形式**（節構成・カタログ番号の付記方法）は、フェーズ3の `lint-scaffolding` 実装で確定する。
+
 ### 4.1 移行注記（フェーズ3までの扱い）
 
 **ハーネスが提供する Lint 資産（`shared/lint/` の汎用資産、`stacks/<stack>/lint/` のスタック別資産、`lint:all` の配線）はフェーズ3まで存在しない。** ただし決定的チェックそのものが存在しないわけではない — **プロダクト側の既存静的チェック（ESLint / Checkstyle / tsc 等、CLAUDE.md に登録された静的チェックコマンド）で担保済みの項目は、そのまま Lint 担保として扱う**。それ以外の項目を AI レビュー（ペルソナ + レビューガイド）で担保する。したがって:
@@ -170,8 +174,10 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 | `shared/documents/`（本カタログ・`quality-policy.md` 等） | `documents/development/` |
 | `shared/documents/coding-rules/` | `documents/development/coding-rules/` |
 | `stacks/<stack>/documents/coding-rules/`（スタック別の詳細規約） | `documents/development/coding-rules/` |
-| `stacks/<stack>/rules/` | AI ツール別に `.claude/rules/` / `.cursor/rules/` / `.codex/rules/` |
+| `stacks/<stack>/rules/` | AI ツール別に `.claude/rules/` / `.cursor/rules/`（※）/ `.codex/rules/` |
 | `shared/review-guides/` / `stacks/<stack>/review-guides/` | `.github/review-*.md` |
 | `shared/lint/` / `stacks/<stack>/lint/` | フェーズ3の配布実装でプロダクト側パスを確定する（未定） |
+
+（※）**Cursor 配布時の変換**: `.cursor/rules/` へは Markdown ではなく `.mdc` 形式（`description` / `globs` / `alwaysApply` の frontmatter 付き）に変換して配置され、ディレクトリ階層は平坦化されてファイル名が `<領域>-<名前>.mdc` になる（例: `stacks/nextjs-react/rules/frontend/coding.md` → `.cursor/rules/frontend-coding.mdc`）。文書間の相対パス参照ではなく、本表の配布後パス表記で参照すること。
 
 > プロジェクトスキルを導入していない（superpowers スキルのみ導入した）プロダクトでは、本書が参照する `quality-check` / `lint-scaffolding` スキルのファイルが存在しない。これらの参照は該当ファイルを導入した時点で有効になる。

@@ -24,6 +24,8 @@ Project-wide coding rules and development standards.
 
 注記は節（ブロック）単位で付く場合がある。その場合、**注記に挙がっていない項目はそのカテゴリの対象ではない** — 対象外の項目は同じ注記内に明示する。
 
+**注記のない節**は、カタログ対応の判定が**未了**であることを意味する（「カタログ対応なし」と確定したわけではない）。フェーズ3までにすべての節を判定し、注記を付ける。
+
 ## 1. Git/GitHub Conventions
 
 ### 1.1 Commit Messages
@@ -149,13 +151,18 @@ Closes #
 ### Input Validation
 
 > Catalog: B2（SQL インジェクション・XSS のコードレベル脆弱性パターン。フェーズ3で Lint 化予定）
-> 「Server-side validation required」（検証の実施有無そのもの）はカタログ対応なし — AI レビュー恒久担保。
+> 「Server-side validation required」はカバレッジが分割される — **検証の実施有無**（バリデーションアノテーション・スキーマ適用の存在）は機械検出可能でフェーズ3で Lint 化予定（B2）。**検証内容・境界条件・ビジネスルールとしての妥当性**はカタログ対応なし — AI レビュー恒久担保。
 
 - Server-side validation required
 - SQL injection prevention (parameterized queries)
 - XSS prevention (output escaping)
 
 ### OWASP Top 10 (2021) Awareness
+
+> Catalog: B2 / B3 / F2（フェーズ3で Lint 化予定）。内訳は下記の対応表を参照。
+> OWASP 項目との対応（`Axx` は OWASP の項番であり、カタログ番号ではない）: A03（インジェクション）と A02 のうち弱い暗号 → B2 / A06（脆弱な依存）・A08（依存の整合性）→ B3 / A09 のログ出力そのもの → F2。
+> A01（アクセス制御・IDOR）・A04（設計）・A05（設定）・A07（認証）・A10（SSRF の許可先設計）等の設計・運用面はカタログ対応なし — AI レビュー恒久担保。ただし認可アノテーションの有無・デバッグモード有効化・セキュリティヘッダー設定の有無・SSRF の実装パターンといった**機械検出可能な部分**は B2 としてフェーズ3で Lint 化予定。
+
 - **A01: Broken Access Control**: 全てのエンドポイントで認証・認可チェックを実施。IDORに注意（他ユーザーのリソースにアクセスできないこと）
 - **A02: Cryptographic Failures**: パスワードはbcrypt/scrypt/Argon2でハッシュ化。通信はTLS必須。機密データは保存時も暗号化を検討
 - **A03: Injection**: 全ての外部入力にパラメタライズドクエリを使用。動的SQLの文字列結合は禁止。ログ出力時もCR/LFをサニタイズ（ログインジェクション防止）
@@ -168,6 +175,10 @@ Closes #
 - **A10: SSRF (Server-Side Request Forgery)**: 外部URLを受け取る機能はホワイトリスト方式で制限。内部ネットワークへのリクエストをブロック
 
 ### CSRF Protection
+
+> Catalog: B2 — `csrf().disable()` 等の危険なセキュリティデフォルト・Cookie 属性欠落の検出（フェーズ3で Lint 化予定）。
+> どの対策を組み合わせるかの設計妥当性（SameSite + Content-Type / カスタムヘッダーの選択）はカタログ対応なし — AI レビュー恒久担保。
+
 - 状態変更リクエスト（POST/PUT/DELETE）にCSRF対策を実施
 - SPAの場合: `SameSite Cookie（Lax以上）` + CORS + `Content-Type: application/json` のみ受付（またはカスタムヘッダー `X-Requested-With` 検証）
 - `SameSite=Lax` のみでは不十分なケースがある（form-encoded POSTが通る）。必ずContent-Typeチェックまたはカスタムヘッダーを併用
@@ -247,6 +258,7 @@ Names differ per stack (Controller / Route Handler / Service / Use Case / Reposi
 Rules promoted from stack-specific rule documents because the same concept holds in two or more major languages. Language-specific examples are illustrative; apply the concept to whichever language the product uses.
 
 > 記載根拠: 昇格判定はカタログ（`../static-check-standard.md`）§4.2、移行期にこれらを本文書へ記載する扱いは同 §4.1 に基づく。**本節はフェーズ3で Lint 配線を確認した後に削除する。**
+> 移行注記: スタック別の詳細規約（`stacks/<stack>/documents/coding-rules/` 配下、配布後は `documents/development/coding-rules/`）には、これらのルールの言語固有の表現が重複して残っている。§6 と同じ移行形であり、縮約はフェーズ3で行う。
 
 ### 7.1 Wildcard imports prohibited
 
@@ -296,7 +308,7 @@ Extract unexplained literals into named constants or enums. The concept holds id
 ### Security
 
 > Catalog: B1（シークレット・ログへの機密データ・API レスポンスへの不要な個人情報）/ B2（インジェクション系の実装パターン）/ F2（ログ規律）（フェーズ3で Lint 化予定）
-> 上記以外の項目 — サーバーサイド入力検証の実施有無・IDOR（認可チェック）・CSRF 対策・セキュリティヘッダー設定 — はカタログ対応なし。AI レビュー恒久担保とし、フェーズ3以降もこのチェックリストに残す。
+> 上記以外の項目 — サーバーサイド入力検証・IDOR（認可チェック）・CSRF 対策・セキュリティヘッダー設定 — はカバレッジが分割される。**実施の有無**（バリデーション・認可アノテーションの付与、CSRF 設定、セキュリティヘッダー設定の存在、`csrf().disable()` 等の危険なデフォルト）は機械検出可能でフェーズ3で Lint 化予定（B2）。**内容・ロジックの妥当性**（誰がどのリソースにアクセスしてよいか、検証の境界条件、ヘッダー値の適切さ）はカタログ対応なし — AI レビュー恒久担保とし、フェーズ3以降もこのチェックリストに残す。
 
 - [ ] No hardcoded API keys or secrets
 - [ ] Secrets managed via environment variables
