@@ -43,9 +43,20 @@ Cursor can choose the model per subagent invocation. **When dispatching subagent
 | Codebase exploration / context gathering | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | Understanding project structure in Phase 1, finding related implementations, tracing dependencies |
 | Simple mechanical search | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | File/symbol lookup, listing usages |
 | Implementation / concrete work | Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or GPT-5.6-Sol with lowered effort | Phase 2/3 implementation, test writing, refactoring |
-| Review / verification / architecture critique | Claude Opus 5 first; GPT-5.6-Sol high as cross-vendor alternative | 6-persona quality-check review (Phase 5), code review, security analysis, architecture critique |
+| Spec-conformance review (mechanical diff-vs-spec check) | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | Checking that a diff matches the plan/spec text, checklist-style conformance passes |
+| Quality / architecture review, quality-check personas | Claude Opus 5 first; GPT-5.6-Sol high as cross-vendor alternative | 6-persona quality-check review (Phase 5), code review, security analysis, architecture critique |
 
-This table takes precedence over any model-selection guidance inside individual skills (e.g. the "Model Selection" section of subagent-driven-development). When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-5.6-Sol for planning/design. Implementation work should NOT run on Fable - use Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or a lowered-effort GPT-5.6-Sol. Do not use Claude Haiku for any tier. Claude Sonnet is allowed only for exploration/search tasks - never use it for implementation, review, or planning. For reviews, prefer Claude Opus 5, with GPT-5.6-Sol high when cross-vendor diversity is useful. Do not use Fable for review agents.
+This table takes precedence over any model-selection guidance inside individual skills (e.g. the "Model Selection" section of subagent-driven-development). When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-5.6-Sol for planning/design. Implementation work should NOT run on Fable - use Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or a lowered-effort GPT-5.6-Sol. Do not use Claude Haiku for any tier. Claude Sonnet is allowed only for exploration/search tasks and spec-conformance review - never use it for implementation, quality/architecture review, or planning. For quality, architecture and security reviews and the quality-check personas, prefer Claude Opus 5, with GPT-5.6-Sol high when cross-vendor diversity is useful; never downgrade those to Sonnet. Do not use Fable for review agents.
+
+### Review Loop Protection
+
+Applies to the review rounds of the Phase Design Workflow below (Phase 4 architecture review, Phase 5 quality verification), following quality policy §5.5 - cap / stall detection / reduction / escalation:
+
+1. **Review round cap** - Per task, at most 2 rounds of spec-conformance review and at most 2 rounds of quality review. After the cap, only **High** (must-fix) findings block; **Medium** findings are recorded in a follow-up list and work moves on; Low findings are recorded only. Decide on recorded Medium findings as a batch at the end of the phase.
+2. **Stall detection** - Two consecutive rounds with only Minor new findings -> stop reviewing and move on.
+3. **Ceremony reduction** - Docs-oriented changes under 100 diff lines: one combined spec + quality review instead of two. 1-2 line mechanical fixes: check the diff directly, with no review agent.
+4. **Budget escalation** - State an expected review/agent-invocation count up front and escalate to the user when the work is projected to exceed it.
+5. **In-development reviews only** - The final `quality-check` gate (Phase 5) keeps its own rule that every High/Medium finding is addressed. Never carry the follow-up-list rule into the merge gate.
 
 ### Shell Command Rules (Windows / PowerShell)
 
@@ -65,6 +76,7 @@ When the execution shell is PowerShell (default on Windows), bash idioms fail. F
 - Check existing implementation
 - Review related API specs
 - Check `.cursor/rules/` rule files
+- Judge the risk level of the change (quality policy §1). For High/Medium risk, run `test-design` before implementation to define test oracles and falsification items (quality policy §4)
 
 ### Phase 2: Backend Implementation
 - Use centralized exception handling
@@ -78,10 +90,25 @@ When the execution shell is PowerShell (default on Windows), bash idioms fail. F
 - Pass -> Phase 5 / Fail -> Fix in Phase 2/3
 
 ### Phase 5: Quality Verification
+- Determine the change area **and risk level** first (quality policy §1); `quality-check` records it as `risk_level`
 - Run backend quality checks
 - Run frontend linting, formatting, build
-- Run multi-persona review via `quality-check` (staged personas by diff size: <200 lines -> 3 personas, 200+ -> 6; min 1 cycle, repeat only on High/Medium findings / docs+infra only: reduced personas x 1+ cycle)
+- Run mutation testing on the changed diff for High/Medium risk changes (skipped when the product has no mutation setup; thresholds and time budget per quality policy §2/§5)
+- Run multi-persona review via `quality-check` (staged personas by diff size: <200 lines -> 3 personas, 200+ -> 6; min 1 cycle, repeat only on High/Medium findings / docs+infra only: reduced personas x 1+ cycle). The QA persona works falsification-first: hunt for inputs that prove the implementation wrong, rather than confirming the tests look sufficient
 - Run `self-improvement` before merge completion (the gate applies to merges into main, not feature-branch pushes)
+- Harness-only diffs skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt and must go through quality-check (a reduced-persona review at minimum)
+- Thresholds, cycle caps and budgets live in `documents/development/quality-policy.md` - read them there instead of restating numbers here
+
+<!-- Quality Gate Overrides (optional; template - uncomment and adjust to override the
+     defaults). Follows the contract in quality-policy.md §2: weakening a High-risk gate
+     is prohibited, and changing these values is not exempt from the merge gate.
+     These three keys are the only recognized override keys.
+
+### Quality Gate Overrides
+- mutation_threshold_high: 80
+- mutation_threshold_medium: 70
+- mutation_budget_minutes: 15
+-->
 
 ### Phase 6: PR Creation
 - Commit message: `feat: [feature] (closes #[issue-number])`
@@ -97,6 +124,7 @@ Skills are installed under `.cursor/skills/` (symlink to `skills/`). Cursor does
 | Multi-step implementation planning | `.cursor/skills/superpowers/writing-plans/SKILL.md` |
 | Plan execution | `.cursor/skills/superpowers/subagent-driven-development/SKILL.md` |
 | Bug / test failure investigation | `.cursor/skills/superpowers/systematic-debugging/SKILL.md` |
+| Test design before implementation (High/Medium risk) | `.cursor/skills/project/test-design/SKILL.md` |
 | Testing implementation | `.cursor/skills/superpowers/test-driven-development/SKILL.md` |
 | Before completion / merge | `.cursor/skills/superpowers/verification-before-completion/SKILL.md` |
 | Pre-push quality check | `.cursor/skills/project/quality-check/SKILL.md` |

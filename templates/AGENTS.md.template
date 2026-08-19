@@ -28,6 +28,7 @@ See: https://developers.openai.com/codex/guides/agents-md
 | Multi-step implementation planning | `.codex/skills/superpowers/writing-plans/SKILL.md` | Plan before code |
 | Plan execution | `.codex/skills/superpowers/subagent-driven-development/SKILL.md` | Subagent-driven by default |
 | Bug / test failure investigation | `.codex/skills/superpowers/systematic-debugging/SKILL.md` | Debug before fix |
+| Test design before implementation (High/Medium risk) | `.codex/skills/project/test-design/SKILL.md` | Test oracles + falsification items before code (quality policy §4) |
 | Testing implementation | `.codex/skills/superpowers/test-driven-development/SKILL.md` | TDD |
 | Receiving code review | `.codex/skills/superpowers/receiving-code-review/SKILL.md` | Verify, not blind agree |
 | Before completion / merge | `.codex/skills/superpowers/verification-before-completion/SKILL.md` | Evidence-based |
@@ -43,6 +44,14 @@ See: https://developers.openai.com/codex/guides/agents-md
 2. **Plan files are not committed** - `docs/superpowers/plans/*.md` must NOT be committed.
 3. **Plan file lifecycle** - Kept locally during implementation, deleted after PR merge.
 
+**Loop protection for the implement-review loop** (quality policy §5.5 - cap / stall detection / reduction / escalation):
+
+4. **Review round cap** - Per task, at most 2 rounds of spec-conformance review and at most 2 rounds of quality review. After the cap, only **High** (must-fix) findings block; **Medium** findings go to a follow-up list and the run moves on; Low findings are recorded only. Decide on recorded Medium findings as a batch at the end of the phase.
+5. **Stall detection** - Two consecutive rounds with only Minor new findings -> stop reviewing and move to the next task.
+6. **Ceremony reduction** - Docs-oriented tasks under 100 diff lines: one combined spec + quality review instead of two. 1-2 line mechanical fixes: the orchestrating session checks the diff itself - spawn no reviewer subagent.
+7. **Subagent budget in the plan** - Every implementation plan states an expected subagent-dispatch count (target and cap); escalate to the user when the run is projected to exceed it.
+8. **This applies to in-development task reviews only** - The final quality-check gate (Step 4) keeps its own rule that every High/Medium finding is addressed. Never carry the follow-up-list rule into the merge gate.
+
 ### Subagent Model Selection
 
 **When spawning subagents, always specify `model` and `model_reasoning_effort` explicitly based on the nature of the task. Do not rely on inheriting the parent session settings.**
@@ -55,14 +64,15 @@ See: https://developers.openai.com/codex/guides/agents-md
 | Codebase exploration / context gathering | `gpt-5.4-mini` | `medium` | Understanding project structure during planning, read-heavy scans, finding related implementations |
 | Simple mechanical search | `gpt-5.4-mini` | `low` | File/symbol lookup, listing usages, collecting file paths |
 | Implementation / concrete work | `gpt-5.6-terra` (alternative: `gpt-5.6-sol` with lowered effort) | `medium` | Task-by-task implementation subagents, test writing, refactoring, migrations |
-| Review / verification / architecture critique | `gpt-5.6-sol` | `high` | 6-persona quality-check review, code review, security analysis, spec/plan review |
+| Spec-conformance review (mechanical diff-vs-spec check) | `gpt-5.4-mini` | `medium` | Checking that a task diff matches the plan/spec text, checklist-style conformance passes |
+| Quality / architecture review, quality-check personas | `gpt-5.6-sol` | `high` | 6-persona quality-check review, code review, architecture critique, security analysis, design document review |
 
 Rules:
 
 1. **Planning/design subagents** -> `gpt-5.6-sol` with `high` effort. This is the Codex-side counterpart of Fable in Claude Code.
 2. **Exploration subagents** (read-only research during planning) -> `gpt-5.4-mini` with `medium` effort. Speed matters more than depth; results are distilled back to the main session.
 3. **Implementation subagents** (task executors in subagent-driven execution) -> `gpt-5.6-terra`, or `gpt-5.6-sol` with `model_reasoning_effort` lowered to `medium`/`low`. Do not spend high-effort frontier models on routine implementation.
-4. **Review subagents** (quality-check personas, code reviewers) -> `gpt-5.6-sol` with `high` effort. Review quality directly gates push/merge, so always use the most capable model.
+4. **Review subagents are split by review type** (quality policy §5.5, model tiering): **spec-conformance review** - mechanically checking a diff against the plan/spec - runs on `gpt-5.4-mini` with `medium` effort. **Quality, architecture and security review, and the quality-check personas** run on `gpt-5.6-sol` with `high` effort, because that review directly gates push/merge. Never downgrade the quality-check personas to a mini model.
 5. If reusable, define these as project agents under `.codex/agents/` (e.g. `implementer.toml` with `model = "gpt-5.6-terra"`, `reviewer.toml` with `model = "gpt-5.6-sol"` / `model_reasoning_effort = "high"` / `sandbox_mode = "read-only"`). Otherwise, state the model explicitly in the spawn prompt.
 6. When in doubt between two tiers, choose the more capable model.
 
@@ -75,23 +85,41 @@ Rules:
 ### Flow
 
 ```
-Harness-only diff? -> skip quality-check entirely (the gate exempts it)
+Harness-only diff? -> skip quality-check entirely (the gate exempts it;
+                      gate-parameter changes are NOT exempt - see Quality Check Hook)
     |
-Change area detection (git diff)
+Step 1: Change area + risk level detection (git diff; risk levels per quality policy §1)
     |
-Static checks + tests
+Step 2/3: Static checks + tests (High/Medium: cross-check the test-design memo)
     |
-Review cycles (staged personas by diff size, min 1 cycle; repeat only on High/Medium findings)
+Step 3.5: Mutation testing on the changed diff (High/Medium risk only; skipped when not configured)
     |
-E2E tests (final verification)
+Step 4: Review cycles (staged personas by diff size, min 1 cycle; the QA persona works
+        falsification-first - hunt for inputs that prove the implementation wrong;
+        repeat only on High/Medium findings)
     |
-Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
+Step 5: E2E tests (final verification)
+    |
+Step 6: Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
 ```
+
+Thresholds, cycle caps and time budgets are defined in `documents/development/quality-policy.md` (§1 risk levels, §2 gate matrix, §5 loop protection). Do not restate the numbers here - read them from the policy.
 
 ### Quality Check Hook
 
 Codex enforces this via a `PreToolUse` hook (configured in `.codex/hooks.json`).
-When you run `gh pr merge`, `git merge` on main, or push to main, Codex validates `.quality-check-passed` (commit-bound JSON: `{branch, commit}`). **Pushes to feature branches are not gated.** The flag is not consumed; it stays valid while post-check commits touch only harness files (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`). Harness-only diffs skip the gate and the quality check entirely.
+When you run `gh pr merge`, `git merge` on main, or push to main, Codex validates `.quality-check-passed` (commit-bound JSON: `{branch, commit}`). **Pushes to feature branches are not gated.** The flag is not consumed; it stays valid while post-check commits touch only harness files (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`). Harness-only diffs skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths. It must go through quality-check (a reduced-persona review at minimum).
+
+<!-- Quality Gate Overrides (optional; template - uncomment and adjust to override the
+     defaults). Follows the contract in quality-policy.md §2: weakening a High-risk gate
+     is prohibited, and changing these values is not exempt from the merge gate.
+     These three keys are the only recognized override keys.
+
+### Quality Gate Overrides
+- mutation_threshold_high: 80
+- mutation_threshold_medium: 70
+- mutation_budget_minutes: 15
+-->
 
 ### Multi-Persona Review
 
@@ -223,6 +251,7 @@ Located under `.codex/skills/`. Codex does not auto-discover them - refer to the
 | Backend implementation | `.codex/skills/project/backend-development/SKILL.md` |
 | Frontend implementation | `.codex/skills/project/frontend-development/SKILL.md` |
 | DB migration | `.codex/skills/project/database-migration/SKILL.md` |
+| Pre-implementation test design | `.codex/skills/project/test-design/SKILL.md` |
 | Pre-push quality check | `.codex/skills/project/quality-check/SKILL.md` |
 | Parallel worktree development | `.codex/skills/project/worktree-parallel/SKILL.md` |
 | Self improvement | `.codex/skills/project/self-improvement/SKILL.md` |
