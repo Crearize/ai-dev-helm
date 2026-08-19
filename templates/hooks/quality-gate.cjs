@@ -69,7 +69,10 @@ const GATE_PARAM_KEYS = [
   'mutation_threshold_medium',
   'mutation_budget_minutes',
 ];
-const GATE_PARAM_RE = new RegExp(`(${GATE_PARAM_KEYS.join('|')})\\s*:\\s*(\\S+)`, 'g');
+// Matches a line mentioning any gate-parameter key regardless of markdown
+// notation (`- key: value`, `- **key**: value`, `` - `key`: value ``, a
+// table row, ...). Non-global: only used with .test() below.
+const GATE_PARAM_KEY_RE = new RegExp(`(${GATE_PARAM_KEYS.join('|')})`);
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 
 // Paths that cannot be quoted safely for the shell — fail closed instead of
@@ -144,12 +147,21 @@ function overrideState(rev, file) {
     if (trySh(`git cat-file -t ${rev}:"${file}"`) !== null) return null;
     src = '';
   }
-  const found = {};
-  for (const m of src.replace(HTML_COMMENT_RE, '').matchAll(GATE_PARAM_RE)) {
-    found[m[1]] = m[2];
-  }
-  // Fixed key order: a reordered block is not a parameter change.
-  return JSON.stringify(found, GATE_PARAM_KEYS);
+  // Normalized line-set, not key:value extraction: prose and markdown can
+  // render a key in many notations (bold, backtick-quoted, a table cell, ...)
+  // and a regex tied to one exact notation is trivial to slip past. Any
+  // uncommented line that so much as mentions a key counts as state — this
+  // is deliberately over-inclusive (prose about a key also counts) in
+  // exchange for fail-closed detection; prose that discusses a key without
+  // declaring it belongs inside an HTML comment.
+  return JSON.stringify(
+    src
+      .replace(HTML_COMMENT_RE, '')
+      .split(/\r?\n/)
+      .filter((l) => GATE_PARAM_KEY_RE.test(l))
+      .map((l) => l.trim().replace(/\s+/g, ' '))
+      .sort() // reorder is still not a change
+  );
 }
 
 function isHarnessOnly(files, baseRev, tipRev) {
