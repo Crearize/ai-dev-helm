@@ -114,7 +114,7 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 
 ## 4. 規約文書との関係
 
-**Lint で担保可能な項目の記載先は本カタログである。** 規約文書（`shared/documents/coding-rules/` および `stacks/<stack>/rules/`）が扱うのは、**Lint で担保できない原則・文脈依存ルール**とする。
+**Lint で担保可能な項目の記載先は本カタログである。** 規約文書（`shared/documents/coding-rules/`、`stacks/<stack>/documents/coding-rules/`、および `stacks/<stack>/rules/`）が扱うのは、**Lint で担保できない原則・文脈依存ルール**とする。
 
 | 対象 | 記載先 |
 |---|---|

@@ -204,7 +204,7 @@ Closes #
 
 Language- and framework-independent design principles. This document is the canonical generic statement of them.
 
-> 移行注記: スタック別ルール文書（配布後は AI ツール別の rules ディレクトリ）は、これらの原則の言語・FW 固有の表現のみを持つ**ようにする**。その縮約はフェーズ1の Task 4 以降で順次行うため、現時点ではスタック別ルール文書側に元の記述が残っている場合がある。
+> 移行注記: スタック別ルール文書（配布後は AI ツール別の rules ディレクトリ）は、これらの原則の言語・FW 固有の表現のみを持つ**ようにする**。スタック別の詳細規約（`stacks/<stack>/documents/coding-rules/` 配下、配布後は `documents/development/coding-rules/`）の縮約はフェーズ3で行うため、現時点ではスタック別ルール文書側に元の記述が残っている場合がある。
 
 ### 6.1 Layer Responsibilities
 
