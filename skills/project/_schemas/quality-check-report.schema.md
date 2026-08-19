@@ -18,7 +18,9 @@
 | `test_design` | `object` | 予約 | Step 3 のテスト設計メモ（`test-design` スキル）との照合結果。**キー構成はフェーズ2（quality-check 改修 + test-design スキル）で確定する**（§ テスト設計メモの照合結果 参照） |
 | `gate_override` | `GateOverride \| null` | 必須 | 打ち切り・閾値未達で終了した工程をユーザーの明示承認のもとで通した場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6） |
 
-> **フェーズ1時点の注記**: `risk_level` / `lint_cycles` / `mutation` / `test_design` / `gate_override` は本スキーマ上の定義であり、`quality-check` SKILL.md 側の出力配線はフェーズ2で行う。それまでに生成されたレポートにこれらのフィールドが存在しないことは、レポート不正ではなく未配線を意味する。
+> **フェーズ1時点の注記**: `risk_level` / `lint_cycles` / `mutation` / `test_design` は本スキーマ上の定義であり、`quality-check` SKILL.md 側の出力配線はフェーズ2で行う。それまでに生成されたレポートにこれらのフィールドが存在しないことは、レポート不正ではなく未配線を意味する。
+>
+> ただし `gate_override` は例外で、打ち切り承認が実際に発生した場合の記録義務は quality-policy.md §5「打ち切り時のゲート挙動」により**現時点から拘束力を持つ**（同 :10 のとおり §5 のゲート規範は配線の有無に関わらず有効）。承認が発生していない通常のレポートで本フィールドが存在しないことは未配線として扱ってよい。
 
 ### Cycle オブジェクト
 
@@ -70,30 +72,34 @@
 | `executed` | `boolean` | 必須 | Step 3.5 を実行したか |
 | `reason` | `"not_configured" \| "low_risk" \| null` | 必須 | 未実行の理由。`not_configured`: プロダクトにミューテーションテスト設定（Stryker / PIT）が存在しない / `low_risk`: Low リスク変更のため実行対象外。`executed` が `true` の場合は `null` |
 | `score` | `number \| null` | 任意 | 変更コードのミューテーションスコア（%）。`executed` が `true` の場合は必須 |
-| `threshold` | `number \| null` | 任意 | 適用した閾値（%）。既定は High 80 / Medium 70（プロダクトの CLAUDE.md で上書き可）。`executed` が `true` の場合は必須 |
+| `threshold` | `number \| null` | 任意 | 適用した閾値（%）。既定は High 80 / Medium 70（プロダクトの CLAUDE.md で上書き可 — 下記「上書きの契約」注記を参照）。`executed` が `true` の場合は必須 |
 | `loops` | `number` | 任意 | 「生存ミュータント分析 → テスト追加 → 再実行」のループ回数。上限は5（quality-policy.md §5）。`executed` が `true` の場合は必須 |
 | `survived_addressed` | `number` | 任意 | テスト追加で対処した生存ミュータント数。`executed` が `true` の場合は必須 |
 | `equivalent_excluded` | `number` | 任意 | 等価ミュータント（動作が変わらない変異）として対象から除外した数。`executed` が `true` の場合は必須 |
-| `scope_reduced` | `boolean` | 任意 | 実行時間バジェット（既定15分）超過見込みにより、リスクの高いファイル優先で対象を絞ったか。`executed` が `true` の場合は必須 |
+| `scope_reduced` | `boolean` | 任意 | 実行時間バジェット（既定15分。CLAUDE.md で上書き可 — 下記「上書きの契約」注記を参照）超過見込みにより、リスクの高いファイル優先で対象を絞ったか。`executed` が `true` の場合は必須 |
 | `aborted_reason` | `"budget_exceeded" \| "stagnation" \| "loop_limit" \| null` | 任意 | 打ち切り事由。`budget_exceeded`: 実行時間バジェット超過 / `stagnation`: 2ループ連続でスコア改善なしによる早期打ち切り / `loop_limit`: 5ループ上限到達。完走した場合は `null`。`executed` が `true` の場合は必須 |
 
 未実行時は `{ "executed": false, "reason": "not_configured" }` のように `executed` と `reason` のみを記録する（他キーは省略可）。`aborted_reason` が `null` 以外の場合、`.quality-check-passed` の作成にはユーザーの明示承認が必要であり、承認した場合は `gate_override` に記録する。
+
+> **上書きの契約**（quality-policy.md §2）: `threshold` とバジェットの上書きキーの記載形式はフェーズ2で確定する。それまでは quality-policy.md の既定値が拘束力を持ち、High リスクのゲートを弱める方向の上書きは行わない。
 
 ### GateOverride オブジェクト
 
 打ち切り・閾値未達の工程が存在するにもかかわらずユーザー承認のもとで通過させた場合にのみ記録する（quality-policy.md §5「打ち切り時のゲート挙動」）。該当がなければトップレベル `gate_override` を `null` にする。
 
+**このオブジェクトの存在自体が「ユーザーの明示承認を得た」ことの記録である。** 承認を得ていない状態で本オブジェクトを記録してはならず、そのとき `.quality-check-passed` も作成しない（承認の有無を表す真偽値フィールドは持たない — `null` か、承認済みオブジェクトが存在するかの二値で表現する）。
+
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
-| `approved` | `boolean` | 必須 | ユーザーの明示承認を得たか。承認なしにこのオブジェクトを記録してはならない（`.quality-check-passed` も作成しない） |
 | `steps` | `string[]` | 必須 | 承認対象となった打ち切り・閾値未達の工程（例: `["step_2", "step_3.5"]`） |
 | `reason` | `string` | 必須 | 承認の理由（ユーザーが示した判断根拠をそのまま記録する） |
 
 ```json
-"gate_override": {
-  "approved": true,
-  "steps": ["step_3.5"],
-  "reason": "残存ミュータントは監査ログ整形のみで、リリース期日を優先すると判断（ユーザー承認）"
+{
+  "gate_override": {
+    "steps": ["step_3.5"],
+    "reason": "残存ミュータントは監査ログ整形のみで、リリース期日を優先すると判断（ユーザー承認）"
+  }
 }
 ```
 
