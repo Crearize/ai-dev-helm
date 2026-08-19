@@ -6,8 +6,9 @@
 
 1. `documents/development/development-policy.md` - Development guidelines
 2. `documents/development/coding-rules/backend-rules.md` - Backend coding rules
-3. `documents/development/error-codes.md` - Error code list
-4. `documents/development/coding-rules/api-design-rules.md` - API design rules
+3. `documents/development/coding-rules/common-rules.md` - Common coding rules
+4. `documents/development/error-codes.md` - Error code list
+5. `documents/development/coding-rules/api-design-rules.md` - API design rules
 
 ---
 
