@@ -639,7 +639,7 @@ your-project/
 | **naming-conventions.md** | ファイル・クラス・メソッド・DB・API・Git など全領域の命名規約を統一的に定義。Java（UpperCamelCase/lowerCamelCase）、TypeScript/React（PascalCase コンポーネント、use プレフィックス Hook）、DB（snake_case、複数形テーブル名）、API（/api/v1/resources）など |
 | **quick-checklist.md** | 作業前（Issue 作成、ブランチ確認）・作業中（規約遵守、テスト記述）・マージ前（quality-check 実行）・PR 作成（implementation-report 実行）のクイックリファレンス |
 | **error-codes.md** | エラーコード体系の定義。`[FEATURE]_[TYPE]_[DETAIL]` 形式で HTTP ステータスコードとの対応（400/401/403/404/409/500）を含む |
-| **quality-policy.md** | 「何をもって品質を確認したと言えるか」を定義する品質ポリシー。リスクレベル定義（High/Medium/Low）、レベル別ゲートマトリクス（静的チェック、ユニットテスト、test-design、ミューテーションテスト、ペルソナレビュー、E2E）、テスト層選択の原則（テストトロフィー）、テストオラクル原則、反復工程のループ防護（打ち切り基準）、開発プロセスのループ防護（§5.5: 実装 ↔ レビューのレビューラウンド上限・重要度ゲーティング・セレモニー縮退） |
+| **quality-policy.md** | 「何をもって品質を確認したと言えるか」を定義する品質ポリシー。リスクレベル定義（High/Medium/Low）、レベル別ゲートマトリクス（静的チェック、ユニットテスト、test-design、ミューテーションテスト、ペルソナレビュー、E2E）、テスト層選択の原則（テストトロフィー）、テストオラクル原則、反復工程のループ防護（打ち切り基準）、開発プロセスのレビュー一本化（§5.5: タスク単位レビューの廃止・文書レビューの維持・マージ前 quality-check への品質レビュー集約） |
 | **static-check-standard.md** | 静的チェック基準カタログ。決定的チェック（Lint / 静的解析）で担保すべき項目を A1〜F2 の25カテゴリ（正しさ・セキュリティ・設計/保守性・パフォーマンス・テスト品質・その他）に整理し、必須 / 推奨 / 任意の採用基準と、AI 生成コードで頻発するカテゴリ（🤖）を定義 |
 | **coding-rules/common-rules.md** | Git/GitHub 規約（Conventional Commits 形式）、コメント規約（TODO/FIXME にデッドライン必須）、環境変数管理、セキュリティルール（OWASP Top 10 全項目の対策指針、CSRF 対策、依存パッケージセキュリティ）、パフォーマンスルール（N+1 防止、インデックス設計、ページネーション必須）、アーキテクチャ・設計原則（レイヤー責務、DRY、仕様ベースのテスト）、言語横断の禁止パターン（ワイルドカード import、完全修飾名の直書き、未使用 import、マジックナンバー）。各項目には静的チェック基準カタログの対応カテゴリを示す `> Catalog:` 注記が付く |
 | **coding-rules/api-design-rules.md** | REST API 設計ルール。エンドポイント命名（lowercase + hyphen-case、複数形）、URL ネスト上限（2 階層まで）、HTTP メソッドと冪等性、パス vs クエリパラメータの使い分け、ページネーション仕様（page/size/sort）、エラーレスポンス統一形式、後方互換性ポリシー |

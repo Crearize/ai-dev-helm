@@ -40,17 +40,16 @@ See: https://developers.openai.com/codex/guides/agents-md
 
 ### Plan Execution Rules
 
-1. **Subagent-driven execution by default** - Execute plans by spawning a fresh subagent per task and reviewing between tasks (see `.codex/skills/superpowers/subagent-driven-development/SKILL.md`). Use inline execution (`executing-plans`) only when the user explicitly requests it.
+1. **Subagent-driven execution by default** - Execute plans by spawning a fresh subagent per task (see `.codex/skills/superpowers/subagent-driven-development/SKILL.md`). Use inline execution (`executing-plans`) only when the user explicitly requests it.
 2. **Plan files are not committed** - `docs/superpowers/plans/*.md` must NOT be committed.
 3. **Plan file lifecycle** - Kept locally during implementation, deleted after PR merge.
 
-**Loop protection for the implement-review loop** (quality policy §5.5 - cap / stall detection / reduction / escalation):
+**Review consolidation** (quality policy §5.5 - review loops exist at exactly two points: document creation and the merge gate):
 
-4. **Review round cap** - Per task, at most 2 rounds of spec-conformance review and at most 2 rounds of quality review. After the cap, only **High** (must-fix) findings block; **Medium** findings go to a follow-up list and the run moves on; Low findings are recorded only. Decide on recorded Medium findings as a batch at the end of the phase.
-5. **Stall detection** - Two consecutive rounds with only Minor new findings -> stop reviewing and move to the next task.
-6. **Ceremony reduction** - Docs-oriented tasks under 100 diff lines: one combined spec + quality review instead of two. 1-2 line mechanical fixes: the orchestrating session checks the diff itself - spawn no reviewer subagent.
-7. **Subagent budget in the plan** - Every implementation plan states an expected subagent-dispatch count (target and cap); escalate to the user when the run is projected to exceed it.
-8. **This applies to in-development task reviews only** - The final quality-check gate (Step 4) keeps its own rule that every High/Medium finding is addressed. Never carry the follow-up-list rule into the merge gate.
+4. **No per-task reviews** - During plan execution (subagent or inline), do NOT spawn spec-conformance or quality reviewers for individual tasks. This overrides the per-task two-stage review loop in the subagent-driven-development skill. The implementer's self-review (run the tests, verify the diff against the task text) is the only per-task check; the orchestrating session spot-checks the diff and moves on. Quality assurance happens once, at the merge-gate quality-check.
+5. **Document reviews stay** - The spec-document and plan-document review loops (during brainstorming / writing-plans) are kept as-is (max 3 iterations each, then escalate to the user). A wrong design or plan compounds through every task and cannot be repaired by the final gate.
+6. **Subagent budget in the plan** - Every implementation plan states an expected subagent-dispatch count (target and cap); escalate to the user when the run is projected to exceed it.
+7. **The merge gate is not relaxed** - The final quality-check gate (Step 4) keeps its own rule that every High/Medium finding is addressed. If the gate produces many findings, do not reinstate per-task reviews; route the causes instead (mechanically detectable issues to the lint layer, design-level issues into the spec/plan review checklists).
 
 ### Subagent Model Selection
 
@@ -64,15 +63,15 @@ See: https://developers.openai.com/codex/guides/agents-md
 | Codebase exploration / context gathering | `gpt-5.4-mini` | `medium` | Understanding project structure during planning, read-heavy scans, finding related implementations |
 | Simple mechanical search | `gpt-5.4-mini` | `low` | File/symbol lookup, listing usages, collecting file paths |
 | Implementation / concrete work | `gpt-5.6-terra` (alternative: `gpt-5.6-sol` with lowered effort) | `medium` | Task-by-task implementation subagents, test writing, refactoring, migrations |
-| Spec-conformance review (mechanical diff-vs-spec check) | `gpt-5.4-mini` | `medium` | Checking that a task diff matches the plan/spec text, checklist-style conformance passes |
-| Quality / architecture review, quality-check personas | `gpt-5.6-sol` | `high` | 6-persona quality-check review, code review, architecture critique, security analysis, design document review |
+| Document review (spec / plan documents) | `gpt-5.4-mini` | `medium` | Spec-document and plan-document reviewers during brainstorming / writing-plans |
+| Quality / architecture review, quality-check personas | `gpt-5.6-sol` | `high` | 6-persona quality-check review, code review, architecture critique, security analysis |
 
 Rules:
 
 1. **Planning/design subagents** -> `gpt-5.6-sol` with `high` effort. This is the Codex-side counterpart of Fable in Claude Code.
 2. **Exploration subagents** (read-only research during planning) -> `gpt-5.4-mini` with `medium` effort. Speed matters more than depth; results are distilled back to the main session.
 3. **Implementation subagents** (task executors in subagent-driven execution) -> `gpt-5.6-terra`, or `gpt-5.6-sol` with `model_reasoning_effort` lowered to `medium`/`low`. Do not spend high-effort frontier models on routine implementation.
-4. **Review subagents are split by review type** (quality policy §5.5, model tiering): **spec-conformance review** - mechanically checking a diff against the plan/spec - runs on `gpt-5.4-mini` with `medium` effort. **Quality, architecture and security review, and the quality-check personas** run on `gpt-5.6-sol` with `high` effort, because that review directly gates push/merge. Never downgrade the quality-check personas to a mini model.
+4. **Review subagents are split by review type** (quality policy §5.5, model tiering): **document reviews** (spec-document / plan-document reviewers) run on `gpt-5.4-mini` with `medium` effort. **The quality-check personas** run on `gpt-5.6-sol` with `high` effort, because that review directly gates push/merge. Per-task reviewers are not spawned at all (Plan Execution Rule 4). Never downgrade the quality-check personas to a mini model.
 5. If reusable, define these as project agents under `.codex/agents/` (e.g. `implementer.toml` with `model = "gpt-5.6-terra"`, `reviewer.toml` with `model = "gpt-5.6-sol"` / `model_reasoning_effort = "high"` / `sandbox_mode = "read-only"`). Otherwise, state the model explicitly in the spawn prompt.
 6. When in doubt between two tiers, choose the more capable model.
 

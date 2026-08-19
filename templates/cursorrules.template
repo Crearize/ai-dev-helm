@@ -43,20 +43,19 @@ Cursor can choose the model per subagent invocation. **When dispatching subagent
 | Codebase exploration / context gathering | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | Understanding project structure in Phase 1, finding related implementations, tracing dependencies |
 | Simple mechanical search | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | File/symbol lookup, listing usages |
 | Implementation / concrete work | Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or GPT-5.6-Sol with lowered effort | Phase 2/3 implementation, test writing, refactoring |
-| Spec-conformance review (mechanical diff-vs-spec check) | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | Checking that a diff matches the plan/spec text, checklist-style conformance passes |
+| Document review (spec / plan documents) | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | Spec-document and plan-document reviewers during design/planning |
 | Quality / architecture review, quality-check personas | Claude Opus 5 first; GPT-5.6-Sol high as cross-vendor alternative | 6-persona quality-check review (Phase 5), code review, security analysis, architecture critique |
 
-This table takes precedence over any model-selection guidance inside individual skills (e.g. the "Model Selection" section of subagent-driven-development). When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-5.6-Sol for planning/design. Implementation work should NOT run on Fable - use Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or a lowered-effort GPT-5.6-Sol. Do not use Claude Haiku for any tier. Claude Sonnet is allowed only for exploration/search tasks and spec-conformance review - never use it for implementation, quality/architecture review, or planning. For quality, architecture and security reviews and the quality-check personas, prefer Claude Opus 5, with GPT-5.6-Sol high when cross-vendor diversity is useful; never downgrade those to Sonnet. Do not use Fable for review agents.
+This table takes precedence over any model-selection guidance inside individual skills (e.g. the "Model Selection" section of subagent-driven-development). When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-5.6-Sol for planning/design. Implementation work should NOT run on Fable - use Claude Opus 5, Composer 2.5 Fast, GPT-5.6-Terra, or a lowered-effort GPT-5.6-Sol. Do not use Claude Haiku for any tier. Claude Sonnet is allowed only for exploration/search tasks and document reviews (spec/plan documents) - never use it for implementation, quality-check personas, or planning. Per-task reviewers are not dispatched at all (Review Consolidation rule 1). For quality, architecture and security reviews and the quality-check personas, prefer Claude Opus 5, with GPT-5.6-Sol high when cross-vendor diversity is useful; never downgrade those to Sonnet. Do not use Fable for review agents.
 
-### Review Loop Protection
+### Review Consolidation
 
-Applies to the **in-development** review rounds of the Phase Design Workflow below - Phase 4 architecture review and any other review iterated while implementing - following quality policy §5.5 - cap / stall detection / reduction / escalation. **Phase 5 is explicitly out of scope**: it is the final `quality-check` gate itself, where quality policy §5 and the completion criteria in the `quality-check` skill apply instead (every High/Medium finding addressed, 0 must-fix items). Never apply the relaxations below to Phase 5.
+Review loops exist at exactly two points (quality policy §5.5): **document creation** (spec / plan documents) and the **final quality-check gate** (Phase 5). **Phase 5 is never relaxed**: it is the final `quality-check` gate itself, where quality policy §5 and the completion criteria in the `quality-check` skill apply (every High/Medium finding addressed, 0 must-fix items).
 
-1. **Review round cap** - Per task, at most 2 rounds of spec-conformance review and at most 2 rounds of quality review. After the cap, only **High** (must-fix) findings block; **Medium** findings are recorded in a follow-up list and work moves on; Low findings are recorded only. Decide on recorded Medium findings as a batch at the end of the phase.
-2. **Stall detection** - Two consecutive rounds with only Minor new findings -> stop reviewing and move on.
-3. **Ceremony reduction** - Docs-oriented changes under 100 diff lines: one combined spec + quality review instead of two. 1-2 line mechanical fixes: check the diff directly, with no review agent.
-4. **Budget escalation** - State an expected review/agent-invocation count up front and escalate to the user when the work is projected to exceed it.
-5. **In-development reviews only** - Rules 1-4 never apply to Phase 5. Resolve or re-surface follow-up items before entering Phase 5, so the final gate still sees them.
+1. **No in-development reviews** - While implementing (Phases 2-4), do NOT run per-task or per-implementation review rounds with review agents. The implementer's self-review (run the tests, verify the diff against the task/spec text) is the only in-development check. Quality assurance happens once, at Phase 5.
+2. **Document reviews stay** - The spec-document and plan-document review loops (during design/planning) are kept as-is (max 3 iterations each, then escalate to the user). A wrong design or plan compounds through every task and cannot be repaired by the final gate.
+3. **Budget escalation** - State an expected agent-invocation count up front and escalate to the user when the work is projected to exceed it.
+4. **Do not reinstate per-task reviews** - If Phase 5 produces many findings, route the causes instead: mechanically detectable issues to the lint layer, design-level issues into the spec/plan review checklists.
 
 ### Shell Command Rules (Windows / PowerShell)
 
@@ -85,9 +84,9 @@ When the execution shell is PowerShell (default on Windows), bash idioms fail. F
 ### Phase 3: Frontend Implementation
 - Reference Phase 1, 2 results
 
-### Phase 4: Architecture Review
-- Design consistency, documentation consistency, DRY principle
-- Pass -> Phase 5 / Fail -> Fix in Phase 2/3
+### Phase 4: Self-Review (no reviewer agents)
+- Implementer self-review only: run the tests, verify the diff against the spec/plan text (design consistency, documentation consistency, DRY)
+- Architecture-level review is covered by the Phase 5 quality-check personas - do not run a separate review round here (Review Consolidation rule 1)
 
 ### Phase 5: Quality Verification
 - Determine the change area **and risk level** first (quality policy §1); `quality-check` records it as `risk_level`
