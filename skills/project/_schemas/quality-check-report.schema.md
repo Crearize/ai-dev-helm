@@ -12,11 +12,13 @@
 | `e2e_issues` | `string[]` | 必須 | E2Eで検出された問題（なければ空配列） |
 | `documentation` | `Documentation` | 必須 | `feature-documentation` スキルの実行状況（Step 0） |
 | `self_improvement` | `SelfImprovement` | 必須 | `self-improvement` スキルの実行状況（Step 5.75） |
-| `risk_level` | `"high" \| "medium" \| "low"` | 必須 | Step 1 で判定したリスクレベル（Step 1 へのリスクレベル判定の追加はフェーズ2）。判定基準は `shared/documents/quality-policy.md` §1、レベル別のゲート強度は同 §2 を参照 |
-| `lint_cycles` | `number \| null` | 必須 | Step 2 の AI 修正サイクル数（1サイクル = `lint:all` 実行 → AI による修正）。決定的自動修正のみで完結したパスは含めない。上限は3（quality-policy.md §5）。**Step 2 を実行しない領域（docs / infra のみの変更等）では `null`** — `0`（実行したが AI 修正が不要だった）とは区別する |
-| `mutation` | `Mutation` | 必須 | Step 3.5 ミューテーションテストの実行結果 |
+| `risk_level` | `"high" \| "medium" \| "low"` | フェーズ2必須 [^lifecycle] | Step 1 で判定したリスクレベル（Step 1 へのリスクレベル判定の追加はフェーズ2）。判定基準は `quality-policy.md` §1、レベル別のゲート強度は同 §2 を参照 |
+| `lint_cycles` | `number \| null` | フェーズ2必須 [^lifecycle] | Step 2 の AI 修正サイクル数（1サイクル = CLAUDE.md に登録された静的チェックコマンド（フェーズ3以降は `lint:all`）の実行 → AI による修正）。決定的自動修正のみで完結したパスは含めない。上限は3（quality-policy.md §5）。**Step 2 を実行しない領域（docs のみの変更等）では `null`** — `0`（実行したが AI 修正が不要だった）とは区別する。infra のみの変更における Step 2 の要否は quality-check SKILL.md 内で記述が割れているため、フェーズ2の Step 2 再定義で確定する |
+| `mutation` | `Mutation` | フェーズ2必須 [^lifecycle] | Step 3.5 ミューテーションテストの実行結果 |
 | `test_design` | `TestDesign` | 予約 [^reserved] | Step 3 のテスト設計メモ（`test-design` スキル）との照合結果。**キー構成はフェーズ2（quality-check 改修 + test-design スキル）で確定する**（§ TestDesign オブジェクト 参照） |
-| `gate_override` | `GateOverride \| null` | 必須 | 打ち切り・閾値未達で終了した工程をユーザーの明示承認のもとで通した場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6） |
+| `gate_override` | `GateOverride \| null` | 必須（発生時） [^lifecycle] | 打ち切り・閾値未達で終了した工程をユーザーの明示承認のもとで通した場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6） |
+
+[^lifecycle]: 「フェーズ2必須」「必須（発生時）」は必須／任意と同じ軸ではなく、**いつから必須になるか**（フィールドのライフサイクル）を併記したもの。「フェーズ2必須」は下記フェーズ1注記のとおり、SKILL.md 側の出力配線が完了するフェーズ2以降に必須となる。「必須（発生時）」は配線を待たず現時点から拘束力を持ち、承認が発生した場合に必ず記録する（発生しなければ `null`）。
 
 [^reserved]: 「予約」は必須／任意とは別の軸（フィールドのライフサイクル）を表す。キー構成が確定していないため、必須・任意のいずれとしても判定できない段階にあることを示す。フェーズ2でキーを確定する際に必須／任意を割り当てる。
 
@@ -112,7 +114,7 @@ High / Medium リスクの変更では、実装前に `test-design` スキルで
 {
   "gate_override": {
     "steps": ["step_3.5"],
-    "reason": "残存ミュータントは監査ログ整形のみで、リリース期日を優先すると判断（ユーザー承認）"
+    "reason": "生存ミュータントは全て等価ミュータントと判断したが自動判定できないため、手動確認のうえ通過（ユーザー承認）"
   }
 }
 ```

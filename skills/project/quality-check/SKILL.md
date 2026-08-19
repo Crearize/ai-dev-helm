@@ -359,6 +359,8 @@ Step 4-4で作成済みの`.quality-check-report.json`に最終結果フィー�
 
 ### フラグファイル作成
 
+打ち切り・閾値未達で終了した工程がある場合は、`documents/development/quality-policy.md` §5 に従いユーザーの明示承認なしにフラグを作成しない。承認時は `.quality-check-report.json` の `gate_override` に記録する（スキーマ参照）。
+
 全チェック通過後、現在ブランチ名と HEAD ハッシュを記録した JSON フラグを作成する：
 
 ```bash
