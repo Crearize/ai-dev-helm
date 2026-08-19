@@ -21,11 +21,17 @@
 // branch name) fail open; verification failures after a command is confirmed
 // gated (unresolvable source tip, gh errors) fail closed.
 //
+// Every git/gh invocation goes through execFileSync with an argv array: no
+// shell is ever involved. Refs and paths taken from the command line or from
+// a diff would otherwise be interpreted by the shell — cmd.exe expands `%VAR%`
+// even inside double quotes, `>` redirects before the hook has decided
+// anything, and POSIX shells run backtick/`$()` substitutions.
+//
 // Implemented in Node (a documented prerequisite of ai-dev-helm) so the hook
 // works identically on Windows (cmd/PowerShell), macOS, and Linux.
 
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const FLAG_FILE = '.quality-check-passed';
 
@@ -69,34 +75,107 @@ const GATE_PARAM_KEYS = [
   'mutation_threshold_medium',
   'mutation_budget_minutes',
 ];
-// Matches a line mentioning any gate-parameter key regardless of markdown
-// notation (`- key: value`, `- **key**: value`, `` - `key`: value ``, a
-// table row, ...). Non-global: only used with .test() below.
-const GATE_PARAM_KEY_RE = new RegExp(`(${GATE_PARAM_KEYS.join('|')})`);
-const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
+// Tolerant key matcher: markdown prose renders the same key with different
+// case and word separators (`Mutation_Threshold_High`, `mutation-threshold-
+// high`, `Mutation Threshold High`), and a reader recognizes all of them as
+// the same declaration. Matching only the canonical spelling let every
+// variant land as "declares nothing". Applied to already-normalized
+// (lowercased, whitespace-collapsed) text.
+const GATE_PARAM_KEY_RE = new RegExp(
+  `(?:${GATE_PARAM_KEYS.map((k) => k.replace(/_/g, '[-_ ]')).join('|')})`,
+  'i'
+);
+// `### Quality Gate Overrides` at any heading level, any case/separator.
+const QGO_HEADING_RE = /quality[-_\s]*gate[-_\s]*overrides/i;
 
-// Paths that cannot be quoted safely for the shell — fail closed instead of
-// guessing at their content.
-const UNSAFE_PATH_RE = /["'`$\\]/;
+// A markdown fence opener/closer. Checked before anything else on a line.
+const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
+const HEADING_RE = /^\s{0,3}#{1,6}\s+(.*)$/;
 
-function trySh(cmd, timeoutMs = 5000) {
+const MAX_BUFFER = 32 * 1024 * 1024;
+// Blobs above this are not parsed: a harness config file that large is not a
+// legitimate override declaration, and guessing at it is worse than a
+// predictable fail-closed answer.
+const MAX_BLOB_BYTES = 2 * 1024 * 1024;
+
+// Global deadline for the whole hook. Claude Code kills the hook at its
+// configured timeout (settings.json.template pins 30s); every git call clamps
+// its own timeout to what is left, so a pathological repo degrades into
+// "cannot verify" (fail closed) instead of the hook being killed mid-decision.
+const DEADLINE = Date.now() + 20000;
+
+function remainingBudget() {
+  return DEADLINE - Date.now();
+}
+
+function runGit(args, timeoutMs, encoding) {
+  const budget = remainingBudget();
+  if (budget <= 0) return null; // Out of budget: treat as unverifiable.
   try {
-    return execSync(cmd, {
-      encoding: 'utf8',
+    return execFileSync('git', args, {
+      encoding,
       stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: timeoutMs,
-    }).trim();
+      timeout: Math.min(timeoutMs, budget),
+      maxBuffer: MAX_BUFFER,
+    });
   } catch {
     return null;
   }
 }
 
-function shOk(cmd, timeoutMs = 5000) {
+// Resolved once: pins every subsequent git call to the repository root so the
+// hook's cwd cannot change what a path means. `diff.relative=false` is forced
+// for the same reason — with `diff.relative` configured true and the hook
+// running from a subdirectory, `git diff --name-only` emits paths relative to
+// that subdirectory, and HARNESS_PATTERNS then matches the wrong things.
+let repoTopResolved = false;
+let repoTop = null;
+function gitPrefix() {
+  if (!repoTopResolved) {
+    repoTopResolved = true;
+    const out = runGit(['rev-parse', '--show-toplevel'], 2000, 'utf8');
+    repoTop = out === null ? null : out.trim() || null;
+  }
+  return repoTop
+    ? ['-C', repoTop, '-c', 'diff.relative=false']
+    : ['-c', 'diff.relative=false'];
+}
+
+function tryGit(args, timeoutMs = 2000) {
+  const out = runGit([...gitPrefix(), ...args], timeoutMs, 'utf8');
+  return out === null ? null : out.trim();
+}
+
+function tryGitBuf(args, timeoutMs = 2000) {
+  return runGit([...gitPrefix(), ...args], timeoutMs, 'buffer');
+}
+
+function gitOk(args, timeoutMs = 2000) {
+  const budget = remainingBudget();
+  if (budget <= 0) return false;
   try {
-    execSync(cmd, { stdio: 'ignore', timeout: timeoutMs });
+    execFileSync('git', [...gitPrefix(), ...args], {
+      stdio: 'ignore',
+      timeout: Math.min(timeoutMs, budget),
+    });
     return true;
   } catch {
     return false;
+  }
+}
+
+function tryGh(args, timeoutMs = 3000) {
+  const budget = remainingBudget();
+  if (budget <= 0) return null;
+  try {
+    return execFileSync('gh', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: Math.min(timeoutMs, budget),
+      maxBuffer: MAX_BUFFER,
+    }).trim();
+  } catch {
+    return null;
   }
 }
 
@@ -131,65 +210,257 @@ function pushTargetsMain(command, branch) {
   return false;
 }
 
+// --------------------------------------------------------------------------
+// Reading a harness config file at a rev
+// --------------------------------------------------------------------------
+
+const revExistsCache = new Map();
+const treeCache = new Map();
+const overrideStateCache = new Map();
+
+function revExists(rev) {
+  if (!revExistsCache.has(rev)) {
+    revExistsCache.set(rev, tryGit(['cat-file', '-t', rev]) !== null);
+  }
+  return revExistsCache.get(rev);
+}
+
+// Every path in the tree at `rev`. NUL-delimited so paths containing quotes,
+// spaces or non-ASCII bytes come back verbatim instead of git-quoted.
+// Returns null when the listing itself fails.
+function treeFiles(rev) {
+  if (!treeCache.has(rev)) {
+    const out = tryGit(['ls-tree', '-r', '--name-only', '-z', rev], 5000);
+    treeCache.set(
+      rev,
+      out === null ? null : new Set(out.split('\0').filter(Boolean))
+    );
+  }
+  return treeCache.get(rev);
+}
+
+// Decode a blob to text. A harness config file is legitimately authorable in
+// UTF-16 (Windows editors) — reading those bytes as UTF-8 turned every key
+// into mojibake and made the declaration invisible. Anything with an embedded
+// NUL that is not UTF-16 is binary: unknowable, so fail closed.
+function decodeBlob(buf) {
+  try {
+    if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+      return buf.subarray(2).toString('utf16le');
+    }
+    if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+      const swapped = Buffer.from(buf.subarray(2));
+      swapped.swap16();
+      return swapped.toString('utf16le');
+    }
+    if (buf.includes(0)) return null;
+    const text = buf.toString('utf8');
+    return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  } catch {
+    return null;
+  }
+}
+
+// Blank out the interior of inline code spans, preserving length, so the
+// caller can locate real comment delimiters by index in the masked copy while
+// slicing text out of the original. `` `<!--` `` in prose is literal text:
+// treating it as a comment opener let a decoy span comment out the live
+// override block that followed it (and a matching `` `-->` `` span closed the
+// fake comment again, hiding everything in between).
+function maskCodeSpans(line) {
+  let out = '';
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] === '`') {
+      let n = 0;
+      while (line[i + n] === '`') n++;
+      const run = '`'.repeat(n);
+      const close = line.indexOf(run, i + n);
+      if (close !== -1) {
+        out += run + 'x'.repeat(close - (i + n)) + run;
+        i = close + n;
+        continue;
+      }
+    }
+    out += line[i];
+    i++;
+  }
+  return out;
+}
+
+// The part of `line` that is outside an HTML comment, carrying comment state
+// across lines via `state.inComment`.
+function liveText(line, state) {
+  const masked = maskCodeSpans(line);
+  let live = '';
+  let i = 0;
+  while (i < masked.length) {
+    if (!state.inComment) {
+      const open = masked.indexOf('<!--', i);
+      if (open === -1) {
+        live += line.slice(i);
+        break;
+      }
+      live += line.slice(i, open);
+      state.inComment = true;
+      i = open + 4;
+    } else {
+      const close = masked.indexOf('-->', i);
+      if (close === -1) break;
+      state.inComment = false;
+      i = close + 3;
+    }
+  }
+  return live;
+}
+
+function normalizeLine(text) {
+  return text.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+// What a harness config file *declares* about gate parameters, as an ordered
+// list of `[context, line]` entries — the contract of quality-policy.md §2
+// 「上書きの契約」 is about the declaration a reader sees, not about the raw
+// bytes of any single line. Hence:
+//
+//  - Fence state is resolved BEFORE comment state. §2 itself shows the
+//    override block inside a fenced example, so fenced content is
+//    illustrative and inert; and because it is inert, a `<!--` inside a fence
+//    is literal text that must not open a comment. Doing comments first let a
+//    fenced `<!--` pair with a later real `-->` and swallow a live block.
+//  - Entries are context-tagged ("block" inside a `### Quality Gate Overrides`
+//    section, "outside" elsewhere). The same line means different things in
+//    the two places, so moving an otherwise unchanged line into the overrides
+//    section is a change of what the file declares.
+//  - A key line ending in `:` absorbs the next live line as its value, since
+//    markdown renders `key:` / newline / `value` as one declaration.
+//  - Entries stay in document order rather than being sorted: with a
+//    duplicated key the later declaration wins, so swapping two duplicate
+//    lines changes the effective threshold. The cost is that reordering
+//    distinct keys also reads as a change — that direction is fail-closed and
+//    only ever asks for a quality check that was already cheap to run.
+//
+// Deliberately over-inclusive: any live line that so much as mentions a key
+// counts. Prose that discusses a key without declaring it belongs inside an
+// HTML comment.
+function extractOverrideEntries(src) {
+  const entries = [];
+  const commentState = { inComment: false };
+  let fenceChar = null;
+  let inOverridesBlock = false;
+  let pending = -1;
+
+  for (const raw of src.split(/\r?\n/)) {
+    const fence = raw.match(FENCE_RE);
+    if (fence) {
+      const ch = fence[1][0];
+      if (fenceChar === null) fenceChar = ch;
+      else if (ch === fenceChar) fenceChar = null;
+      continue;
+    }
+    if (fenceChar !== null) continue; // Inert: illustrative, not declarative.
+
+    const live = liveText(raw, commentState);
+
+    const heading = live.match(HEADING_RE);
+    if (heading) {
+      pending = -1; // A heading terminates a pending `key:` value.
+      inOverridesBlock = QGO_HEADING_RE.test(heading[1].replace(/[`*_]/g, ''));
+      continue;
+    }
+
+    const norm = normalizeLine(live);
+    if (norm === '') continue;
+    if (pending >= 0) {
+      entries[pending][1] += ' ' + norm;
+      pending = -1;
+    }
+    if (GATE_PARAM_KEY_RE.test(norm)) {
+      entries.push([inOverridesBlock ? 'block' : 'outside', norm]);
+      if (norm.endsWith(':')) pending = entries.length - 1;
+    }
+  }
+  return entries;
+}
+
 // The gate parameters `file` actually declares at `rev`, as a canonical
 // string. Whole-file extraction, not diff lines: only comparing both sides
 // catches an edit that flips an existing block between commented and live
-// without touching any `mutation_*` line. HTML comments are stripped first,
-// so a commented-out template declares nothing. Returns null when the content
-// cannot be established (fail closed); a path missing at `rev` is a legitimate
-// "declares nothing" and yields the empty state.
+// without touching any `mutation_*` line. Returns null when the content
+// cannot be established (fail closed); a path genuinely absent at `rev` is a
+// legitimate "declares nothing" and yields the empty state.
 function overrideState(rev, file) {
-  if (UNSAFE_PATH_RE.test(file)) return null;
-  let src = trySh(`git show ${rev}:"${file}"`);
-  if (src === null) {
-    // Distinguish "absent at rev" (new file) from an unreadable blob.
-    if (trySh(`git cat-file -t ${rev}`) === null) return null;
-    if (trySh(`git cat-file -t ${rev}:"${file}"`) !== null) return null;
+  // Defense in depth: every rev reaching here is either a sha resolved by
+  // git or the literal HEAD, never a token lifted from the command line.
+  if (!/^[0-9a-f]{7,40}$/i.test(rev) && rev !== 'HEAD') return null;
+
+  const key = `${rev}\0${file}`;
+  if (overrideStateCache.has(key)) return overrideStateCache.get(key);
+
+  const state = computeOverrideState(rev, file);
+  overrideStateCache.set(key, state);
+  return state;
+}
+
+function computeOverrideState(rev, file) {
+  let src;
+  const buf = tryGitBuf(['show', `${rev}:${file}`], 5000);
+  if (buf === null) {
+    // A failed read is not evidence of absence — it used to be treated as
+    // such, which turned every unreadable blob (odd path, timeout, oversized
+    // buffer) into "this file declares nothing" and opened the gate. Prove
+    // absence from the tree listing instead.
+    if (!revExists(rev)) return null;
+    const tree = treeFiles(rev);
+    if (tree === null) return null; // Cannot prove either way.
+    if (tree.has(file)) return null; // Present but unreadable.
     src = '';
+  } else {
+    if (buf.length > MAX_BLOB_BYTES) return null;
+    src = decodeBlob(buf);
+    if (src === null) return null;
   }
-  // Normalized line-set, not key:value extraction: prose and markdown can
-  // render a key in many notations (bold, backtick-quoted, a table cell, ...)
-  // and a regex tied to one exact notation is trivial to slip past. Any
-  // uncommented line that so much as mentions a key counts as state — this
-  // is deliberately over-inclusive (prose about a key also counts) in
-  // exchange for fail-closed detection; prose that discusses a key without
-  // declaring it belongs inside an HTML comment.
-  return JSON.stringify(
-    src
-      .replace(HTML_COMMENT_RE, '')
-      .split(/\r?\n/)
-      .filter((l) => GATE_PARAM_KEY_RE.test(l))
-      .map((l) => l.trim().replace(/\s+/g, ' '))
-      .sort() // reorder is still not a change
+  return JSON.stringify(extractOverrideEntries(src));
+}
+
+function matchesHarnessPatterns(files) {
+  return (
+    files.length > 0 &&
+    files.every((f) => HARNESS_PATTERNS.some((re) => re.test(f)))
   );
 }
 
-function isHarnessOnly(files, baseRev, tipRev) {
-  if (
-    files.length === 0 ||
-    !files.every((f) => HARNESS_PATTERNS.some((re) => re.test(f)))
-  ) {
-    return false;
-  }
-  // quality-policy.md §2「上書きの契約」 carve-out: a harness config file whose
-  // declared gate parameters change is not exempt from the quality check.
-  return !files.some((f) => {
-    if (!GATE_CONFIG_PATTERNS.some((re) => re.test(f))) return false;
+function gateConfigFiles(files) {
+  return files.filter((f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f)));
+}
+
+// quality-policy.md §2「上書きの契約」 carve-out: a harness config file whose
+// declared gate parameters change is not exempt from the quality check.
+function gateParamsUnchanged(files, baseRev, tipRev) {
+  return !gateConfigFiles(files).some((f) => {
     const before = overrideState(baseRev, f);
     const after = overrideState(tipRev, f);
     return before === null || after === null || before !== after;
   });
 }
 
+function isHarnessOnly(files, baseRev, tipRev) {
+  return (
+    matchesHarnessPatterns(files) && gateParamsUnchanged(files, baseRev, tipRev)
+  );
+}
+
 function diffFiles(range) {
-  const out = trySh(`git diff --name-only ${range}`);
+  // -z: paths come back verbatim rather than git-quoted, so a path with
+  // quotes or non-ASCII bytes still matches HARNESS_PATTERNS correctly.
+  const out = tryGit(['diff', '--name-only', '-z', range], 5000);
   if (out === null) return null;
-  return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  return out.split('\0').map((l) => l.trim()).filter(Boolean);
 }
 
 function mergeBaseRef() {
   for (const ref of ['origin/main', 'origin/master']) {
-    if (trySh(`git rev-parse --verify --quiet ${ref}`)) return ref;
+    if (tryGit(['rev-parse', '--verify', '--quiet', ref])) return ref;
   }
   return null;
 }
@@ -216,16 +487,17 @@ function resolveSourceTip(command, branch, isPush, mergeGated) {
   if (mergeGated) {
     const mergeMatch = command.match(GIT_MERGE_RE);
     // Try each positional token until one resolves; skips -m message text
-    // and other flag values that are not refs.
+    // and other flag values that are not refs. Tokens go to git as argv
+    // elements, so a crafted "ref" is only ever an unresolvable ref.
     for (const ref of positionalArgs(mergeMatch[2])) {
-      const sha = trySh(`git rev-parse --verify --quiet "${ref}"`);
+      const sha = tryGit(['rev-parse', '--verify', '--quiet', ref]);
       if (sha) return sha;
     }
     return null;
   }
   if (!isMainBranch(branch) || isPush) {
     // Feature-branch gh pr merge / any gated push: HEAD is the content.
-    return trySh('git rev-parse --verify --quiet HEAD');
+    return tryGit(['rev-parse', '--verify', '--quiet', 'HEAD']);
   }
   // gh pr merge while on main: resolve the PR head via gh (network call,
   // bounded timeout; failure means "cannot verify" and blocks).
@@ -233,14 +505,14 @@ function resolveSourceTip(command, branch, isPush, mergeGated) {
   if (ghMatch) {
     const prArg = positionalArgs(ghMatch[2])[0];
     if (prArg) {
-      const head = trySh(
-        `gh pr view "${prArg}" --json headRefName --jq .headRefName`,
+      const head = tryGh(
+        ['pr', 'view', prArg, '--json', 'headRefName', '--jq', '.headRefName'],
         3000
       );
       if (head) {
         return (
-          trySh(`git rev-parse --verify --quiet "origin/${head}"`) ||
-          trySh(`git rev-parse --verify --quiet "${head}"`)
+          tryGit(['rev-parse', '--verify', '--quiet', `origin/${head}`]) ||
+          tryGit(['rev-parse', '--verify', '--quiet', head])
         );
       }
     }
@@ -265,6 +537,9 @@ function block(reason) {
   );
 }
 
+const STALE_REASON =
+  'Code changed after the last quality check. Re-run /quality-check before merging.';
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
@@ -284,7 +559,7 @@ process.stdin.on('end', () => {
   const isPush = GIT_PUSH_RE.test(command);
   if (!isGh && !isMerge && !isPush) return;
 
-  const branch = trySh('git branch --show-current');
+  const branch = tryGit(['branch', '--show-current']);
   if (branch === null) return; // Not a git repo etc.: fail open.
 
   // --abort/--continue/--quit/--skip are conflict recovery, not merges.
@@ -306,10 +581,15 @@ process.stdin.on('end', () => {
   const base = mergeBaseRef();
   if (base) {
     const files = diffFiles(`${base}...${tip}`);
-    // The gate-parameter carve-out compares two revs, so use the same
-    // merge-base the `...` diff is taken against.
-    const mergeBase = trySh(`git merge-base ${base} ${tip}`);
-    if (files !== null && mergeBase && isHarnessOnly(files, mergeBase, tip)) return;
+    if (files !== null && matchesHarnessPatterns(files)) {
+      if (gateConfigFiles(files).length === 0) return;
+      // The gate-parameter carve-out compares two revs, so use the same
+      // merge-base the `...` diff is taken against. Resolved only now: it is
+      // an extra process, and it is only needed once a gate-config file is
+      // actually in an otherwise harness-only diff.
+      const mergeBase = tryGit(['merge-base', base, tip]);
+      if (mergeBase && gateParamsUnchanged(files, mergeBase, tip)) return;
+    }
   }
 
   const flag = readFlag();
@@ -324,10 +604,20 @@ process.stdin.on('end', () => {
     // Only valid when the push is the sole gated operation — when a merge is
     // chained in (`git merge feat && git push origin main`) the merge tip is
     // what lands on main and must be verified below instead.
-    if (shOk(`git merge-base --is-ancestor ${flag.commit} HEAD`)) return;
-    return block(
-      'Code changed after the last quality check. Re-run /quality-check before merging.'
-    );
+    //
+    // Ancestry alone only proves the check happened somewhere in history, not
+    // that nothing landed after it, so the same post-flag diff rules as the
+    // merge path apply — including the §2 gate-parameter carve-out.
+    if (gitOk(['merge-base', '--is-ancestor', flag.commit, 'HEAD'])) {
+      const since = diffFiles(`${flag.commit}..HEAD`);
+      if (
+        since !== null &&
+        (since.length === 0 || isHarnessOnly(since, flag.commit, 'HEAD'))
+      ) {
+        return;
+      }
+    }
+    return block(STALE_REASON);
   }
 
   const changed = diffFiles(`${flag.commit}..${tip}`);
@@ -337,7 +627,5 @@ process.stdin.on('end', () => {
     );
   }
   if (changed.length === 0 || isHarnessOnly(changed, flag.commit, tip)) return;
-  return block(
-    'Code changed after the last quality check. Re-run /quality-check before merging.'
-  );
+  return block(STALE_REASON);
 });
