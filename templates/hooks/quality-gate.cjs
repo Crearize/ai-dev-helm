@@ -40,6 +40,8 @@ const MERGE_CONTROL_RE = /\s--(abort|continue|quit|skip)\b/;
 // Merges/pushes whose entire (non-empty) diff matches these paths skip the
 // gate. Aligned with the self-improvement skill's reflection targets, minus
 // user-facing docs (README/docs/documents stay under the reduced review).
+// Exception: diffs that change gate parameters never skip the gate — see
+// GATE_PARAM_RE below.
 const HARNESS_PATTERNS = [
   /(^|\/)CLAUDE\.md$/,
   /(^|\/)AGENTS\.md$/,
@@ -51,6 +53,24 @@ const HARNESS_PATTERNS = [
   /^\.github\/review-[^/]*\.md$/,
   /^documents\/development\/coding-rules\//,
 ];
+
+// Harness config files that may carry a `### Quality Gate Overrides` block
+// (quality-policy.md §2「上書きの契約」).
+const GATE_CONFIG_PATTERNS = [
+  /(^|\/)CLAUDE\.md$/,
+  /(^|\/)AGENTS\.md$/,
+  /^\.cursorrules$/,
+];
+
+// The only recognized gate-parameter keys, per quality-policy.md §2
+// 「上書きの契約」. A diff touching any of them is excluded from the
+// harness-only exemption: weakening a threshold must never merge unchecked.
+const GATE_PARAM_RE =
+  /(mutation_threshold_high|mutation_threshold_medium|mutation_budget_minutes)/;
+
+// Paths that cannot be quoted safely for the shell — fail closed instead of
+// guessing at their diff.
+const UNSAFE_PATH_RE = /["'`$\\]/;
 
 function trySh(cmd, timeoutMs = 5000) {
   try {
@@ -104,10 +124,78 @@ function pushTargetsMain(command, branch) {
   return false;
 }
 
-function isHarnessOnly(files) {
-  return (
-    files.length > 0 &&
-    files.every((f) => HARNESS_PATTERNS.some((re) => re.test(f)))
+// Walk one line, tracking HTML comment state (`<!--` / `-->`), and report
+// whether a gate-parameter key appears outside a comment. Comment state is
+// carried across the diff's lines per side and reset at each hunk header, so
+// an unseen opener reads as "not commented" — i.e. fail closed.
+function scanGateLine(line, inComment) {
+  let hit = false;
+  let i = 0;
+  while (i <= line.length) {
+    if (inComment) {
+      const end = line.indexOf('-->', i);
+      if (end === -1) break;
+      i = end + 3;
+      inComment = false;
+    } else {
+      const start = line.indexOf('<!--', i);
+      if (GATE_PARAM_RE.test(start === -1 ? line.slice(i) : line.slice(i, start))) {
+        hit = true;
+      }
+      if (start === -1) break;
+      i = start + 4;
+      inComment = true;
+    }
+  }
+  return { hit, inComment };
+}
+
+// True when the diff of `file` over `range` adds or removes a gate-parameter
+// line. Fail closed: an unusable path or an unreadable diff counts as touched.
+function touchesGateParams(range, file) {
+  if (UNSAFE_PATH_RE.test(file)) return true;
+  const out = trySh(`git diff ${range} -- "${file}"`);
+  if (out === null) return true;
+  let added = false; // inside an HTML comment on the post-image
+  let removed = false; // ... on the pre-image
+  for (const raw of out.split(/\r?\n/)) {
+    if (raw.startsWith('@@')) {
+      added = false;
+      removed = false;
+      continue;
+    }
+    const body = raw.slice(1).replace(/\r$/, '');
+    if (raw.startsWith('+')) {
+      if (raw.startsWith('+++')) continue;
+      const r = scanGateLine(body, added);
+      if (r.hit) return true;
+      added = r.inComment;
+    } else if (raw.startsWith('-')) {
+      if (raw.startsWith('---')) continue;
+      const r = scanGateLine(body, removed);
+      if (r.hit) return true;
+      removed = r.inComment;
+    } else if (raw.startsWith(' ')) {
+      added = scanGateLine(body, added).inComment;
+      removed = scanGateLine(body, removed).inComment;
+    }
+  }
+  return false;
+}
+
+function isHarnessOnly(files, range) {
+  if (
+    files.length === 0 ||
+    !files.every((f) => HARNESS_PATTERNS.some((re) => re.test(f)))
+  ) {
+    return false;
+  }
+  // quality-policy.md §2「上書きの契約」 carve-out: harness config files whose
+  // diff changes a gate parameter are not exempt from the quality check.
+  return !files.some(
+    (f) =>
+      GATE_CONFIG_PATTERNS.some((re) => re.test(f)) &&
+      touchesGateParams(range, f)
   );
 }
 
@@ -235,8 +323,9 @@ process.stdin.on('end', () => {
   // files needs no quality check at all.
   const base = mergeBaseRef();
   if (base) {
-    const files = diffFiles(`${base}...${tip}`);
-    if (files !== null && isHarnessOnly(files)) return;
+    const range = `${base}...${tip}`;
+    const files = diffFiles(range);
+    if (files !== null && isHarnessOnly(files, range)) return;
   }
 
   const flag = readFlag();
@@ -257,13 +346,14 @@ process.stdin.on('end', () => {
     );
   }
 
-  const changed = diffFiles(`${flag.commit}..${tip}`);
+  const flagRange = `${flag.commit}..${tip}`;
+  const changed = diffFiles(flagRange);
   if (changed === null) {
     return block(
       'Cannot verify changes since the last quality check. Re-run /quality-check.'
     );
   }
-  if (changed.length === 0 || isHarnessOnly(changed)) return;
+  if (changed.length === 0 || isHarnessOnly(changed, flagRange)) return;
   return block(
     'Code changed after the last quality check. Re-run /quality-check before merging.'
   );
