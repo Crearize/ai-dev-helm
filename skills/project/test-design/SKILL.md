@@ -220,6 +220,8 @@ Step 1・2 で挙げたリスクと不変条件を Failure Mode カテゴリに�
 - メモは**既存の実装コードやテストコードからではなく、仕様・要件から**書き起こす。実装を読んで期待値を写せば、遡及実行の意味そのものが失われる（Step 4 の禁止事項がそのまま適用される）
 - 洗い出した不足テストは、Step 5 のファルシフィケーション項目を優先して補完する
 
+`verified` を名乗れるのは、メモの作成が対象実装の最初のコミットより前であることを確認できた場合のみであり、確認できないときは `retroactive` に倒す。
+
 照合結果は `.quality-check-report.json` の `test_design`（`memo_path` を含む）に記録される。フィールド定義は `skills/project/_schemas/quality-check-report.schema.md` を参照する。
 
 ---

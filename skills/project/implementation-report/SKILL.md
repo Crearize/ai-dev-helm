@@ -72,6 +72,8 @@ git diff origin/main...HEAD
 
 ## Step 4: レポートを生成
 
+「品質チェック結果サマリ」「ゲート上書き・承認」の各項目は、**該当なしの場合も「なし」と明記する**（記載の省略と該当なしを区別できるようにする）。レポートに該当フィールドが存在しない場合は「未記録」と明記する。
+
 ### レポートテンプレート
 
 ```markdown
@@ -86,8 +88,16 @@ git diff origin/main...HEAD
 - **Phase N**: [差分の説明]
 
 ### 品質チェック結果サマリ
+- リスクレベル: high / medium / low（`risk_level`）
+- 静的チェックサイクル: N回（打ち切り事由: なし / loop_limit / oscillation）（`lint_cycles` / `lint_abort_reason`）
+- テスト設計メモ: verified / retroactive / out_of_scope / not_required（メモ: [パス] または なし）（`test_design.status` / `test_design.memo_path`）
+- ミューテーションテスト: スコア N%（閾値 N%）／ 未実行（理由: not_configured / low_risk / out_of_scope）（`mutation`）
 - 品質チェックサイクル数: N回（N回目で指摘ゼロ達成）
-- E2Eテスト: 全件パス / N件失敗
+- E2Eテスト: 全件パス / N件失敗 / 対象外
+
+### ゲート上書き・承認
+- ゲートパラメータ上書き: なし / [キー: 値]（理由: [理由]）（`gate_parameter_overrides`）
+- 打ち切り承認: なし / [対象工程]（理由: [ユーザーの判断根拠]）（`gate_override`）
 
 ### レビュー指摘への対応
 | サイクル | 指摘内容 | ペルソナ | 対応 |

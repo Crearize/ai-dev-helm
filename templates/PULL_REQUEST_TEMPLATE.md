@@ -44,8 +44,18 @@ Closes #
 <!-- "None" if no deviations -->
 
 ### Quality Check Summary
+<!-- Write "None" explicitly where an item does not apply - omission and "not applicable" must be distinguishable -->
+- Risk level:
+- Static check cycles (abort reason):
+- Test design memo (status, path):
+- Mutation testing (score / threshold, or skip reason):
 - Quality check cycles:
 - E2E tests:
+
+### Gate Overrides and Approvals
+<!-- Write "None" explicitly when nothing applies -->
+- Gate parameter overrides (`gate_parameter_overrides`):
+- Abort approval (`gate_override`):
 
 ### Review Feedback Response
 | Cycle | Feedback | Persona | Response |

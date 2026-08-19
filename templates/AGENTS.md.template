@@ -110,15 +110,17 @@ Thresholds, cycle caps and time budgets are defined in `documents/development/qu
 Codex enforces this via a `PreToolUse` hook (configured in `.codex/hooks.json`).
 When you run `gh pr merge`, `git merge` on main, or push to main, Codex validates `.quality-check-passed` (commit-bound JSON: `{branch, commit}`). **Pushes to feature branches are not gated.** The flag is not consumed; it stays valid while post-check commits touch only harness files (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`). Harness-only diffs skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths. It must go through quality-check (a reduced-persona review at minimum).
 
-<!-- Quality Gate Overrides (optional; template - uncomment and adjust to override the
-     defaults). Follows the contract in quality-policy.md §2: weakening a High-risk gate
-     is prohibited, and changing these values is not exempt from the merge gate.
-     These three keys are the only recognized override keys.
+<!-- Quality Gate Overrides (optional). Uncomment only the key(s) you want to change and
+     write your value. Defaults are deliberately NOT written here - they live in
+     documents/development/quality-policy.md §2 (single source). Weakening a High-risk
+     gate is prohibited, and changing these keys is never exempt from the merge gate.
+     These three keys are the only recognized override keys. While commented out (or
+     inside a code span/fence) the block declares nothing and the policy defaults apply.
 
 ### Quality Gate Overrides
-- mutation_threshold_high: 80
-- mutation_threshold_medium: 70
-- mutation_budget_minutes: 15
+- mutation_threshold_high: <percent>
+- mutation_threshold_medium: <percent>
+- mutation_budget_minutes: <minutes>
 -->
 
 ### Multi-Persona Review

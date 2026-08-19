@@ -74,12 +74,12 @@
 | `executed` | `boolean` | 必須 | Step 3.5 を実行したか |
 | `reason` | `"not_configured" \| "low_risk" \| "out_of_scope" \| null` | 必須 | 未実行の理由。`not_configured`: プロダクトにミューテーションテスト設定（Stryker / PIT）が存在しない / `low_risk`: Low リスク変更のため実行対象外 / `out_of_scope`: 変更領域別ステップ適用テーブルで Step 3（ユニットテスト）が `-` の領域のため対象外（quality-policy.md §2 マトリクス優先順位原則）。`executed` が `true` の場合は `null` |
 | `score` | `number` | 任意 | 変更コードのミューテーションスコア（%）。`executed` が `true` の場合は必須 |
-| `threshold` | `number` | 任意 | 適用した閾値（%）。既定は High 80 / Medium 70（プロダクトの CLAUDE.md で上書き可 — 下記「上書きの契約」注記を参照）。`executed` が `true` の場合は必須 |
+| `threshold` | `number` | 任意 | 適用した閾値（%）。既定は High 80 / Medium 70（プロダクトのハーネス設定ファイル（quality-policy.md §2「上書きの契約」）で上書き可 — 下記「上書きの契約」注記を参照）。`executed` が `true` の場合は必須 |
 | `loops` | `number` | 任意 | 「生存ミュータント分析 → テスト追加 → 再実行」のループ回数。上限は5（quality-policy.md §5）。`executed` が `true` の場合は必須 |
 | `survived_addressed` | `number` | 任意 | テスト追加で対処した生存ミュータント数。`executed` が `true` の場合は必須 |
 | `equivalent_excluded` | `number` | 任意 | 等価ミュータント（動作が変わらない変異）として対象から除外した**数**。`executed` が `true` の場合は必須。`equivalent_exclusions` の要素数と一致する |
 | `equivalent_exclusions` | `EquivalentExclusion[]` | 任意 | 除外した等価ミュータントの対象と理由の一覧（quality-policy.md §5）。`executed` が `true` の場合は必須（除外がなければ空配列） |
-| `scope_reduced` | `boolean` | 任意 | 実行時間バジェット（既定15分。CLAUDE.md で上書き可 — 下記「上書きの契約」注記を参照）超過見込みにより、リスクの高いファイル優先で対象を絞ったか。`executed` が `true` の場合は必須 |
+| `scope_reduced` | `boolean` | 任意 | 実行時間バジェット（既定15分。ハーネス設定ファイル（quality-policy.md §2「上書きの契約」）で上書き可 — 下記「上書きの契約」注記を参照）超過見込みにより、リスクの高いファイル優先で対象を絞ったか。`executed` が `true` の場合は必須 |
 | `aborted_reason` | `"budget_exceeded" \| "stagnation" \| "loop_limit" \| null` | 任意 | 打ち切り事由。`budget_exceeded`: 実行時間バジェット超過 / `stagnation`: 2ループ連続でスコア改善なしによる早期打ち切り / `loop_limit`: 5ループ上限到達。完走した場合は `null`。`executed` が `true` の場合は必須 |
 
 未実行時は `{ "executed": false, "reason": "not_configured" }` のように `executed` と `reason` のみを記録する（他キーは**省略**する — 本オブジェクトの未実行時の表現はキーの省略に一本化し、`null` は置かない。`reason` / `aborted_reason` の `null` は「実行した上で該当なし」を表す別の意味である）。
@@ -97,7 +97,7 @@
 
 ### TestDesign オブジェクト
 
-High / Medium リスクの変更では、実装前に `test-design` スキルでテスト設計メモを作成し、Step 3 でテストと照合する（quality-policy.md §4）。その照合結果を記録する。
+High / Medium リスクの変更では、実装前に `test-design` スキルでテスト設計メモを作成し、Step 3 でテストと照合する（quality-policy.md §4）。その照合結果を記録する。`verified` を名乗れるのは、メモの作成が対象実装の最初のコミットより前であることを確認できた場合のみで、確認できないときは `retroactive` に倒す。
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
@@ -107,7 +107,7 @@ High / Medium リスクの変更では、実装前に `test-design` スキルで
 
 ### GateParameterOverrides オブジェクト
 
-quality-policy.md §2「上書きの契約」に基づき、プロダクトのハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules` の `### Quality Gate Overrides` ブロック）でゲートパラメータを既定値から上書きした場合に、その事実と理由を記録する。上書きがなければトップレベル `gate_parameter_overrides` を `null` にする。
+quality-policy.md §2「上書きの契約」に基づき、プロダクトのハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules` の `### Quality Gate Overrides` ブロック）でゲートパラメータを既定値から上書きした場合に、その事実と理由を記録する。上書きがなければトップレベル `gate_parameter_overrides` を `null` にする。HTML コメント（`<!-- -->`）の内側やコードスパン・コードフェンス内に置かれた `### Quality Gate Overrides` ブロックは宣言とみなさない（無効。既定値が適用され、本オブジェクトには記録しない）。
 
 **打ち切り・閾値未達をユーザー承認のもとで通過させた記録である `gate_override` とは別物。** 本オブジェクトは「既定パラメータを変更して運用している」事実の記録であり、承認の有無を問わない。工程の打ち切り・閾値未達を承認した場合の記録は `gate_override` を参照。
 
