@@ -24,6 +24,8 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 - `.github/review-*.md`
 - `documents/development/coding-rules/**`
 
+ただし `CLAUDE.md` の差分がゲートパラメータ（quality-check の閾値・実行時間バジェット等）の変更を含む場合、この免除は適用しない（`documents/development/quality-policy.md` §2「上書きの契約」）。
+
 README や `documents/` 配下の利用者向けドキュメントはハーネスファイルに**含まれない**（docs 縮退レビューの対象）。
 
 ---

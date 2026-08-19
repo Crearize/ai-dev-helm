@@ -34,12 +34,12 @@
 
 ### 1.3 Class Design Principles
 
+> Catalog: A1 — 「No wildcard imports」（正は common-rules.md §7.1。フェーズ3で Lint 化予定）。本節の他項目（単一責務・DI・不変性）はカタログ対応なし — AI レビュー恒久担保。
+
 - **Single Responsibility**: 1 class = 1 responsibility
 - **Dependency Injection**: Prefer constructor injection
 - **Immutability**: Use final where possible for DTOs and entities
 - **No wildcard imports**: `import java.util.*;` is prohibited
-
-> Catalog: A1（正は common-rules.md §7.1。フェーズ3で Lint 化予定）
 
 ## 2. Spring Boot Conventions
 
