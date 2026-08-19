@@ -129,7 +129,8 @@ Unified error response format:
 
 ## 8. API Response Design
 
-> Catalog: D1 — リスト取得のページネーション必須 / B1 — レスポンスへの機密・個人情報混入禁止。いずれもフェーズ3で Lint 化予定。
+> Catalog: D1 — リスト取得のページネーション必須。フェーズ3で Lint 化予定。
+> API レスポンスへの機密・個人情報混入禁止は common-rules.md §4「API Response Security」（B1）を参照。
 > ステータスコードの選択・レスポンスフィールド命名規則はカタログ対応なし — AI レビュー恒久担保。
 
 ### 成功レスポンスの一貫性

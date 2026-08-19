@@ -17,7 +17,7 @@ Project-wide coding rules and development standards.
 |---|---|
 | `Catalog: <番号>（フェーズ3で Lint 化予定）` | Lint で担保可能。フェーズ3で Lint 資産が配線され、実際に配線されたことを確認した後に本文書から削除する |
 | `Catalog: <番号>（… は AI レビュー恒久担保）` | カバレッジが分割される項目。機械検出可能な部分のみフェーズ3で Lint 化し、判断を要する部分はフェーズ3以降も本文書に残す |
-| `Catalog: 対応なし — AI レビュー恒久担保` | 機械判定できない項目。フェーズ3以降も本文書に残す |
+| `… はカタログ対応なし — AI レビュー恒久担保` | 機械判定できない項目。フェーズ3以降も本文書に残す |
 
 **フェーズ3までの担保方法**: 既存の静的チェック（プロダクトの ESLint / Checkstyle / tsc 等、CLAUDE.md に登録された静的チェックコマンド）で担保済みの項目は Lint 担保として扱う（カタログ §4.1）。それ以外を AI レビューで担保する。
 
@@ -284,6 +284,9 @@ Extract unexplained literals into named constants or enums. The concept holds id
 > フェーズ3では Lint 担保済みの項目をこのチェックリストから削除する。それまでは移行形として現状維持し、対応するカタログ番号を各節に付記する。既存の静的チェックで担保済みの項目は Lint 担保として扱う（カタログ §4.1）。それ以外を AI レビューで担保する。カタログ対応のない項目はフェーズ3以降も残す。
 
 ### Git/GitHub
+
+> Catalog: C7（ブランチ命名。採用基準は任意）/ その他はカタログ対応なし — AI レビュー恒久担保
+
 - [ ] Commit message follows `<type>: <subject>` format
 - [ ] Type is correct
 - [ ] Subject line 50 chars or less
