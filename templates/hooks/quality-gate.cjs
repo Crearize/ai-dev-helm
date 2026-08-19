@@ -103,6 +103,11 @@ const MAX_BUFFER = 32 * 1024 * 1024;
 // legitimate override declaration, and guessing at it is worse than a
 // predictable fail-closed answer.
 const MAX_BLOB_BYTES = 2 * 1024 * 1024;
+// Same idea per line. A legitimate override declaration is one short list
+// item, nowhere near this; a line this long is pathological input, and the
+// document that carries it is 判定不能 (fail closed). Measured in UTF-16
+// units, which is never more than the byte count of the same UTF-8 text.
+const MAX_LINE_BYTES = 64 * 1024;
 
 // Global deadline for the whole hook. Claude Code kills the hook at its
 // configured timeout (settings.json.template pins 30s); every git call clamps
@@ -274,25 +279,77 @@ function decodeBlob(buf) {
 // treating it as a comment opener let a decoy span comment out the live
 // override block that followed it (and a matching `` `-->` `` span closed the
 // fake comment again, hiding everything in between).
+//
+// Linear in the length of the line. The obvious implementation — walk the
+// line, and at each backtick rebuild the marker string and `indexOf` it —
+// is quadratic in the number of backticks, and a single ordinary-looking
+// line stuffed with them was enough to burn a minute of CPU. That mattered
+// far more than it looks: DEADLINE only clamps child-process timeouts, so
+// pure-JS work runs until the harness SIGTERMs the hook, and a PreToolUse
+// hook killed before it prints anything is read as "allowed" — a CPU cost
+// that turns into a fail-OPEN. Runs are indexed by length once, with a
+// per-length cursor, so finding a closer is amortized O(1).
 function maskCodeSpans(line) {
-  let out = '';
-  let i = 0;
-  while (i < line.length) {
+  if (line.indexOf('`') === -1) return line;
+
+  const runs = [];
+  for (let i = 0; i < line.length; ) {
     if (line[i] === '`') {
-      let n = 0;
+      let n = 1;
       while (line[i + n] === '`') n++;
-      const run = '`'.repeat(n);
-      const close = line.indexOf(run, i + n);
-      if (close !== -1) {
-        out += run + 'x'.repeat(close - (i + n)) + run;
-        i = close + n;
-        continue;
-      }
+      runs.push({ start: i, len: n });
+      i += n;
+    } else {
+      i++;
     }
-    out += line[i];
-    i++;
   }
-  return out;
+
+  // sufMax[k] = the longest backtick run at or after index k. It answers
+  // "is there a run of at least n left?" in O(1), which is what the scan
+  // used to re-derive from scratch at every character.
+  const sufMax = new Array(runs.length + 1).fill(0);
+  for (let k = runs.length - 1; k >= 0; k--) {
+    sufMax[k] = Math.max(runs[k].len, sufMax[k + 1]);
+  }
+
+  // Interiors to blank out. Deliberately the SAME spans the character-by-
+  // character scan produced, including its quirk of letting the tail of a
+  // long run open a span that a shorter run closes: masking more is the
+  // fail-closed direction here (a masked `<!--` cannot open a comment and
+  // hide a live override block), so this stays bug-compatible on purpose.
+  const masked = [];
+  let k = 0; // Current run.
+  let offset = 0; // How much of it a previous match already consumed.
+  while (k < runs.length) {
+    const runEnd = runs[k].start + runs[k].len;
+    const n = Math.min(runs[k].len - offset, sufMax[k + 1]);
+    if (n <= 0) {
+      k++; // Nothing long enough remains: the rest of this run is literal.
+      offset = 0;
+      continue;
+    }
+    let j = k + 1; // First later run able to close n backticks.
+    while (runs[j].len < n) j++;
+    masked.push([runEnd, runs[j].start]);
+    if (n < runs[j].len) {
+      k = j; // The closer was longer: its tail is still in play.
+      offset = n;
+    } else {
+      k = j + 1;
+      offset = 0;
+    }
+  }
+
+  if (masked.length === 0) return line;
+  const parts = [];
+  let pos = 0;
+  for (const [start, end] of masked) {
+    parts.push(line.slice(pos, start));
+    parts.push('x'.repeat(end - start));
+    pos = end;
+  }
+  parts.push(line.slice(pos));
+  return parts.join('');
 }
 
 // The part of `line` that is outside an HTML comment, starting from a state
@@ -386,6 +443,12 @@ function extractOverrideEntries(src) {
   let pending = -1;
 
   for (const raw of src.split(/\r?\n/)) {
+    // Two CPU guards, both fail-closed. DEADLINE bounds child processes only,
+    // so nothing else stops this loop before the harness kills the hook — and
+    // a hook killed before it prints is read as "allowed".
+    if (raw.length > MAX_LINE_BYTES) return null;
+    if (remainingBudget() <= 0) return null;
+
     let live;
 
     if (commentState.inComment) {
@@ -449,19 +512,30 @@ function extractOverrideEntries(src) {
   return entries;
 }
 
-// Canonical form of an entry list: per (context, key) the LAST declaration
-// wins — that is what any reader of the document applies — and the resulting
-// map is sorted, so it does not depend on document order.
+// Canonical form of an entry list, or null when the document does not
+// determine an answer.
 //
-// This is what separates the two orderings §2 distinguishes: swapping two
-// lines that declare the SAME key changes which one is last, i.e. changes the
-// effective threshold, and is not exempt; reordering two DISTINCT keys
-// declares exactly the same thing and stays exempt.
+// quality-policy.md §2「上書きの契約」:「1つのファイル内に同一キーを複数回
+// 記載してはならない（MUST NOT）。複数記載があり値が食い違う場合、値は不定
+// として扱う」— so a key declared twice with differing lines is refused
+// outright rather than resolved. Resolving it by last-wins looked reasonable
+// but silently accepted a weakened duplicate INSERTED ABOVE the original: the
+// unchanged line was still last, so the state never moved and the diff merged
+// exempt. Identical repeats are not the 「値が食い違う」 case — they declare
+// exactly one value — so they collapse to the same state as a single line.
+//
+// The remaining map is sorted, so the state does not depend on document
+// order: reordering two DISTINCT keys declares the same thing and stays
+// exempt.
 function canonicalizeEntries(entries) {
-  const lastPerKey = new Map();
-  for (const e of entries) lastPerKey.set(`${e.context}\0${e.keyId}`, e.line);
+  const declared = new Map();
+  for (const e of entries) {
+    const k = `${e.context}\0${e.keyId}`;
+    if (declared.has(k) && declared.get(k) !== e.line) return null;
+    declared.set(k, e.line);
+  }
   return JSON.stringify(
-    [...lastPerKey.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    [...declared.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
   );
 }
 
