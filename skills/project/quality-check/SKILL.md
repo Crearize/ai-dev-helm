@@ -243,6 +243,8 @@ Low リスクの変更、および領域テーブルの Step 3 欄が `-` の領
 
 結果を `.quality-check-report.json` の `mutation` オブジェクト（`executed` / `reason` / `score` / `threshold` / `loops` / `survived_addressed` / `equivalent_excluded` / `equivalent_exclusions` / `scope_reduced` / `aborted_reason`）に記録する。フィールド定義は [`_schemas/quality-check-report.schema.md`](../_schemas/quality-check-report.schema.md) を参照。
 
+ゲートパラメータ上書き（閾値・バジェットの既定値からの変更）を適用した場合は、その事実と理由を `gate_parameter_overrides` に記録する（quality-policy §2 の記録義務の実行経路。打ち切り承認の `gate_override` とは別物）。
+
 ### 閾値未達・打ち切りのまま先へ進む場合
 
 部分結果とスコアを記録したうえで**ユーザーに判断を仰ぐ**（閾値未達のまま通すか、テスト戦略を見直すか）。通す場合は**ユーザーの明示承認が必要**であり、承認を得たら `gate_override`（`steps` に `step_3.5`）に事実と理由を記録する。承認なしに `.quality-check-passed` を作成してはならない（quality-policy §5「打ち切り時のゲート挙動」。Step 6 の規定と同一）。

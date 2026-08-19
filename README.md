@@ -253,6 +253,7 @@ Select options (space-separated): 1 2 3
 | スキル名 | 概要 | いつ使うか |
 |---------|------|-----------|
 | **branch-workflow** | ブランチ作業フロー | 作業開始時の Issue 作成・ブランチ作成 |
+| **test-design** | テスト設計 | 実装前に呼ぶ。High/Medium リスク変更のテストオラクル（期待値の根拠）とファルシフィケーション項目を定義する |
 | **quality-check** | 品質チェック | マージ前の静的チェック・テスト・レビュー |
 | **server-startup** | サーバー起動 | E2E・ブラウザ検証・開発サーバーの起動/停止手順 |
 | **worktree-parallel** | Worktree 並列開発 | Git worktree の配置・ポート割当・環境コピー・クリーンアップ |
@@ -311,13 +312,17 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 ```
 Step -1: ハーネスのみ変更か判定（該当なら quality-check 不要）
   ↓
-Step 1: 変更領域の判定（git diff でbackend/frontend/docs/infraを自動検出）
+Step 0: ドキュメント更新の確認（feature-documentation）
   ↓
-Step 2: 静的チェック（linter, formatter, build）
+Step 1: 変更領域の判定（git diff でbackend/frontend/docs/infraを自動検出）+ リスクレベル判定（High/Medium/Low）
   ↓
-Step 3: ユニットテスト
+Step 2: 静的チェック = 決定的チェック層（linter, formatter, build）
   ↓
-Step 4: マルチペルソナ・レビュー（差分規模に応じ3〜6ペルソナ×最低1サイクル）
+Step 3: ユニットテスト + テスト設計メモとの照合（High/Medium。test-design スキルのメモと突き合わせ、欠落時は遡及実行）
+  ↓
+Step 3.5: ミューテーションテスト（High/Medium・差分スコープ・ローカル実行 / 未導入・対象外はスキップ記録）
+  ↓
+Step 4: マルチペルソナ・レビュー（差分規模に応じ3〜6ペルソナ×最低1サイクル。ファルシフィケーション型の観点を含む）
   ├── 指摘あり → 修正 → 影響範囲のみ再検証（高/中指摘が出た場合のみ次サイクル）
   └── 高/中指摘なし → Step 5 へ
   ↓
@@ -329,6 +334,14 @@ Step 5.75: 自己改善候補の確認
   ↓
 Step 6: レポート保存 + フラグファイル作成（commit 紐付け JSON）→ マージ可能
 ```
+
+### リスク判定・テスト設計照合・ミューテーションテスト
+
+Step 1 では変更差分から High/Medium/Low のリスクレベルを判定します。この判定が以降のゲート強度（test-design スキルの要否、Step 3.5 ミューテーションテストの要否・閾値）を決めます。判定基準とレベル別のゲート強度は `shared/documents/quality-policy.md` を参照してください。
+
+High/Medium リスクの変更は、実装**前**に `test-design` スキルでテストオラクル（期待値の根拠）とファルシフィケーション項目を定義したメモを作成します。Step 3 はこのメモとテストを照合し、メモが未作成の場合はエラーにせずその場で `test-design` を遡及実行して不足テストを補います。
+
+Step 3.5 では、High/Medium リスクの変更に対して差分スコープのミューテーションテスト（Stryker / PIT 等）を**ローカルで**実行し、テストが「実行されたか」ではなく「意図的な変異を検出できるか」を確認します。ミューテーションテストのツールが未導入のプロダクトではブロックせずスキップを記録します。Low リスク、および変更領域別ステップ適用テーブルで Step 3（ユニットテスト）が対象外の領域（docs/infra のみ等）では Step 3 の照合・Step 3.5 とも実行しません。
 
 ### 専門ペルソナによるレビュー
 
@@ -375,7 +388,7 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 
 ### レポート出力
 
-結果は `.quality-check-report.json` に保存されます。各サイクルの指摘内容・対応状況・E2E 結果が記録され、`implementation-report` スキルで PR 説明文の生成にも活用されます。
+結果は `.quality-check-report.json` に保存されます。各サイクルの指摘内容・対応状況・E2E 結果に加え、リスクレベル・静的チェックのサイクル数・テスト設計メモとの照合結果・ミューテーションテスト結果・ゲート打ち切り/上書きの記録も含まれ、`implementation-report` スキルで PR 説明文の生成にも活用されます。フィールドの完全な定義は `skills/project/_schemas/quality-check-report.schema.md` を参照してください。
 
 ---
 
