@@ -7,7 +7,8 @@
 | Skills | `.codex/skills/` | Symlink to `skills/` (referenced from AGENTS.md) |
 | Rules | `.codex/rules/` | Stack-specific coding rules |
 | Project config | `.codex/config.toml` | Project-local approval/sandbox |
-| Hooks | `.codex/hooks.json` | PreToolUse hook for quality-check enforcement |
+| Hook | `.codex/hooks/quality-gate.cjs` | Merge-gate hook (Node, cross-platform); always overwritten by init |
+| Hook registration | `.codex/hooks.json` | PreToolUse registration for quality-check enforcement |
 | AGENTS.md | `AGENTS.md` (project root) | AI configuration file |
 
 ## Directory Structure After Setup
@@ -18,7 +19,9 @@ your-project/
 │   ├── skills -> ../skills    # Symlink to shared skills
 │   ├── rules/                  # Stack rules
 │   ├── config.toml             # Approval/sandbox
-│   └── hooks.json              # PreToolUse hook
+│   ├── hooks/
+│   │   └── quality-gate.cjs    # Merge-gate hook body
+│   └── hooks.json              # PreToolUse hook registration
 ├── skills/
 │   ├── superpowers/
 │   └── project/
@@ -40,9 +43,9 @@ Files are merged with closer paths overriding earlier ones (combined size limit:
 `.codex/hooks.json` defines a `PreToolUse` hook that:
 
 1. Runs before every Bash tool invocation
-2. If the command is `gh pr merge`, `git merge` on main/master, or a push targeting main/master, validates `.quality-check-passed` (commit-bound JSON written by `/quality-check`)
+2. If the command is `gh pr merge`, `git merge` on main/master, or a push targeting main/master, validates `.quality-check-passed` (commit-bound JSON written by the quality-check skill)
 3. Blocks with a reason if the flag is missing, invalid, or non-harness code changed after the recorded commit
-4. The flag is not consumed; harness-only follow-up commits keep it valid. Pushes to feature branches are never gated, and harness-only diffs skip the gate entirely
+4. The flag is not consumed; harness-only follow-up commits keep it valid — except commits touching gate control-plane files (the quality-check skill and its schemas, review guides, the hook body and its registration files including `.codex/config.toml` and `mcp.json`, and the settings `hooks` / `permissions.deny` keys), which invalidate the flag and block with `Gate control-plane changed:`. Pushes to feature branches are never gated, and harness-only diffs skip the gate entirely (same control-plane carve-out applies)
 
 Project-local hooks only load when Codex marks the project as trusted.
 

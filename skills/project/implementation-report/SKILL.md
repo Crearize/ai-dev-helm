@@ -7,7 +7,7 @@ description: PR作成時に使用。実装レポート（計画との対応、�
 
 ## 概要
 
-PR作成時に実装レポートを生成するスキル。`/quality-check`通過後、push → PR作成時に実行する（push 自体はゲートされない。品質ゲートはマージ時に `.quality-check-passed` を検証する）。
+PR作成時に実装レポートを生成するスキル。`quality-check` スキル通過後、push → PR作成時に実行する（**feature ブランチへの push はゲートされない**。品質ゲートはマージ時および main への直接 push 時に `.quality-check-passed` を検証する）。
 
 実装計画と実際の変更差分を比較し、品質チェック結果・レビュー指摘への対応をまとめたレポートを生成する。
 
@@ -15,8 +15,8 @@ PR作成時に実装レポートを生成するスキル。`/quality-check`通�
 
 ## 前提条件
 
-- `/quality-check` が完了し `.quality-check-report.json` が存在すること
-- `.quality-check-report.json` が見つからない場合はエラーとし、先に `/quality-check` を実行するよう促す
+- `quality-check` スキルが完了し `.quality-check-report.json` が存在すること
+- `.quality-check-report.json` が見つからない場合はエラーとし、先に `quality-check` スキルを実行するよう促す
 
 ---
 
@@ -42,7 +42,7 @@ Step 5: PR descriptionに実装レポートを含めてPR作成
 
 > フォーマットの詳細は [`_schemas/quality-check-report.schema.md`](../_schemas/quality-check-report.schema.md) を参照。
 
-**ファイルが存在しない場合**: エラーを出力し、先に `/quality-check` を実行するよう促して処理を中断する。
+**ファイルが存在しない場合**: エラーを出力し、先に `quality-check` スキルを実行するよう促して処理を中断する。
 
 ---
 
@@ -94,6 +94,8 @@ git diff origin/main...HEAD
 - ミューテーションテスト: スコア N%（閾値 N%）／ 未実行（理由: not_configured / low_risk / out_of_scope）（`mutation`）
 - 品質チェックサイクル数: N回（N回目で指摘ゼロ達成）
 - E2Eテスト: 全件パス / N件失敗 / 対象外
+- ドキュメント更新: updated / not_required（`documentation.status`、updated の場合は対象ファイル）
+- self-improvement: applied / skipped / not_required（`self_improvement.status`）
 
 ### ゲート上書き・承認
 - ゲートパラメータ上書き: なし / [キー: 値]（理由: [理由]）（`gate_parameter_overrides`）

@@ -201,7 +201,7 @@ if [ -f pyproject.toml ]; then poetry install; fi
 
 ## Step 5: 並列エージェント運用
 
-2 つ以上の独立タスクを並列化する場合は、`dispatching-parallel-agents` と組み合わせて worktree 単位で分離する。
+2 つ以上の独立タスクを並列化する場合は、`superpowers:dispatching-parallel-agents` と組み合わせて worktree 単位で分離する。
 
 各エージェントへの必須指示:
 
