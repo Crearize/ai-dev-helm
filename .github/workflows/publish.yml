@@ -84,7 +84,12 @@ jobs:
           echo "Verified: $TAG matches package.json $PKG_VERSION"
 
       - name: Install dependencies
-        run: npm ci
+        # legacy-peer-deps: eslint-plugin-react's published peer range caps at
+        # eslint@<=9.7 while dev tooling pins eslint@^10 (works under flat config;
+        # npm's strict resolver refuses regardless). Kept as an explicit flag so
+        # recovery publishes of tags cut before the repo .npmrc landed still
+        # install. eslint* are devDependencies; runtime deps are unaffected.
+        run: npm ci --legacy-peer-deps
 
       - name: Run tests
         run: npm test
