@@ -110,7 +110,10 @@ yargs(hideBin(process.argv))
       for (const error of result.errors) {
         console.error(`error: ${error}`);
       }
-      process.exit(result.exitCode);
+      // exitCode + natural exit, not process.exit(): stdout writes are
+      // asynchronous when piped, and process.exit() discards the pending
+      // buffer — truncating --json output mid-document.
+      process.exitCode = result.exitCode;
     }
   )
   .demandCommand(1, 'Please specify a command: init, personal, or lint')

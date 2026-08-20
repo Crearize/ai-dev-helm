@@ -14,8 +14,6 @@
     "stacks/",
     "shared/",
     "configs/",
-    "scripts/transform-skills.sh",
-    "scripts/fix-nested-fences.sh",
     ".superpowers-version"
   ],
   "keywords": [
