@@ -22,7 +22,8 @@ lint/
 
 ## Wiring ESLint
 
-1. Install the peer tooling: `npm i -D eslint @eslint/js typescript-eslint typescript`.
+1. Install the peer tooling: `npm i -D eslint @eslint/js typescript-eslint typescript eslint-plugin-react eslint-plugin-react-hooks globals`.
+   (On ESLint 10, `eslint-plugin-react`'s published peer range still lags; install it with `--legacy-peer-deps` if npm refuses. The plugin works under flat config on ESLint 10.)
 2. Create (or extend) `eslint.config.mjs` at the product root:
 
 ```js
@@ -39,8 +40,17 @@ The preset resolves its custom rules relative to itself (`./rules/*.js`), so the
 ### Requirements
 
 - **A product `tsconfig.json` is required.** The preset enables `projectService: true`, so the type-aware rules resolve the nearest `tsconfig.json` for each linted file. Without one, TS/TSX linting errors out.
-- Type-aware rules are scoped to `**/*.{ts,tsx,mts,cts}`; plain-JS rules (`no-console`, `no-await-in-loop`, the harness custom rules, `@eslint/js` recommended) apply to all files.
+- Type-aware rules are scoped to `**/*.{ts,tsx,mts,cts}`; the plain-JS rules (`no-console`, `no-await-in-loop`, the security group, the react/react-hooks group, the harness custom rules, `@eslint/js` recommended) apply to all files, so plain `.js`/`.jsx` are guarded too.
+- Plain `.js`/`.cjs`/`.mjs`/`.jsx` files receive Node + browser globals (via `globals`) and the right `sourceType`, so CommonJS config files (e.g. `next.config.js`) do not trip `no-undef` on `process`/`module`/`require`/`window`.
 - Build output (`.next/`, `dist/`, `build/`, `coverage/`, `out/`, `node_modules/`) is ignored by the preset; add product-specific output dirs in an override.
+
+### Requirements / cost
+
+Type-aware rules (`projectService: true`, `recommendedTypeChecked`) build a full TypeScript program to resolve types, which is **much slower** than the syntax-only rules (the security group, `no-console`, the harness custom rules). On a large repo the type-aware pass dominates lint time. To keep it fast:
+
+- Run `eslint --cache` so unchanged files are skipped between runs.
+- Lint diff-scoped file lists in pre-commit / PR checks (only changed `**/*.{ts,tsx}`) and reserve a full-tree run for CI or a nightly job.
+- The syntax-only groups stay cheap; if you need a fast advisory pass, an override that turns the type-aware groups off gives near-instant linting while keeping the security/react/custom rules.
 
 ### Rule groups and opting out
 
@@ -49,11 +59,16 @@ The preset is organized into commented groups; a product opts out of a group by 
 | Group | Catalog | Rules |
 | --- | --- | --- |
 | correctness | A1, A2 | `no-console`, `@typescript-eslint/no-floating-promises`, `no-misused-promises`, `require-await`, `await-thenable` |
-| type-safety | A5 | `@typescript-eslint/no-explicit-any`, `no-non-null-assertion`, `ban-ts-comment` (description required) |
+| type-safety | A1, A5 | `@typescript-eslint/no-explicit-any`, `no-non-null-assertion`, `ban-ts-comment` (description required) |
+| security | A1, B1 | `no-eval`, `no-implied-eval`, `no-new-func`, `no-script-url` (all files, incl. plain `.js`/`.jsx`) |
+| react | A1 | `react/no-danger`, `react/jsx-no-script-url`, `react/jsx-no-target-blank` (XSS-prone JSX sinks) |
+| react-hooks | D3 | `react-hooks/rules-of-hooks` (error), `react-hooks/exhaustive-deps` (warn) |
 | exhaustiveness | A7 | `@typescript-eslint/switch-exhaustiveness-check` |
 | performance | D2 | `no-await-in-loop` |
 | maintainability | C6 | `@typescript-eslint/no-magic-numbers` (warn; ignores -1/0/1/2, enums, numeric literal types, ...) |
 | harness custom | A1, C7 | `harness/no-forwardref`, `harness/one-component-per-file`, `harness/export-at-definition` |
+
+The security group is deliberately plain-syntax (no type info) so it guards `.js`/`.jsx` config and script files that the type-aware groups never see. The react/react-hooks groups use `eslint-plugin-react` (React version pinned to `19.0` in the preset's `settings`) and `eslint-plugin-react-hooks`.
 
 Example opt-out (drop the performance group):
 

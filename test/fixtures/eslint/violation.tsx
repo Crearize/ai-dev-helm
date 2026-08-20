@@ -1,6 +1,6 @@
 // Deliberately violating fixture for the harness.config.mjs preset smoke
 // test. Every rule group in the preset must fire at least once in this file.
-import { forwardRef } from 'react'; // harness/no-forwardref (import form)
+import { forwardRef, useState } from 'react'; // harness/no-forwardref (import form)
 
 type Status = 'active' | 'inactive' | 'pending';
 
@@ -56,3 +56,36 @@ function formatLabel(label: string): string {
   return label.trim();
 }
 export { formatLabel };
+
+// security (A1/B1): dynamic code execution + javascript: URL sinks.
+export function runUnsafe(source: string): void {
+  const compiled = new Function('return 1'); // no-new-func + no-implied-eval
+  setTimeout('doWork()', 100); // no-implied-eval (string body)
+  eval(source); // no-eval
+  location.href = 'javascript:void(0)'; // no-script-url
+  console.log(compiled);
+}
+
+// react-hooks (D3): a hook called conditionally -> rules-of-hooks.
+function useMaybe(active: boolean): number {
+  if (active) {
+    const [value] = useState(0); // react-hooks/rules-of-hooks
+    return value;
+  }
+  return 0;
+}
+
+// react (A1): XSS-prone JSX sinks -> react/no-danger, jsx-no-script-url,
+// jsx-no-target-blank.
+export function Unsafe({ html, link }: { html: string; link: string }) {
+  useMaybe(true);
+  return (
+    <div>
+      <div dangerouslySetInnerHTML={{ __html: html }} />
+      <a href="javascript:alert(1)">bad</a>
+      <a href={link} target="_blank">
+        external
+      </a>
+    </div>
+  );
+}

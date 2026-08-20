@@ -2,9 +2,10 @@ package fixtures;
 
 // Conforming fixture for stacks/java-springboot/lint/checkstyle/checkstyle.xml.
 // Must produce ZERO findings under every module group (false-positive guard):
-// named imports only, constants instead of magic numbers, specific exception
-// types, empty catch allowed only via the `ignored` variable name, equals and
-// hashCode overridden together, short and flat methods.
+// named imports only (no sun.*), no runtime process execution, constants
+// instead of magic numbers, specific exception types, no empty catch blocks
+// (every catch recovers or rethrows), equals and hashCode overridden together,
+// short and flat methods.
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -32,9 +33,12 @@ public final class Ok {
   public int parseOrDefault(String raw) {
     try {
       return Integer.parseInt(raw);
-    } catch (NumberFormatException ignored) {
+    } catch (NumberFormatException e) {
+      // Non-empty catch: recover with the default instead of swallowing the
+      // exception, so neither EmptyCatchBlock nor the strict ast-grep rule
+      // (no comment-only bodies) is teased with a bypass idiom.
+      return DEFAULT_TIMEOUT_SECONDS;
     }
-    return DEFAULT_TIMEOUT_SECONDS;
   }
 
   public String describe() {

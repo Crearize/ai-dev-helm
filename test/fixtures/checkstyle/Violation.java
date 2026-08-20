@@ -8,6 +8,7 @@ import java.util.*; // group correctness: AvoidStarImport
 import java.lang.String; // group dead-code: RedundantImport (java.lang)
 import java.io.IOException;
 import java.math.BigDecimal; // group dead-code: UnusedImports (never referenced)
+import sun.misc.Unsafe; // group security: IllegalImport (sun.* package)
 
 public class Violation {
 
@@ -29,6 +30,11 @@ public class Violation {
       thrower();
     } catch (IOException e) {
     }
+  }
+
+  // group security: RegexpSinglelineJava (Runtime.getRuntime().exec)
+  public void spawn() throws IOException {
+    Runtime.getRuntime().exec("rm -rf /tmp/data");
   }
 
   // group error-handling: IllegalCatch (java.lang.Exception)

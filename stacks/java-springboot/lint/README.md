@@ -1,6 +1,6 @@
 # java-springboot lint assets
 
-Pre-built static-analysis assets for the Java + Spring Boot stack: a Checkstyle preset and an ArchUnit test-class template. Every asset here is execution-verified before it ships (`lib/checkstyle-assets.test.js` runs the real Checkstyle CLI against violating and conforming fixtures; the ArchUnit template was compiled and evaluated with Gradle against a real Spring Boot 3 project).
+Pre-built static-analysis assets for the Java + Spring Boot stack: a Checkstyle preset and an ArchUnit test-class template. The Checkstyle preset is **auto-verified**: `lib/checkstyle-assets.test.js` runs the real Checkstyle CLI (JAR-gated on `CHECKSTYLE_JAR`) against violating and conforming fixtures on every test run, and always runs static shape checks. The ArchUnit template is **manually verified** (it needs a JVM + a real Spring Boot project to execute); an automated structural guard in the same test file asserts the template keeps its `__BASE_PACKAGE__` placeholder, its ArchUnit imports and its rule count, but does not execute the rules.
 
 Verified against: **Checkstyle 14.0.0** (all-in-one JAR, Java 21) and **ArchUnit 1.4.1** (`archunit-junit5`, JUnit 5, Spring Boot 3.2, Gradle 8.5).
 
@@ -41,7 +41,8 @@ checkstyle {
 | Group | Catalog | Severity | Modules |
 | --- | --- | --- | --- |
 | correctness | A1 | error | `AvoidStarImport`, `RegexpSinglelineJava` (bans `System.out` / `System.err` printing; use SLF4J), `EqualsHashCode` |
-| error-handling | A3 | error | `EmptyCatchBlock` (empty catch allowed only when the exception variable is named `expected` or `ignored`), `IllegalCatch` (`Exception`, `Throwable`, `RuntimeException`) |
+| error-handling | A3 | error | `EmptyCatchBlock` (default config: an empty catch is a violation unless it carries an explanatory comment - the old `expected`/`ignored` name allowance was dropped), `IllegalCatch` (`Exception`, `Throwable`, `RuntimeException`) |
+| security | B2 | error | `IllegalImport` (bans `sun.*` imports), `RegexpSinglelineJava` (bans `Runtime.getRuntime().exec` / `new ProcessBuilder` runtime process execution) |
 | dead-code | C3 | error | `UnusedImports`, `RedundantImport`, `UnusedLocalVariable` |
 | complexity | C4 | warning | `MethodLength` (max 80), `CyclomaticComplexity` (max 15), `ParameterNumber` (max 6), `NestedIfDepth` (max 3) |
 | hardcode | C6 | warning | `MagicNumber` (ignores -1/0/1/2, annotations, field declarations) |
@@ -51,6 +52,8 @@ Notes verified by execution:
 - `UnusedLocalVariable` exists since Checkstyle 9.3; with `toolVersion` older than that, remove the module from the dead-code group (the other two modules stand alone).
 - `NestedIfDepth` counts the outermost `if` as depth 0, so `max = 3` allows four levels of `if` and reports the fifth.
 - The whole preset lives under `TreeWalker`; the `Checker` root sets `charset` UTF-8 and default severity `error`.
+- `EmptyCatchBlock` and the ast-grep rule `no-empty-catch-java` are deliberately kept in agreement: Checkstyle flags an empty catch that has no comment; the ast-grep rule is stricter (a comment-only body is still empty) and is the enforced rule when a product ships both. Do not re-add `exceptionVariableName` to `EmptyCatchBlock` - naming the variable `ignored` must not wave an empty catch through.
+- The `security` group's `RegexpSinglelineJava` is a second instance of that module (the first, in `correctness`, bans `System.out`/`System.err`); both surface in output as `[RegexpSinglelineJava]`, distinguished by their messages.
 
 ## Wiring ArchUnit (Gradle)
 
@@ -78,5 +81,9 @@ Layout tolerance is built in: `consideringOnlyDependenciesInLayers()` ignores de
 
 ## How these assets were verified
 
-- Checkstyle: `java -jar checkstyle-14.0.0-all.jar -c checkstyle.xml` over `test/fixtures/checkstyle/` in this repo - `Violation.java` fires every module of every group, `Ok.java` yields zero findings. `lib/checkstyle-assets.test.js` repeats that run when `CHECKSTYLE_JAR` points at the all-in-one JAR (static XML shape checks always run).
-- ArchUnit: the template (with `__BASE_PACKAGE__` instantiated) was compiled and executed via `gradlew test` inside a real Spring Boot 3.2 / Java 21 / jOOQ project with controller, service, repository plus non-layer packages; all three rules evaluated its production classes and passed.
+- Checkstyle (auto-verified): `java -jar checkstyle-14.0.0-all.jar -c checkstyle.xml` over `test/fixtures/checkstyle/` in this repo - `Violation.java` fires every module of every group (correctness, error-handling, security, dead-code, complexity, hardcode), `Ok.java` yields zero findings. `lib/checkstyle-assets.test.js` repeats that run when `CHECKSTYLE_JAR` points at the all-in-one JAR (static XML shape checks, group-label/module mapping, and the ArchUnit template shape checks always run).
+- ArchUnit (manually verified): the template (with `__BASE_PACKAGE__` instantiated) was compiled and executed via `gradlew test` inside a real Spring Boot 3.2 / Java 21 / jOOQ project with controller, service, repository plus non-layer packages; all three rules evaluated its production classes and passed. **This was a one-time manual run (ArchUnit 1.4.1, JUnit 5, Gradle 8.5), not repeated per test run** - the repo has a no-CI policy, so there is no automated ArchUnit execution. `lib/checkstyle-assets.test.js` guards the template's structure (placeholder, imports, `@ArchTest` count) so edits cannot silently break its shape.
+
+### ArchUnit cost
+
+The slice cycle rule `top_level_packages_are_free_of_cycles` (`slices().matching(...).beFreeOfCycles()`) is the most expensive rule in the template: it builds the full slice dependency graph and searches it for cycles, which grows with the number of top-level packages and inter-package edges. On a large codebase this dominates the ArchUnit run. If it becomes a bottleneck, move it to a less-frequent job (nightly / pre-merge) and keep the two cheaper layer-direction rules in the fast per-commit test run - delete the `@ArchTest` field in the fast copy and keep it in the slow one, rather than weakening the rule.
