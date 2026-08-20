@@ -70,21 +70,45 @@ const GATE_CONFIG_PATTERNS = [
 //
 // Hook REGISTRATION is control plane too — unregistering the hook disables
 // the gate just as surely as editing it. `.codex/hooks.json` (and the
-// equivalents) is registration in its entirety; `.claude/settings.json`
-// carries registration in ONE key, so it is handled separately by
-// settingsHooksChanged() rather than listed here: other settings keys stay
-// exempt.
+// equivalents) is registration in its entirety; the `.claude/settings*.json`
+// files carry registration in a few keys, so they are handled separately by
+// settingsRegistrationChanged() rather than listed here: other settings keys
+// stay exempt.
+//
+// Every entry is case-INSENSITIVE. On a case-insensitive filesystem
+// (Windows/macOS) `.claude/Hooks/quality-gate.cjs` is the SAME real file as
+// the canonical spelling, yet HARNESS_PATTERNS `/^\.claude\//` matched it
+// either way while a case-sensitive control pattern did not — so a case
+// variant rode the harness exemption with zero review. HARNESS_PATTERNS stay
+// case-sensitive on purpose: a case mismatch there merely drops the harness
+// exemption, which is the fail-closed direction.
+//
+// The `hooks`/`skills` pattern matches the DIRECTORY NODE itself (`(\/|$)`),
+// not just paths under it. `.claude/skills` is a symlink created by `init`;
+// re-pointing that link node swaps the whole quality-check tree with a diff
+// of the single path `.claude/skills` (no trailing slash). Matching the node
+// subsumes the old trailing-slash hooks-dir pattern.
 const GATE_CONTROL_PATTERNS = [
-  /(^|\/)skills\/project\/quality-check\//,
-  /(^|\/)skills\/project\/_schemas\//,
-  /^\.github\/review-[^/]*\.md$/,
-  /^\.(claude|codex|cursor)\/hooks\//,
-  /^\.(claude|codex|cursor)\/hooks\.json$/,
+  /(^|\/)skills\/project\/quality-check\//i,
+  /(^|\/)skills\/project\/_schemas\//i,
+  /^\.github\/review-[^/]*\.md$/i,
+  /^\.(claude|codex|cursor)\/(hooks|skills)(\/|$)/i,
+  // The registration-file set is a deliberate fail-closed SUPERSET of the
+  // normative `.codex/hooks.json`: `.claude/hooks.json` and `.cursor/hooks.json`
+  // are gated too. Do not narrow it back — over-gating registration is safe.
+  /^\.(claude|codex|cursor)\/hooks\.json$/i,
 ];
 
-// The one control-plane file whose control-plane-ness depends on its
-// content: only its `hooks` block registers the gate.
-const SETTINGS_FILE = '.claude/settings.json';
+// The control-plane files whose control-plane-ness depends on their content:
+// only their hooks REGISTRATION (the `hooks` block plus the hook-disable
+// kill-switches) registers the gate. Claude Code reads both, with
+// settings.local.json at higher precedence. Matched case-insensitively for
+// the same reason as GATE_CONTROL_PATTERNS above.
+const SETTINGS_FILE_RE = /^\.claude\/settings(\.local)?\.json$/i;
+
+function settingsFilesIn(files) {
+  return files.filter((f) => SETTINGS_FILE_RE.test(f));
+}
 
 // Merges/pushes whose entire (non-empty) diff matches these paths skip the
 // gate. Aligned with the self-improvement skill's reflection targets, minus
@@ -638,18 +662,33 @@ function gateParamsUnchanged(files, baseRev, tipRev) {
 }
 
 // Control-plane files identifiable from the path alone (everything except
-// SETTINGS_FILE, whose answer depends on content).
+// the settings files, whose answer depends on content).
 function gateControlPathFiles(files) {
   return files.filter((f) => GATE_CONTROL_PATTERNS.some((re) => re.test(f)));
 }
 
 const hooksBlockCache = new Map();
 
-// The `hooks` registration `.claude/settings.json` declares at `rev`, as a
-// canonical string, or null when it cannot be established. Mirrors
-// overrideState(): a path genuinely absent from the tree legitimately
-// declares no hooks block (the empty answer, `"null"`), while an unreadable
-// or unparsable blob is 判定不能 and fails closed.
+// The hook-registration state a settings object declares, as a canonical
+// string. Not just the `hooks` block: the disableAllHooks /
+// allowManagedHooksOnly kill-switches turn hooks off (or restrict them to
+// managed ones) WITHOUT touching the hooks block, so flipping either one is a
+// registration change just as much as editing the block is. `parsed` is a
+// JSON.parse result (always serializable) or null for a genuinely absent file
+// (which registers nothing — the same empty answer as `{}`).
+function registrationState(parsed) {
+  return JSON.stringify({
+    hooks: (parsed && parsed.hooks) ?? null,
+    disableAllHooks: (parsed && parsed.disableAllHooks) ?? null,
+    allowManagedHooksOnly: (parsed && parsed.allowManagedHooksOnly) ?? null,
+  });
+}
+
+// The hook registration a settings file declares at `rev`, as a canonical
+// string, or null when it cannot be established. Mirrors overrideState(): a
+// path genuinely absent from the tree legitimately declares no registration
+// (the empty answer), while an unreadable or unparsable blob is 判定不能 and
+// fails closed.
 function hooksBlockAt(rev, file) {
   // Defense in depth, as in overrideState(): revs are git-resolved shas or
   // the literal HEAD, never tokens lifted from the command line.
@@ -671,7 +710,7 @@ function computeHooksBlock(rev, file) {
     const present = pathPresentAt(rev, file);
     if (present === null) return null; // Cannot prove either way.
     if (present) return null; // Present but unreadable.
-    return 'null'; // Genuinely absent: registers no hooks.
+    return registrationState(null); // Genuinely absent: registers nothing.
   }
   if (buf.length > MAX_BLOB_BYTES) return null;
   const src = decodeBlob(buf);
@@ -686,29 +725,29 @@ function computeHooksBlock(rev, file) {
   // guessing at it is worse than a predictable fail-closed answer.
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   try {
-    return JSON.stringify(parsed.hooks ?? null);
+    return registrationState(parsed);
   } catch {
     return null; // Cyclic/unserializable — not reachable from JSON.parse.
   }
 }
 
-// Did the `hooks` block of .claude/settings.json move between the two revs?
+// Did the hook registration of one settings file move between the two revs?
 // Fail closed on either side being indeterminate. One-sided presence is
 // covered by the absent side's empty answer: adding the file with a hooks
 // block, or deleting one that had it, both read as changed.
-function settingsHooksChanged(baseRev, tipRev) {
-  const before = hooksBlockAt(baseRev, SETTINGS_FILE);
-  const after = hooksBlockAt(tipRev, SETTINGS_FILE);
+function settingsRegistrationChanged(baseRev, tipRev, file) {
+  const before = hooksBlockAt(baseRev, file);
+  const after = hooksBlockAt(tipRev, file);
   return before === null || after === null || before !== after;
 }
 
-// Every control-plane file this diff touches, for the block message. The
-// settings.json blob comparison is only paid when settings.json is actually
-// in the diff.
+// Every control-plane file this diff touches, for the block message. Each
+// settings file's registration is compared separately, and the blob
+// comparison is only paid for the settings files actually in the diff.
 function gateControlFiles(files, baseRev, tipRev) {
   const hits = gateControlPathFiles(files);
-  if (files.includes(SETTINGS_FILE) && settingsHooksChanged(baseRev, tipRev)) {
-    hits.push(SETTINGS_FILE);
+  for (const f of settingsFilesIn(files)) {
+    if (settingsRegistrationChanged(baseRev, tipRev, f)) hits.push(f);
   }
   return hits;
 }
@@ -884,14 +923,14 @@ process.stdin.on('end', () => {
         controlHits = pathHits;
       } else if (
         gateConfigFiles(files).length === 0 &&
-        !files.includes(SETTINGS_FILE)
+        settingsFilesIn(files).length === 0
       ) {
         return; // Pure harness diff: nothing content-dependent to check.
       } else {
         // Both content-dependent carve-outs compare two revs, so use the same
         // merge-base the `...` diff is taken against. Resolved only now: it is
         // an extra process, and it is only needed once a gate-config file or
-        // .claude/settings.json is actually in an otherwise harness-only diff.
+        // a settings file is actually in an otherwise harness-only diff.
         // An unresolvable merge-base is indeterminate, so it falls through to
         // the flag check rather than exempting.
         const mergeBase = tryGit(['merge-base', base, tip]);

@@ -53,7 +53,7 @@ AI が主体で開発を行うプロジェクトのための品質ポリシー�
 > 上書きキーは `mutation_threshold_high` / `mutation_threshold_medium` / `mutation_budget_minutes` の3つのみとする（上の例の値は本書の既定値そのもの）。ブロックを置かない場合、および記載のないキーは、本書の既定値が適用される。加えて、上書きには次の制約を課す。
 >
 > - High リスクのゲートを弱める上書きは**禁止（MUST NOT）**。
-> - ゲートパラメータ（閾値・バジェット）を変更するハーネス設定ファイルの差分は「ハーネスのみ変更の免除」の対象外とし、必ず quality-check（最低でも縮退レビュー）を通す（hook の免除判定にも同カーブアウトが実装されており、ゲートパラメータ変更を含む差分はフラグなしでのマージがブロックされる）。ゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体と hook 登録）の差分も同様に hook が免除対象外として扱い、`Gate control-plane changed:` でブロックする（対象パス集合は `quality-check` SKILL.md「ハーネスのみ変更の免除」を正とする）。
+> - ゲートパラメータ（閾値・バジェット）を変更するハーネス設定ファイルの差分は「ハーネスのみ変更の免除」の対象外とし、必ず quality-check（最低でも縮退レビュー）を通す（hook の免除判定にも同カーブアウトが実装されており、ゲートパラメータ変更を含む差分はフラグなしでのマージがブロックされる）。ゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体（`init` がリンクとして作成する `.claude/skills` リンクノードと `.claude/hooks` ツリーおよびそれらの `.codex/**`・`.cursor/**` コピーを含む）・hook 登録ファイル・`.claude/settings.json` と `.claude/settings.local.json` の `hooks` ブロックおよび `disableAllHooks` / `allowManagedHooksOnly` 無効化キー — パスは大文字小文字を区別せず判定する）の差分も同様に hook が免除対象外として扱い、`Gate control-plane changed:` でブロックする（対象パス集合は `quality-check` SKILL.md「ハーネスのみ変更の免除」を正とする）。
 > - 既定値から乖離した上書きを適用した場合は、その事実と理由を `.quality-check-report.json` の `gate_parameter_overrides` に記録する（キー定義は `quality-check-report.schema.md` を参照）。
 > - HTML コメント（`<!-- -->`）の内側、および markdown コードスパン・コードフェンス内に置かれた `### Quality Gate Overrides` ブロックとキー記載は**宣言とみなさない**（無効。既定値が適用される）。テンプレートはこの形（コメントアウト）で雛形を配布する。有効化はコメント解除によって行い、その編集自体がマージゲートの対象になる。quality-check 実行体も hook もこの解釈に従う。
 > - キーの照合は**大文字小文字を区別せず、区切り文字（`_` / `-` / 空白）も区別しない**（`Mutation-Threshold-High` は `mutation_threshold_high` と同一の宣言とみなす）。正規表記は snake_case とし、それ以外の表記を見つけた場合は宣言として扱ったうえで、正規表記への是正をユーザーに求める。quality-check 実行体も hook もこの規則に従う。
