@@ -125,14 +125,20 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 
 **生成ルールの検証（MUST）**: 生成したルールは、**違反サンプルと適合サンプルの両方に対して実際に実行し、違反サンプルで検出・適合サンプルで無検出となることを確認するまで「担保」として数えない。** ハーネスの事前ビルド資産が実実行で検証されて出荷されているのと同じ規律を、その場で生成したルールにも適用する。生成ルールには対応するカタログ番号を付記する（どのカテゴリの具体化かを辿れるようにする — カタログ §1）。
 
-### 3-3. ミューテーションテスト設定
+### 3-3. ミューテーションテスト設定の配線
 
-事前ビルドのミューテーション設定はフェーズ4で提供予定であり、本スキル実行時点では存在しない。次のいずれかを選び、**選択と理由をカバレッジマップに記録する**:
+`ai-dev-helm init` は事前ビルドのミューテーション設定をプロダクトの `lint/mutation/` 配下に配置している（他の Lint 資産と同じく配置のみで未配線）。対象スタックに事前ビルド資産がある場合は、それを**配線する**（ゼロから生成しない）。詳細な手順・要件は各スタックの `lint/README.md`「Mutation testing」節を正とする。
 
-| 選択肢 | 内容 |
+| 資産 | 配線方法 |
 |---|---|
-| 生成する | Stryker（JS/TS）/ PIT（Java）の設定をゼロから生成し、`mutation:full`（全体）/ `mutation:diff`（差分スコープ）コマンドを package.json scripts / Gradle タスクに登録する。スコア閾値・実行時間バジェットは `documents/development/quality-policy.md` §2 を参照する（数値は本スキルに置かない） |
-| スキップする | 未導入のまま進める。`quality-check` Step 3.5 は `reason: "not_configured"` でスキップ記録される |
+| Stryker（nextjs-react → `lint/mutation/stryker.config.mjs`） | `@stryker-mutator/core` と `@stryker-mutator/vitest-runner`（jest プロダクトは `@stryker-mutator/jest-runner`）を**プロダクトの devDependency** に追加する。設定をプロダクトルートに置くか、`--configFile lint/mutation/stryker.config.mjs` で指し示す。package.json scripts に `mutation:full`（`stryker run`）/ `mutation:diff`（`stryker run --incremental --since=origin/main` の差分スコープ）を登録する（`lint/README.md`「Mutation testing」節） |
+| PIT（java-springboot → `lint/mutation/pitest.gradle`） | プラグイン id `info.solidsoft.pitest` を**プロダクトルートの `plugins{}`** に宣言し（`apply from` された `pitest.gradle` 内には置けない）、`apply from: 'lint/mutation/pitest.gradle'` で取り込む。`pitest.gradle` 内の `__BASE_PACKAGE__` をプロダクトのベースパッケージに置換する。Gradle タスクに `mutation:full`（全体スコープ = `gradle pitest`）/ `mutation:diff`（変更クラスにスコープを絞った実行 — `-Ppitest.targetClasses=` または history による incremental 解析）を登録する（`lint/README.md`「Mutation testing」節） |
+
+**未カバースタックの生成**: 事前ビルド資産のないスタック（例: React + Hono）は、従来どおり Stryker（JS/TS）/ PIT（Java）の設定を**カタログ基準から生成**して補完する。生成した設定も下記の実実行確認を必須とする。
+
+いずれの場合も、`mutation:full`（全体）/ `mutation:diff`（差分スコープ）を package.json scripts（JS）/ Gradle タスク（Java）に登録し、**選択と配線先をカバレッジマップに記録する**。事前ビルド資産があるのに配線せずスキップする場合も、その選択と理由を記録する（`quality-check` Step 3.5 は未配線を `reason: "not_configured"` で記録する）。
+
+**配線完了条件（MUST・Lint 資産と同一の規律）**: ミューテーション配線は、**実際に一度実行して（`mutation:full` またはスコープを絞った実行）、ミュータントが生成されスコアが算出されることを確認するまで「配線完了」としない。** 事前ビルド資産が実実行で検証されて出荷されているのと同じ「数える前に走らせる」規律を配線にも適用する。スコア閾値・実行時間バジェットは本スキルに置かず `documents/development/quality-policy.md` §2 を正とする — スコアはレポートに出力され、§2 のゲート適用は `quality-check` が行う。
 
 ### 3-4. `lint:all` の作成と実行確認
 
@@ -180,7 +186,7 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 - [ ] カバレッジマップに**25カテゴリ全行**の採否（採用 / 不採用 / AI レビュー担保）と理由が記録され、`documents/development/lint-coverage-map.md` に保存されている
 - [ ] 採用した全チェックを束ねる `lint:all` が存在し、**実際に実行して**全体が通る（または既知違反を検出する）ことを確認した
 - [ ] その場で生成したルールは違反 / 適合サンプルへの実実行で検証済みである
-- [ ] ミューテーション設定の選択（生成 / スキップ）がカバレッジマップに記録されている（生成時は `mutation:full` / `mutation:diff` を登録済み）
+- [ ] ミューテーション設定の選択（配線 / 生成 / スキップ）がカバレッジマップに記録されている。配線・生成時は `mutation:full` / `mutation:diff` を登録し、**実際に一度実行してミュータント生成とスコア算出を確認済み**である
 - [ ] `lint:all` が CLAUDE.md（および存在すれば AGENTS.md / .cursorrules）に静的チェックコマンドとして登録されている
 - [ ] 各 `.github/review-*.md` に「Lint 担保済み項目（AI レビュー対象外）」節が反映され、AI レビュー担保カテゴリに `（Catalog: <番号>）` が付記されている
 

@@ -1,0 +1,49 @@
+// Pre-built PIT (Pitest) configuration for the java-springboot stack.
+//
+// This snippet is meant to be pulled into a product build with:
+//     apply from: 'lint/mutation/pitest.gradle'
+//
+// Plugin application: the `info.solidsoft.pitest` plugin id must be declared in
+// the ROOT build script `plugins { }` block, not here. Gradle forbids the
+// `plugins { }` DSL inside a script applied via `apply from`, and a `buildscript`
+// classpath in an applied script clashes with the root plugins block. So the
+// product adds the plugin id in its own `plugins { }` (see the README), and this
+// file only configures the `pitest { }` extension that the plugin registers.
+
+pitest {
+    // Pin the PIT core version. junit5PluginVersion 1.2.1 (below) requires PIT
+    // core 1.16 or newer; the gradle-pitest-plugin's older default core (1.15.0)
+    // crashes against it with NoSuchMethodError on TestUnitExecutionListener.
+    // Pinning here keeps the JUnit 5 companion and core compatible regardless of
+    // the plugin version the product happens to resolve. (Execution-verified
+    // against a real Spring Boot project during phase 4.)
+    pitestVersion = '1.16.1'
+
+    // JUnit 5 support. Spring Boot tests run on JUnit 5 (Jupiter), so PIT needs
+    // its JUnit 5 companion plugin to discover and run them.
+    junit5PluginVersion = '1.2.1'
+
+    // Write the analysis classpath to a file rather than the command line. On
+    // Windows a large Spring classpath overflows the command-line length limit
+    // (CreateProcess error=206); this avoids it and is harmless on other OSes.
+    useClasspathFile = true
+
+    // Scope of classes to mutate. lint-scaffolding replaces __BASE_PACKAGE__ with
+    // the product base package (see the README). Full-scope by default; the
+    // mutation:diff variant narrows this at invocation time (documented below).
+    targetClasses = ['__BASE_PACKAGE__.*']
+
+    // Report formats. XML is the machine-readable report that quality-check parses
+    // for the mutation score; HTML is for human inspection during local runs.
+    outputFormats = ['XML', 'HTML']
+
+    // Stable report path (no per-run timestamp folder) so quality-check can find
+    // the latest XML at a fixed location.
+    timestampedReports = false
+
+    // Intentionally NOT setting mutationThreshold or any gate threshold here.
+    // Score and threshold gating is owned by quality-check, which reads the XML
+    // report and compares it against the risk-based thresholds in
+    // quality-policy.md section 2 (the single source). Numbers must never be
+    // hardcoded in this build snippet.
+}

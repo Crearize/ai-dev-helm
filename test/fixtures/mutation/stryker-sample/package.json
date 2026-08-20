@@ -1,0 +1,16 @@
+{
+  "name": "stryker-sample",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal sample project used to prove Stryker generates mutants and computes a score. Consumed by lib/mutation-assets.test.js gated smoke test.",
+  "scripts": {
+    "test": "vitest run",
+    "mutation": "stryker run"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.2.0",
+    "@stryker-mutator/vitest-runner": "^9.2.0",
+    "vitest": "^4.1.3"
+  }
+}

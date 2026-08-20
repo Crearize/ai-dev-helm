@@ -231,7 +231,7 @@ Low リスクの変更、および領域テーブルの Step 3 欄が `-` の領
 |------|------|
 | 領域テーブルの Step 3 欄が `-` の領域（docs のみ / infra のみ） | 実行しない。`mutation: { executed: false, reason: "out_of_scope" }` を記録（`documents/development/quality-policy.md` §2「マトリクス優先順位原則」— 領域による対象外はリスクレベルより優先する） |
 | Low リスク | 実行しない。`mutation: { executed: false, reason: "low_risk" }` を記録 |
-| ミューテーションテストのツール（Stryker / PIT 等）がプロダクトに未導入 | **ブロックせずスキップする。** `reason: "not_configured"` を記録し、ミューテーション設定の導入は `lint-scaffolding` スキル（Step 3-3）で登録される旨をユーザーに案内する（事前ビルドのミューテーション設定はフェーズ4で提供予定 — それまでは lint-scaffolding 実行時に「生成する / スキップする」を選択してカバレッジマップに記録する） |
+| ミューテーションテストのツール（Stryker / PIT 等）がプロダクトに未導入 | **ブロックせずスキップする。** `reason: "not_configured"` を記録する。ミューテーション設定は事前ビルドの `lint/mutation/` 設定（JS/TS は Stryker、Java は PIT）から `lint-scaffolding` スキル（Step 3-3）が配線する。未配線のプロダクトは `lint-scaffolding` を実行して配線するか、スキップ理由を記録するようユーザーに案内する |
 | 上記以外（High / Medium かつツール導入済み） | 実行する |
 
 複数の条件に該当する場合は、**上の行から先に一致した行**の `reason` を記録する（`mutation` の未実行時は `executed` と `reason` のみを記録し、他キーは省略する）。
