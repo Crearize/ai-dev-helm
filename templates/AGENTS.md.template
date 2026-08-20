@@ -253,6 +253,7 @@ Located under `.codex/skills/`. Codex does not auto-discover them - refer to the
 | Frontend implementation | `.codex/skills/project/frontend-development/SKILL.md` |
 | DB migration | `.codex/skills/project/database-migration/SKILL.md` |
 | Pre-implementation test design | `.codex/skills/project/test-design/SKILL.md` |
+| Deterministic check wiring (lint) + coverage map | `.codex/skills/project/lint-scaffolding/SKILL.md` |
 | Pre-push quality check | `.codex/skills/project/quality-check/SKILL.md` |
 | Parallel worktree development | `.codex/skills/project/worktree-parallel/SKILL.md` |
 | Self improvement | `.codex/skills/project/self-improvement/SKILL.md` |

@@ -106,7 +106,7 @@ Closes #
 
 ### TODO/FIXME Comments
 
-> Catalog: C8（Lint 化予定）
+> Catalog: C8 — 担保候補: 横断リンター（todo-deadline / commented-code）。未配線プロダクトはカバレッジマップで AI レビュー担保に割り当てる
 
 ```
 // TODO: [deadline] Implementation description
@@ -131,7 +131,7 @@ Closes #
 
 ### Security Rules
 
-> Catalog: B1（Lint 化予定）
+> Catalog: B1 — 担保候補: 横断リンター（secrets）。未配線プロダクトはカバレッジマップで AI レビュー担保に割り当てる
 
 - Never commit API keys to Git
 - Production secrets managed via environment variable services
@@ -141,7 +141,7 @@ Closes #
 
 ### Secret Management
 
-> Catalog: B1 / F2（Lint 化予定。4項目すべてが B1 対応。うち「Log output masking」は F2 とも対応）
+> Catalog: B1 / F2 — B1 の担保候補: 横断リンター（secrets）。4項目すべてが B1 対応。うち「Log output masking」は F2 とも対応（F2 の横断リンター資産は未提供）。未配線プロダクトはカバレッジマップで AI レビュー担保に割り当てる
 
 - **Environment variable management** (no hardcoding)
 - **Log output masking**
@@ -159,7 +159,7 @@ Closes #
 
 ### OWASP Top 10 (2021) Awareness
 
-> Catalog: B2 / B3 / F2（Lint 化予定）。内訳は下記の対応表を参照。
+> Catalog: B2 / B3 / F2。内訳は下記の対応表を参照。B2 の担保候補: `lint/ast-grep/security/`（eval・動的コード実行 / 弱いハッシュ(MD5/SHA1) / TLS 検証無効化 / シェルコマンドインジェクションのみ — B2 の一部）。B3 の担保候補: 横断リンター（import-exists = 存在しないパッケージの import 検出）。いずれも B2/B3 の一部のみを担保し、残り（SQL/XSS・デシリアライゼーション・既知脆弱性のある依存等）は AI レビュー担保。未配線プロダクトはカバレッジマップで AI レビュー担保に割り当てる。
 > OWASP 項目との対応（`Axx` は OWASP の項番であり、カタログ番号ではない）: A03（インジェクション）と A02 のうち弱い暗号・TLS 検証の無効化検出 → B2 / A06（脆弱な依存）・A08（依存の整合性）→ B3 / A08 のうちデシリアライゼーション攻撃への対策 → B2 / A09 のログ出力そのもの → F2。
 > A01（アクセス制御・IDOR）・A04（設計）・A05（設定）・A07（認証）・A10（SSRF の許可先設計）等の設計・運用面はカタログ対応なし — AI レビュー恒久担保。ただし認可アノテーションの有無・デバッグモード有効化・セキュリティヘッダー設定の有無・SSRF の実装パターンといった**機械検出可能な部分**は B2 として Lint 化予定。
 
@@ -185,14 +185,14 @@ Closes #
 
 ### API Response Security
 
-> Catalog: B1（「APIレスポンスに不要な個人情報を含めない」および「ログにパスワード・トークン・個人情報を出力しない」の両項目）/ F2（ログ規律として後者に併せて対応）（Lint 化予定）
+> Catalog: B1（「APIレスポンスに不要な個人情報を含めない」および「ログにパスワード・トークン・個人情報を出力しない」の両項目）/ F2（ログ規律として後者に併せて対応）。B1 の担保候補: 横断リンター（secrets — ハードコードされたトークン / ログへの機密出力を検出。API レスポンス設計の妥当性は AI レビュー担保）。未配線プロダクトはカバレッジマップで AI レビュー担保に割り当てる。
 
 - APIレスポンスに不要な個人情報を含めない
 - ログにパスワード・トークン・個人情報を出力しない
 
 ### Dependency Security
 
-> Catalog: B3（Lint 化予定）
+> Catalog: B3 — 担保候補: 横断リンター（import-exists = 存在しないパッケージの import / typosquatting 検出）。既知脆弱性・lockfile 整合性は npm audit 等の別手段 / AI レビュー担保。未配線プロダクトはカバレッジマップで AI レビュー担保に割り当てる
 
 - 既知の脆弱性がある依存パッケージを使用しない
 - セキュリティアップデートは速やかに適用

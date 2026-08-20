@@ -132,7 +132,7 @@ Skills are installed under `.cursor/skills/` (symlink to `skills/`). Cursor does
 | Harness improvement before completion | `.cursor/skills/project/self-improvement/SKILL.md` |
 | Parallel worktree development | `.cursor/skills/project/worktree-parallel/SKILL.md` |
 
-Other project skills (server-startup, branch-workflow, backend/frontend-development, database-migration, browser-agent, feature-documentation, log-design, generate-docs, implementation-report) live under `.cursor/skills/project/`.
+Other project skills (server-startup, branch-workflow, backend/frontend-development, database-migration, `lint-scaffolding` (wire deterministic checks (lint/static analysis) and maintain the coverage map), browser-agent, feature-documentation, log-design, generate-docs, implementation-report) live under `.cursor/skills/project/`.
 
 ## Reference Documents
 

@@ -257,6 +257,7 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 | `frontend-development` | Frontend implementation |
 | `database-migration` | DB migration |
 | `test-design` | Pre-implementation test design (test oracles) |
+| `lint-scaffolding` | Wire deterministic checks (lint/static analysis) and maintain the coverage map |
 | `quality-check` | Pre-push quality check |
 | `worktree-parallel` | Parallel worktree development |
 | `self-improvement` | Harness improvement before completion |

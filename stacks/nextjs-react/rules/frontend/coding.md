@@ -12,7 +12,7 @@
 
 ### any type prohibited
 
-> Catalog: A1 — 担保: `lint/eslint/harness.config.mjs`（type-safety グループ: `@typescript-eslint/no-explicit-any`）
+> Catalog: A1 / A5 — 担保: `lint/eslint/harness.config.mjs`（type-safety グループ: `@typescript-eslint/no-explicit-any`）
 
 Use `unknown` type instead.
 
