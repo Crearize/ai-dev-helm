@@ -87,3 +87,46 @@ Layout tolerance is built in: `consideringOnlyDependenciesInLayers()` ignores de
 ### ArchUnit cost
 
 The slice cycle rule `top_level_packages_are_free_of_cycles` (`slices().matching(...).beFreeOfCycles()`) is the most expensive rule in the template: it builds the full slice dependency graph and searches it for cycles, which grows with the number of top-level packages and inter-package edges. On a large codebase this dominates the ArchUnit run. If it becomes a bottleneck, move it to a less-frequent job (nightly / pre-merge) and keep the two cheaper layer-direction rules in the fast per-commit test run - delete the `@ArchTest` field in the fast copy and keep it in the slow one, rather than weakening the rule.
+
+## Mutation testing (PIT)
+
+`init` copies `lint/mutation/pitest.gradle` into the product; the lint-scaffolding skill does the wiring below. The snippet is a **PIT (Pitest) configuration** for Gradle products - a `pitest { }` extension block only. It is **manually verified** (it needs a JVM + a real Spring Boot project to execute); there is no automated PIT run in this repo (no-CI policy), and the shipped snippet is exercised against a real project in a one-time manual verification, like the ArchUnit template.
+
+```
+lint/
+  mutation/
+    pitest.gradle             # pulled in via apply from; configures the pitest{} extension
+```
+
+### Wiring PIT (Gradle)
+
+1. Declare the plugin id in the product's **root `plugins { }` block** - not in `pitest.gradle`. Gradle forbids the `plugins { }` DSL inside a script applied via `apply from`, so the plugin id has to live in the root build script while `pitest.gradle` only configures the extension the plugin registers:
+
+```groovy
+plugins {
+    id 'info.solidsoft.pitest' version '1.15.0'
+}
+
+apply from: 'lint/mutation/pitest.gradle'
+```
+
+2. In the copied `lint/mutation/pitest.gradle`, replace every `__BASE_PACKAGE__` with the product's base package (e.g. `com.example.product`), exactly as for the ArchUnit template. That sets `targetClasses` to the product's production classes.
+
+The snippet sets `junit5PluginVersion` (Spring Boot tests are JUnit 5), `outputFormats = ['XML', 'HTML']`, and `timestampedReports = false`. It deliberately sets **no `mutationThreshold`** or any other gate threshold: score gating is owned by quality-check (next section).
+
+### Registering the tasks
+
+Register two entry points on the product side:
+
+- `mutation:full` - the full-scope run: `gradle pitest`. It mutates everything under `targetClasses` (`__BASE_PACKAGE__.*`) and is the config shipped here.
+- `mutation:diff` - the diff-scoped run used per change. Keep the shipped `pitest.gradle` full-scope and narrow the scope at invocation instead. Two documented approaches:
+  - Narrow `targetClasses` to the changed classes only - pass them through on the command line (`gradle pitest -Ppitest.targetClasses=com.example.product.order.OrderService`) or wrap this in a small Gradle task that derives the list from the diff, so PIT only mutates what changed.
+  - Or use PIT's incremental analysis: set `historyInputLocation` / `historyOutputLocation` to a persisted history file so PIT reuses prior results and re-analyses only classes whose bytecode or tests changed. This keeps the run inside the time budget (see quality-policy section 2) on large modules.
+
+### Maven products
+
+For a Maven build, use the `pitest-maven` plugin instead of this Gradle snippet: configure the `org.pitest:pitest-maven` plugin with the same intent - `targetClasses` set to the product base package, JUnit 5 support via `pitest-junit5-plugin`, XML + HTML `outputFormats`, and no `mutationThreshold`. The scaffolding is Maven-specific but the score gating and thresholds are identical.
+
+### How the score is gated
+
+quality-check reads the **XML** report PIT writes and compares the mutation score against the risk-based thresholds and time budget defined in quality-policy section 2 - the single source for those numbers. This snippet never hardcodes them, and neither should the product's build files (overrides go through the harness settings contract described in that section, not here). Mutation runs are **local-only**; there is no CI job in this repo that runs PIT.
