@@ -13,7 +13,7 @@
 | `documentation` | `Documentation` | 必須 | `feature-documentation` スキルの実行状況（Step 0） |
 | `self_improvement` | `SelfImprovement` | 必須 | `self-improvement` スキルの実行状況（Step 5.75） |
 | `risk_level` | `"high" \| "medium" \| "low"` | フェーズ2必須 [^lifecycle] | Step 1 で判定したリスクレベル。判定基準は `quality-policy.md` §1、レベル別のゲート強度は同 §2 を参照 |
-| `lint_cycles` | `number \| null` | フェーズ2必須 [^lifecycle] | Step 2 の AI 修正サイクル数（1サイクル = CLAUDE.md に登録された静的チェックコマンド（フェーズ3以降は `lint:all`）の実行 → AI による修正）。決定的自動修正のみで完結したパスは含めない。上限は3（quality-policy.md §5）。**Step 2 を実行しない領域（docs のみの変更等）では `null`** — `0`（実行したが AI 修正が不要だった）とは区別する。infra のみの変更では Step 2（該当ビルドコマンド）を実行する（`quality-check` SKILL.md 変更領域別ステップ適用テーブル） |
+| `lint_cycles` | `number \| null` | フェーズ2必須 [^lifecycle] | Step 2 の AI 修正サイクル数（1サイクル = 静的チェックコマンド（`lint-scaffolding` 導入済みプロダクトでは `lint:all`、未導入では CLAUDE.md に登録されたコマンド）の実行 → AI による修正）。決定的自動修正のみで完結したパスは含めない。上限は3（quality-policy.md §5）。**Step 2 を実行しない領域（docs のみの変更等）では `null`** — `0`（実行したが AI 修正が不要だった）とは区別する。infra のみの変更では Step 2（該当ビルドコマンド）を実行する（`quality-check` SKILL.md 変更領域別ステップ適用テーブル） |
 | `lint_abort_reason` | `"loop_limit" \| "oscillation" \| null` | フェーズ2必須 [^lifecycle] | Step 2 の打ち切り事由。`loop_limit`: 3サイクル上限到達 / `oscillation`: 同一ルール×同一ファイルの違反が2サイクル連続で再発（振動検出）。完走した場合、および `lint_cycles` が `null`（Step 2 未実行）の場合は `null`。語彙は `mutation.aborted_reason` の `loop_limit` と統一する |
 | `mutation` | `Mutation` | フェーズ2必須 [^lifecycle] | Step 3.5 ミューテーションテストの実行結果 |
 | `test_design` | `TestDesign` | フェーズ2必須 [^lifecycle] | Step 3 のテスト設計メモ（`test-design` スキル）との照合結果（quality-policy.md §4）。詳細は § TestDesign オブジェクト を参照 |
