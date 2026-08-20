@@ -1,0 +1,31 @@
+# Detects an `await` used as a bare expression statement directly inside a
+# for / for-of / for-in / while loop body: the iterations run strictly
+# sequentially. Conservative by design - only a statement whose whole value
+# is discarded (`await f(x);`) is flagged, and only when it is a DIRECT child
+# of the loop's own block. Awaits inside a nested function and awaits whose
+# result is bound to a variable (a real data dependency across iterations)
+# are left alone. Note: the TypeScript grammar represents both `for ... of`
+# and `for await ... of` as for_in_statement, so a discarded await inside a
+# for-await-of body is flagged too - that is intended, it is still sequential.
+# do-while (do_statement) is included alongside for / for-of / for-in / while
+# for consistency with the N+1 stack rules, which cover the same loop kinds.
+# Languages: valid in TypeScript, TSX and plain JavaScript -> -ts / -tsx / -js
+# variants with identical rule bodies.
+# Variant: Tsx build of no-await-in-loop-ts - identical rule body; see no-await-in-loop-ts.yml for the full rationale and language notes.
+id: no-await-in-loop-tsx
+language: Tsx
+severity: error
+message: "Awaiting inside a loop runs the iterations sequentially. Collect the promises and await Promise.all instead. (Catalog: D2)"
+rule:
+  kind: expression_statement
+  has:
+    kind: await_expression
+  inside:
+    kind: statement_block
+    inside:
+      field: body
+      any:
+        - kind: for_statement
+        - kind: for_in_statement
+        - kind: while_statement
+        - kind: do_statement

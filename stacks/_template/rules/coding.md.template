@@ -7,18 +7,21 @@
 （ハーネスリポジトリとの対応表はカタログ §5）。
 -->
 
-> 言語横断の禁止パターン（未使用 import・マジックナンバー・ワイルドカード import 等）は**カタログ A1・C3・C6（`documents/development/static-check-standard.md`）を恒久の正**とする。移行期（フェーズ3まで）の本文は `documents/development/coding-rules/common-rules.md` §7 を参照。
+> 言語横断の禁止パターン（未使用 import・マジックナンバー・ワイルドカード import 等）は**カタログ A1・C3・C6（`documents/development/static-check-standard.md`）を恒久の正**とする。移行期の本文は `documents/development/coding-rules/common-rules.md` §7 を参照。
 > 汎用原則（DRY・仕様ベーステスト・セキュリティ・パフォーマンス）は common-rules.md を参照。本書が持つのは [STACK_NAME] 固有の具体のみである。
-> `> Catalog:` 注記の読み方は common-rules.md「Catalog 注記の読み方」を参照。**スタック別ルール文書の項目はカタログへは移さず**、フェーズ3で Lint 資産が配線された後に「項目名 + カタログ番号 + Lint 資産参照」の短縮形へ縮約する（削除はしない）。
+> `> Catalog:` 注記の読み方は common-rules.md「Catalog 注記の読み方」を参照。**スタック別ルール文書の項目はカタログへは移さず**、対応する Lint 資産の提供後に「項目名 + カタログ番号 + Lint 資産参照」の短縮形へ縮約する（削除はしない）。事前ビルド資産が提供済みの項目は `Catalog: <番号> — 担保: <資産参照>` 形式を用いる。
 > 詳細規約は `documents/development/coding-rules/[stack]-rules.md` を参照。
 
 ## Prohibited Patterns
 
 <!-- Add patterns to avoid -->
-<!-- 言語・FW 固有かつ Lint で担保可能な項目には、対応するカタログ番号を注記する:
-     > Catalog: <番号>（フェーズ3で Lint 資産提供予定 — <想定するルール名・ツール>）
+<!-- 言語・FW 固有かつ Lint で担保可能な項目には、対応するカタログ番号を注記する。
+     事前ビルド Lint 資産が提供済みの場合:
+     > Catalog: <番号> — 担保: <資産参照（lint/ 配下のパス）>
+     資産が未提供の場合:
+     > Catalog: <番号>（Lint 資産提供予定 — <想定するルール名・ツール>）
      カバレッジが分割される場合は対象外を同じ注記内に明示する:
-     > Catalog: <番号> — <機械検出できる部分>（フェーズ3で Lint 資産提供予定）
+     > Catalog: <番号> — <機械検出できる部分>（担保: <資産参照> / Lint 資産提供予定）
      > <判断を要する部分>はカタログ対応なし — AI レビュー恒久担保。 -->
 
 ## Coding Conventions

@@ -108,9 +108,9 @@ Thresholds, cycle caps and time budgets are defined in `documents/development/qu
 ### Merge Gate
 
 - The gate applies to `gh pr merge`, `git merge` on main, and direct pushes to main. **Pushes to feature branches are NOT gated** - push freely at any time.
-- `.quality-check-passed` is commit-bound JSON (`{branch, commit}`) and is not consumed. It stays valid while post-check commits touch only harness files, so `self-improvement` edits never force a re-review.
+- `.quality-check-passed` is commit-bound JSON (`{branch, commit}`) and is not consumed. It stays valid while post-check commits touch only harness files, so `self-improvement` edits never force a re-review. Exception: a post-check commit that touches gate control-plane files (see the carve-out below) DOES invalidate the flag - the hook blocks with `Gate control-plane changed:` and quality-check must be re-run.
 - If main advanced independently after the flag was issued, the merged main (feature + main combined) is unverified: the merge may succeed but the push to main is blocked. Re-run `/quality-check` on the merged main, then push.
-- Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths. It must go through quality-check (a reduced-persona review at minimum). The same applies to **gate control-plane files** - `skills/project/quality-check/**` and `skills/project/_schemas/**` (and their `.claude/skills/...` copies when skills are copied rather than linked), `.github/review-*.md`, the hooks directory (`.claude/hooks/**`), and the hook registration (the `hooks` block of `.claude/settings.json` - unregistering the hook disables the gate just as surely as editing it): with in-development reviews consolidated into the merge gate, these must never change with zero review (hook enforcement of this control-plane carve-out lands in a later phase; until then it binds via this rule).
+- Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths. It must go through quality-check (a reduced-persona review at minimum). The same applies to **gate control-plane files** - `skills/project/quality-check/**` and `skills/project/_schemas/**`, the `.claude/skills` and `.claude/hooks` trees (including the `.claude/skills` symlink node itself - `init` creates it as a link, and re-pointing that one path swaps the whole quality-check tree) and their `.codex/**` / `.cursor/**` copies, `.github/review-*.md`, the hook registration files (`.codex/hooks.json` and the `.claude` / `.cursor` equivalents), and the hook registration inside `.claude/settings.json` AND `.claude/settings.local.json` (Claude Code reads both, the latter at higher precedence): the `hooks` block plus the `disableAllHooks` / `allowManagedHooksOnly` hook-disable keys - unregistering or disabling the hook disables the gate just as surely as editing it. Path matching is case-insensitive (`.claude/Hooks/...` is the same file as `.claude/hooks/...` on Windows/macOS). With in-development reviews consolidated into the merge gate, these must never change with zero review (the quality-gate hook enforces this carve-out and blocks such diffs with `Gate control-plane changed:`).
 
 <!-- Quality Gate Overrides (optional). Uncomment only the key(s) you want to change and
      write your value. Defaults are deliberately NOT written here - they live in
@@ -257,6 +257,7 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 | `frontend-development` | Frontend implementation |
 | `database-migration` | DB migration |
 | `test-design` | Pre-implementation test design (test oracles) |
+| `lint-scaffolding` | Wire deterministic checks (lint/static analysis) and maintain the coverage map |
 | `quality-check` | Pre-push quality check |
 | `worktree-parallel` | Parallel worktree development |
 | `self-improvement` | Harness improvement before completion |
@@ -269,6 +270,8 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 ## Common Commands
 
 <!-- Manual edit: Add your project's common commands below -->
+
+After running the `lint-scaffolding` skill, register the generated `lint:all` command here as the static check command (`quality-check` Step 2 runs it as the deterministic check layer).
 
 ### Backend
 ```bash

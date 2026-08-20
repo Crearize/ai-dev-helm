@@ -26,7 +26,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ただしハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）の差分がゲートパラメータ（quality-check の閾値・実行時間バジェット等。キー名は `documents/development/quality-policy.md` §2「上書きの契約」の `Quality Gate Overrides` 記法）の変更を含む場合、この免除は適用しない。この場合は本スキルを実行し（最低でも縮退レビュー）、フラグを作成する。hook 側もこのカーブアウトを免除判定に反映するため、フラグなしでのマージはブロックされうる。
 
-同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`.github/review-*.md`・ツールの hooks ディレクトリ（`.claude/hooks/**` 等の quality-gate 実体）**および hook 登録ファイル（`.claude/settings.json` の `hooks` ブロック、`.codex/hooks.json` 等 — 登録を外せば実体を守っても同じため）**。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（最低でも縮退レビューを実施しフラグを作成する。本カーブアウトの hook 側への反映はフェーズ3で行う — それまでは本スキルの規定としてのみ拘束する）。
+同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`.claude/skills` と `.claude/hooks` のツリー（`.claude/skills` はリンクノード自体を含む — `init` はこれをシンボリックリンクとして作成するため、1 パスの張り替えで quality-check ツリー全体が差し替わる）とその `.codex/**`・`.cursor/**` コピー・`.github/review-*.md`・hook 登録ファイル（`.codex/hooks.json` と `.claude` / `.cursor` の同等物）**および hook 登録を担う `.claude/settings.json` と `.claude/settings.local.json`（Claude Code は両方を読み、後者が高優先度）の `hooks` ブロックおよび `disableAllHooks` / `allowManagedHooksOnly` の hook 無効化キー — 登録を外す・無効化すれば実体を守っても同じため）**。パスのマッチは大文字小文字を区別しない（Windows/macOS では `.claude/Hooks/...` は `.claude/hooks/...` と同一ファイル）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（最低でも縮退レビューを実施しフラグを作成する。本カーブアウトは hook が強制する — 該当差分はフラグなしでのマージ・push が `Gate control-plane changed:` でブロックされる）。
 
 README や `documents/` 配下の利用者向けドキュメントはハーネスファイルに**含まれない**（docs 縮退レビューの対象）。
 
@@ -231,7 +231,7 @@ Low リスクの変更、および領域テーブルの Step 3 欄が `-` の領
 |------|------|
 | 領域テーブルの Step 3 欄が `-` の領域（docs のみ / infra のみ） | 実行しない。`mutation: { executed: false, reason: "out_of_scope" }` を記録（`documents/development/quality-policy.md` §2「マトリクス優先順位原則」— 領域による対象外はリスクレベルより優先する） |
 | Low リスク | 実行しない。`mutation: { executed: false, reason: "low_risk" }` を記録 |
-| ミューテーションテストのツール（Stryker / PIT 等）がプロダクトに未導入 | **ブロックせずスキップする。** `reason: "not_configured"` を記録し、`lint-scaffolding` スキル（フェーズ3で提供予定）の実行を推奨するメッセージをユーザーに出す |
+| ミューテーションテストのツール（Stryker / PIT 等）がプロダクトに未導入 | **ブロックせずスキップする。** `reason: "not_configured"` を記録し、ミューテーション設定の導入は `lint-scaffolding` スキル（Step 3-3）で登録される旨をユーザーに案内する（事前ビルドのミューテーション設定はフェーズ4で提供予定 — それまでは lint-scaffolding 実行時に「生成する / スキップする」を選択してカバレッジマップに記録する） |
 | 上記以外（High / Medium かつツール導入済み） | 実行する |
 
 複数の条件に該当する場合は、**上の行から先に一致した行**の `reason` を記録する（`mutation` の未実行時は `executed` と `reason` のみを記録し、他キーは省略する）。
@@ -298,7 +298,7 @@ Low リスクの変更、および領域テーブルの Step 3 欄が `-` の領
 | パフォーマンスエンジニア | `.github/review-performance.md` |
 | 要件・仕様整合性レビュアー | `.github/review-requirements.md` |
 
-**Lint 担保済み（`lint-scaffolding` のカバレッジマップで Lint 担保に割当済み）の項目は AI レビューの対象外とする**（`documents/development/static-check-standard.md` §4「規約文書との関係」の Lint 担保済み原則。決定的チェックで落ちるものを AI レビューで二重に扱わない）。カバレッジマップ（lint-scaffolding が生成する採否台帳）が存在しないプロダクトでは何も除外しない。
+**Lint 担保済み（`lint-scaffolding` のカバレッジマップで Lint 担保に割当済み）の項目は AI レビューの対象外とする**（`documents/development/static-check-standard.md` §4「規約文書との関係」の Lint 担保済み原則。決定的チェックで落ちるものを AI レビューで二重に扱わない）。カバレッジマップ（lint-scaffolding が生成する採否台帳。保存先は `documents/development/lint-coverage-map.md`）が存在しないプロダクトでは何も除外しない。
 
 ### ペルソナ段階化ルール（コード変更を含む場合）
 
@@ -519,7 +519,7 @@ node -e "const c=require('child_process'),f=require('fs');const g=a=>c.execSync(
 フラグの性質:
 
 - hook はフラグを**消費（削除）しない**。マージ時に「記録コミット以降の差分がハーネスファイルのみか」で有効性を検証する
-- 通過後に self-improvement 等で**ハーネスファイルのみを追加修正してもフラグは有効なまま**（再サイクル不要）
+- 通過後に self-improvement 等で**ハーネスファイルのみを追加修正してもフラグは有効なまま**（再サイクル不要）。ただし**ゲート制御面ファイル**（「ハーネスのみ変更の免除」節のカーブアウト対象）に触れる追加コミットは例外で、フラグを無効化する（hook が `Gate control-plane changed:` でブロックする — 再実行が必要）
 - 記録コミット以降に非ハーネスファイルの変更が入るとフラグは無効になり、再実行が必要
 - **フラグ発行後に main 側が独立して進んでいた場合**、マージ自体は通っても、マージ後の main（feature + main の合成内容）は未検査のため main への push はブロックされる。その場合はマージ後の main 上で quality-check を再実行してから push する
 - `branch` フィールドは診断用であり、hook の判定には使用されない

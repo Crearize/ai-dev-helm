@@ -1,0 +1,39 @@
+# Lint assets
+
+Pre-built static-analysis assets placed into this `lint/` directory by `ai-dev-helm init`. They are **not yet wired up** — copying them here changes nothing about your build. Wiring and enabling (ESLint config imports, `sgconfig.yml` opt-ins, Gradle plugin blocks, CI steps) is done by the `lint-scaffolding` skill, which walks through each group and records what was enabled.
+
+## Layout
+
+```
+lint/
+  README.md                 # this file
+  README-<stack>.md         # per-stack wiring guide (only for selected stacks)
+  ast-grep/
+    <category>/             # generic, stack-independent rule groups
+      *.yml                 # ast-grep rules
+      README.md             # what the group catches and why
+    <stack>/                # stack-specific ast-grep rules (e.g. nextjs-react/)
+  eslint/                   # ESLint flat-config preset + custom rules (nextjs-react)
+  checkstyle/               # Checkstyle preset (java-springboot)
+  archunit/                 # ArchUnit test-class template (java-springboot)
+  product/                  # product-owned, NOT package-managed (init never touches it)
+    ast-grep/               # generated rules that fill gaps; add to sgconfig.yml ruleDirs
+```
+
+Which directories you have depends on the stacks selected during `init`; the generic `ast-grep/<category>/` groups are always present. Everything except `lint/product/` is package-managed (see Updating); `lint/product/` is yours to own.
+
+## Opting in and out
+
+Products opt in **per directory / per group** — nothing here is all-or-nothing:
+
+- Enable only the groups that fit your product; the `lint-scaffolding` skill handles the mechanics.
+- **The durable opt-out is the coverage map plus leaving the group out of `sgconfig.yml` (or the equivalent tool config) — NOT deleting the directory.** These `lint/` directories are package-managed: re-running `ai-dev-helm init` restores a deleted directory, so a deletion does not durably opt out. Record the decision in the coverage map and simply do not wire the group in.
+- Do not weaken a rule in place to make it pass — opt out of the group whole and record why.
+
+## Generated rules
+
+Rules you generate to fill gaps (categories with no pre-built asset for your stack) go in the **product-owned** `lint/product/ast-grep/` directory and are added to `sgconfig.yml` `ruleDirs`. Never place generated rules inside the package-managed `lint/ast-grep/` tree: `init` overwrites that tree with the release's versions and can remove them. `lint/product/` is never written by `init`, so your rules survive re-runs.
+
+## Updating
+
+These files are package-managed: re-running `ai-dev-helm init` overwrites them with the current release's versions (and restores any you deleted). Keep product-specific overrides in your own config (e.g. ESLint overrides below the preset) and generated rules in `lint/product/`, not by editing these files. `lint/product/` is the one directory here `init` never touches.

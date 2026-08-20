@@ -1,0 +1,30 @@
+# Detects a catch block whose entire body is a single console.* call: the
+# error is logged and then swallowed. Conservative by design - the body must
+# contain a console.* call statement AND have no second non-comment child
+# (expressed with nthChild.ofRule, since a plain `has: not: ...` would also
+# match the block's unnamed brace tokens). A catch that logs and then
+# rethrows, returns a fallback, or uses a real logger is not flagged.
+# Variant: Tsx build of no-catch-log-only-ts - identical rule body; see no-catch-log-only-ts.yml for the full rationale and language notes.
+id: no-catch-log-only-tsx
+language: Tsx
+severity: error
+message: "Catch block only writes to console and swallows the error. Rethrow, propagate, or handle it. (Catalog: A3)"
+rule:
+  kind: catch_clause
+  has:
+    kind: statement_block
+    all:
+      # 1. the body contains a console.* call statement
+      - has:
+          kind: expression_statement
+          has:
+            kind: call_expression
+            pattern: console.$METHOD($$$ARGS)
+      # 2. the body has no second statement (comments do not count)
+      - not:
+          has:
+            nthChild:
+              position: 2
+              ofRule:
+                not:
+                  kind: comment

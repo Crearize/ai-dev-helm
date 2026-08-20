@@ -1,0 +1,36 @@
+# Detects dynamic code execution: any construct that turns a string into
+# executable code. Covered forms: a bare `eval(...)` call, `new Function(...)`
+# and a bare `Function(...)` call (both compile a string body), and
+# `setTimeout` / `setInterval` given a STRING or template-literal first
+# argument (the string is eval'd). FP-safe: `setTimeout(fn, 0)` passes a
+# function reference, not a string, and is left alone; a method named `eval`
+# on some object (`parser.eval(...)`) is a different node and is not flagged.
+# Languages: this construct is valid in TypeScript, TSX and plain JavaScript,
+# so it ships as -ts / -tsx / -js variants with identical rule bodies.
+# Not covered (documented, out of scope for a reliable pure-AST rule):
+# `(0,eval)(x)` comma-expression indirection and `globalThis.eval` /
+# `window.eval` member forms - those stay assigned to AI review.
+# Variant: JavaScript build of no-eval-ts - identical rule body; see no-eval-ts.yml for the full rationale and language notes.
+id: no-eval-js
+language: JavaScript
+severity: error
+message: "Dynamic code execution (eval / Function / string-arg setTimeout) lets input become code. Use a parser or an explicit dispatch table. (Catalog: B2)"
+rule:
+  any:
+    - kind: call_expression
+      pattern: eval($$$ARGS)
+    - kind: new_expression
+      pattern: new Function($$$ARGS)
+    - kind: call_expression
+      pattern: Function($$$ARGS)
+    - kind: call_expression
+      any:
+        - pattern: setTimeout($CODE)
+        - pattern: setTimeout($CODE, $$$REST)
+        - pattern: setInterval($CODE)
+        - pattern: setInterval($CODE, $$$REST)
+constraints:
+  CODE:
+    any:
+      - kind: string
+      - kind: template_string

@@ -1,0 +1,38 @@
+# Detects TLS certificate verification being turned off. Covered forms:
+#   - the object property `rejectUnauthorized: false` (or `: 0`), including
+#     quoted (`'rejectUnauthorized': false`) and computed
+#     (`["rejectUnauthorized"]: false`) keys - a `has: field: key` regex sees
+#     the key text through all three key node shapes (property_identifier,
+#     string, computed_property_name);
+#   - assigning `NODE_TLS_REJECT_UNAUTHORIZED` the value `'0'` / `"0"` / `0`,
+#     which disables verification process-wide.
+# Any of these makes the connection trivially interceptable. Conservative:
+# only the literal disabling values (`false`, `0`, `'0'`) are flagged; a value
+# read from configuration is a different node and is left to review. A TS
+# `interface` field `rejectUnauthorized: boolean` is a property_signature, not
+# a pair, so type declarations are not flagged.
+# Languages: valid in TypeScript, TSX and plain JavaScript -> -ts / -tsx / -js
+# variants with identical rule bodies.
+# Variant: JavaScript build of no-tls-verify-off-ts - identical rule body; see no-tls-verify-off-ts.yml for the full rationale and language notes.
+id: no-tls-verify-off-js
+language: JavaScript
+severity: error
+message: "Disabling TLS verification (rejectUnauthorized: false/0 or NODE_TLS_REJECT_UNAUTHORIZED='0') exposes the connection to interception. Trust a proper CA instead. (Catalog: B2)"
+rule:
+  any:
+    - kind: pair
+      all:
+        - has:
+            field: key
+            regex: rejectUnauthorized
+        - has:
+            field: value
+            regex: "^(false|0)$"
+    - kind: assignment_expression
+      all:
+        - has:
+            field: left
+            regex: NODE_TLS_REJECT_UNAUTHORIZED
+        - has:
+            field: right
+            regex: "^['\"]?0['\"]?$"

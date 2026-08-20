@@ -3,7 +3,7 @@
 > **Tech Stack**: Next.js + React + TypeScript
 
 > 本書は Next.js + React + TypeScript の**詳細規約**である。言語・FW 非依存の汎用原則は `documents/development/coding-rules/common-rules.md` を正とし、Lint で担保可能な項目の**恒久の正**はカタログ（`documents/development/static-check-standard.md`）A1〜F2 とする。
-> 本書には汎用ルールの言語固有表現が重複して残っている（移行形）。`> Catalog:` 注記の読み方は common-rules.md「Catalog 注記の読み方」を参照。**スタック別文書の項目は削除せず**、フェーズ3で Lint 資産が配線された後に「項目名 + カタログ番号 + Lint 資産参照」の形式へ縮約する（カタログ §4.1）。
+> 本書には汎用ルールの言語固有表現が重複して残っている（移行形）。`> Catalog:` 注記の読み方は common-rules.md「Catalog 注記の読み方」を参照。**スタック別文書の項目は削除せず**、対応する Lint 資産の提供後に「項目名 + カタログ番号 + Lint 資産参照」の形式へ縮約する（カタログ §4.1）。
 > 要点版のルールは `.claude/rules/frontend/coding.md`（配布後の AI ツール別ルール）を参照。パスはすべて配布後のプロダクト側表記（対応表はカタログ §5）。
 
 ## Basic Policy
@@ -89,15 +89,9 @@ Place under `app/api/`. Prefer Server Actions over Route Handlers when possible.
 
 ### 3.2 Prohibited Patterns
 
-- **React.forwardRef prohibited**: Scheduled for deprecation. Receive ref via props.
+> Catalog: A1 — 担保: `lint/eslint/rules/no-forwardref.js`（`harness/no-forwardref`）
 
-```typescript
-// NG
-const Button = React.forwardRef<HTMLButtonElement, Props>((props, ref) => ...)
-
-// OK
-const Button = ({ ref, ...props }: Props & { ref?: React.Ref<HTMLButtonElement> }) => ...
-```
+- **React.forwardRef prohibited**: Scheduled for deprecation. Receive ref via props: `({ ref, ...props }: Props & { ref?: React.Ref<T> })`.
 
 ## 4. Form Implementation (React Hook Form + Zod)
 
@@ -169,6 +163,8 @@ const [students, courses] = await Promise.all([
 ```
 
 ## 7. Component Design
+
+> Catalog: C7 — 担保: `lint/eslint/rules/one-component-per-file.js`・`lint/eslint/rules/export-at-definition.js`
 
 - **1 file = 1 component**: Separate even internal-only components
 - **Export at definition**: `export const ComponentName = ...`

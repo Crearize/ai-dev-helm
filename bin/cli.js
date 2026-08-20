@@ -54,7 +54,66 @@ yargs(hideBin(process.argv))
       await doPersonal({ upgradeModel: argv.upgradeModel });
     }
   )
-  .demandCommand(1, 'Please specify a command: init or personal')
+  .command(
+    'lint [paths..]',
+    'Run the cross-cutting text-level linter',
+    (yargs) => {
+      return yargs
+        .positional('paths', {
+          type: 'string',
+          array: true,
+          describe: 'Files or directories to lint (default: whole project)',
+        })
+        .option('config', {
+          type: 'string',
+          describe: 'Explicit config file path (.ai-dev-helm-lint.json)',
+        })
+        .option('checks', {
+          type: 'string',
+          describe: 'Comma-separated check names to run',
+        })
+        .option('json', {
+          type: 'boolean',
+          describe: 'Output violations as a JSON array',
+          default: false,
+        })
+        .option('verbose', {
+          type: 'boolean',
+          describe: 'Show detailed output and stack traces on error',
+          default: false,
+        });
+    },
+    (argv) => {
+      if (!argv.json) {
+        printHeader();
+      }
+      const { runLint } = require('../lib/lint/runner');
+      const only = argv.checks
+        ? String(argv.checks)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+      const result = runLint({
+        dir: process.cwd(),
+        paths: argv.paths || [],
+        configPath: argv.config,
+        only,
+        json: argv.json,
+      });
+      console.log(result.output);
+      if (argv.json) {
+        for (const warning of result.warnings) {
+          console.error(`warning: ${warning}`);
+        }
+      }
+      for (const error of result.errors) {
+        console.error(`error: ${error}`);
+      }
+      process.exit(result.exitCode);
+    }
+  )
+  .demandCommand(1, 'Please specify a command: init, personal, or lint')
   .strict()
   .help()
   .version()

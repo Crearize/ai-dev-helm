@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+  Harness Checkstyle preset for the java-springboot stack.
+  Execution-verified against Checkstyle 14.0.0 (see lib/checkstyle-assets.test.js
+  and stacks/java-springboot/lint/README.md).
+
+  Modules are grouped by concern; each group is delimited by a
+  "group: <name> (catalog refs)" comment. A product opts out of a group by
+  deleting the whole block between its group comment and the next one.
+-->
+<module name="Checker">
+  <property name="charset" value="UTF-8"/>
+  <property name="severity" value="error"/>
+
+  <module name="TreeWalker">
+
+    <!-- group: correctness (A1) -->
+    <module name="AvoidStarImport"/>
+    <module name="RegexpSinglelineJava">
+      <property name="format" value="System\.(out|err)\.print"/>
+      <property name="ignoreComments" value="true"/>
+      <property name="message"
+                value="Use SLF4J logging instead of System.out/System.err."/>
+    </module>
+    <module name="EqualsHashCode"/>
+
+    <!-- group: error-handling (A3) -->
+    <!--
+      EmptyCatchBlock: the bare `catch (X ignored) {}` allowance was dropped so
+      an empty catch can no longer be waved through by naming its variable
+      `expected`/`ignored`. With the default properties an empty catch is a
+      violation unless it carries an explanatory comment. The ast-grep rule
+      `no-empty-catch-java` is stricter still (a comment-only body is also
+      empty) and is the enforced rule when both assets ship; this module is the
+      Checkstyle-only backstop. Do not re-add exceptionVariableName.
+    -->
+    <module name="EmptyCatchBlock"/>
+    <module name="IllegalCatch">
+      <property name="illegalClassNames"
+                value="java.lang.Exception, java.lang.Throwable, java.lang.RuntimeException"/>
+    </module>
+
+    <!-- group: security (B2) -->
+    <module name="IllegalImport"/>
+    <module name="RegexpSinglelineJava">
+      <property name="format"
+                value="Runtime\.getRuntime\(\)\.exec|new\s+ProcessBuilder"/>
+      <property name="ignoreComments" value="true"/>
+      <property name="message"
+                value="Avoid runtime process execution (Runtime.exec/ProcessBuilder); use a vetted, sandboxed API. (B2)"/>
+    </module>
+
+    <!-- group: dead-code (C3) -->
+    <module name="UnusedImports"/>
+    <module name="RedundantImport"/>
+    <module name="UnusedLocalVariable"/>
+
+    <!-- group: complexity (C4) -->
+    <module name="MethodLength">
+      <property name="max" value="80"/>
+      <property name="severity" value="warning"/>
+    </module>
+    <module name="CyclomaticComplexity">
+      <property name="max" value="15"/>
+      <property name="severity" value="warning"/>
+    </module>
+    <module name="ParameterNumber">
+      <property name="max" value="6"/>
+      <property name="severity" value="warning"/>
+    </module>
+    <module name="NestedIfDepth">
+      <property name="max" value="3"/>
+      <property name="severity" value="warning"/>
+    </module>
+
+    <!-- group: hardcode (C6) -->
+    <module name="MagicNumber">
+      <property name="ignoreNumbers" value="-1, 0, 1, 2"/>
+      <property name="ignoreAnnotation" value="true"/>
+      <property name="ignoreFieldDeclaration" value="true"/>
+      <property name="severity" value="warning"/>
+    </module>
+
+  </module>
+</module>

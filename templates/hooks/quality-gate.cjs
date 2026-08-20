@@ -8,8 +8,9 @@
 //   { "branch": "<branch at check time>", "commit": "<HEAD sha at check time>" }
 // `branch` is informational only — authorization uses `commit` alone.
 // The flag is NOT consumed here. It stays valid while everything that changed
-// after flag.commit is a harness file; /quality-check deletes and recreates
-// it on each run.
+// after flag.commit is a harness file — except gate-parameter and gate
+// control-plane changes, which no flag issued before them can have reviewed;
+// /quality-check deletes and recreates it on each run.
 //
 // Gated commands (nothing else is touched):
 //   - gh pr merge ...
@@ -52,11 +53,69 @@ const GATE_CONFIG_PATTERNS = [
   /^\.cursorrules$/,
 ];
 
+// Gate CONTROL-PLANE files: the things that define the gate itself. Per the
+// 「Merge Gate」 carve-out in CLAUDE.md (quality policy §5.5, review
+// consolidation), a diff touching any of them is never exempt, even though
+// every one of them also matches HARNESS_PATTERNS. With in-development
+// reviews consolidated into the merge gate, an unreviewed edit here is an
+// unreviewed edit to the only remaining review: rewriting the quality-check
+// skill, its report schemas, a review persona doc, or the hook itself
+// disables the gate exactly as effectively as weakening a threshold does.
+//
+// Both spellings of the skill paths are covered: the canonical
+// `skills/project/...` tree and the copies tools make under `.claude/`,
+// `.codex/` and `.cursor/` when skills are copied rather than symlinked.
+// Paths are repo-root-relative (gitPrefix pins `-C <toplevel>` and
+// `diff.relative=false`), so the anchored patterns mean what they say.
+//
+// Hook REGISTRATION is control plane too — unregistering the hook disables
+// the gate just as surely as editing it. `.codex/hooks.json` (and the
+// equivalents) is registration in its entirety; the `.claude/settings*.json`
+// files carry registration in a few keys, so they are handled separately by
+// settingsRegistrationChanged() rather than listed here: other settings keys
+// stay exempt.
+//
+// Every entry is case-INSENSITIVE. On a case-insensitive filesystem
+// (Windows/macOS) `.claude/Hooks/quality-gate.cjs` is the SAME real file as
+// the canonical spelling, yet HARNESS_PATTERNS `/^\.claude\//` matched it
+// either way while a case-sensitive control pattern did not — so a case
+// variant rode the harness exemption with zero review. HARNESS_PATTERNS stay
+// case-sensitive on purpose: a case mismatch there merely drops the harness
+// exemption, which is the fail-closed direction.
+//
+// The `hooks`/`skills` pattern matches the DIRECTORY NODE itself (`(\/|$)`),
+// not just paths under it. `.claude/skills` is a symlink created by `init`;
+// re-pointing that link node swaps the whole quality-check tree with a diff
+// of the single path `.claude/skills` (no trailing slash). Matching the node
+// subsumes the old trailing-slash hooks-dir pattern.
+const GATE_CONTROL_PATTERNS = [
+  /(^|\/)skills\/project\/quality-check\//i,
+  /(^|\/)skills\/project\/_schemas\//i,
+  /^\.github\/review-[^/]*\.md$/i,
+  /^\.(claude|codex|cursor)\/(hooks|skills)(\/|$)/i,
+  // The registration-file set is a deliberate fail-closed SUPERSET of the
+  // normative `.codex/hooks.json`: `.claude/hooks.json` and `.cursor/hooks.json`
+  // are gated too. Do not narrow it back — over-gating registration is safe.
+  /^\.(claude|codex|cursor)\/hooks\.json$/i,
+];
+
+// The control-plane files whose control-plane-ness depends on their content:
+// only their hooks REGISTRATION (the `hooks` block plus the hook-disable
+// kill-switches) registers the gate. Claude Code reads both, with
+// settings.local.json at higher precedence. Matched case-insensitively for
+// the same reason as GATE_CONTROL_PATTERNS above.
+const SETTINGS_FILE_RE = /^\.claude\/settings(\.local)?\.json$/i;
+
+function settingsFilesIn(files) {
+  return files.filter((f) => SETTINGS_FILE_RE.test(f));
+}
+
 // Merges/pushes whose entire (non-empty) diff matches these paths skip the
 // gate. Aligned with the self-improvement skill's reflection targets, minus
 // user-facing docs (README/docs/documents stay under the reduced review).
-// Exception: changes to gate parameters never skip the gate — see
-// GATE_PARAM_KEYS below.
+// Exceptions: changes to gate parameters (GATE_PARAM_KEYS below) and changes
+// to the gate control plane (GATE_CONTROL_PATTERNS above) never skip the
+// gate.
 const HARNESS_PATTERNS = [
   ...GATE_CONFIG_PATTERNS,
   /^\.claude\//,
@@ -602,6 +661,97 @@ function gateParamsUnchanged(files, baseRev, tipRev) {
   });
 }
 
+// Control-plane files identifiable from the path alone (everything except
+// the settings files, whose answer depends on content).
+function gateControlPathFiles(files) {
+  return files.filter((f) => GATE_CONTROL_PATTERNS.some((re) => re.test(f)));
+}
+
+const hooksBlockCache = new Map();
+
+// The hook-registration state a settings object declares, as a canonical
+// string. Not just the `hooks` block: the disableAllHooks /
+// allowManagedHooksOnly kill-switches turn hooks off (or restrict them to
+// managed ones) WITHOUT touching the hooks block, so flipping either one is a
+// registration change just as much as editing the block is. `parsed` is a
+// JSON.parse result (always serializable) or null for a genuinely absent file
+// (which registers nothing — the same empty answer as `{}`).
+function registrationState(parsed) {
+  return JSON.stringify({
+    hooks: (parsed && parsed.hooks) ?? null,
+    disableAllHooks: (parsed && parsed.disableAllHooks) ?? null,
+    allowManagedHooksOnly: (parsed && parsed.allowManagedHooksOnly) ?? null,
+  });
+}
+
+// The hook registration a settings file declares at `rev`, as a canonical
+// string, or null when it cannot be established. Mirrors overrideState(): a
+// path genuinely absent from the tree legitimately declares no registration
+// (the empty answer), while an unreadable or unparsable blob is 判定不能 and
+// fails closed.
+function hooksBlockAt(rev, file) {
+  // Defense in depth, as in overrideState(): revs are git-resolved shas or
+  // the literal HEAD, never tokens lifted from the command line.
+  if (!/^[0-9a-f]{7,40}$/i.test(rev) && rev !== 'HEAD') return null;
+
+  const key = `${rev}\0${file}`;
+  if (hooksBlockCache.has(key)) return hooksBlockCache.get(key);
+
+  const state = computeHooksBlock(rev, file);
+  hooksBlockCache.set(key, state);
+  return state;
+}
+
+function computeHooksBlock(rev, file) {
+  const buf = tryGitBuf(['show', `${rev}:${file}`], 5000);
+  if (buf === null) {
+    // A failed read is not evidence of absence: prove absence from the tree.
+    if (!revExists(rev)) return null;
+    const present = pathPresentAt(rev, file);
+    if (present === null) return null; // Cannot prove either way.
+    if (present) return null; // Present but unreadable.
+    return registrationState(null); // Genuinely absent: registers nothing.
+  }
+  if (buf.length > MAX_BLOB_BYTES) return null;
+  const src = decodeBlob(buf);
+  if (src === null) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(src);
+  } catch {
+    return null; // Unparsable settings: 判定不能.
+  }
+  // A settings file that is not a JSON object declares nothing intelligible;
+  // guessing at it is worse than a predictable fail-closed answer.
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  try {
+    return registrationState(parsed);
+  } catch {
+    return null; // Cyclic/unserializable — not reachable from JSON.parse.
+  }
+}
+
+// Did the hook registration of one settings file move between the two revs?
+// Fail closed on either side being indeterminate. One-sided presence is
+// covered by the absent side's empty answer: adding the file with a hooks
+// block, or deleting one that had it, both read as changed.
+function settingsRegistrationChanged(baseRev, tipRev, file) {
+  const before = hooksBlockAt(baseRev, file);
+  const after = hooksBlockAt(tipRev, file);
+  return before === null || after === null || before !== after;
+}
+
+// Every control-plane file this diff touches, for the block message. Each
+// settings file's registration is compared separately, and the blob
+// comparison is only paid for the settings files actually in the diff.
+function gateControlFiles(files, baseRev, tipRev) {
+  const hits = gateControlPathFiles(files);
+  for (const f of settingsFilesIn(files)) {
+    if (settingsRegistrationChanged(baseRev, tipRev, f)) hits.push(f);
+  }
+  return hits;
+}
+
 function isHarnessOnly(files, baseRev, tipRev) {
   return (
     matchesHarnessPatterns(files) && gateParamsUnchanged(files, baseRev, tipRev)
@@ -698,6 +848,25 @@ function block(reason) {
 const STALE_REASON =
   'Code changed after the last quality check. Re-run /quality-check before merging.';
 
+// Distinct from the generic "Quality check not passed" so the control-plane
+// carve-out is identifiable from the decision alone — by a reader deciding
+// what to do next, and by the tests that pin this path.
+const MAX_LISTED_FILES = 20;
+function gateControlReason(files) {
+  const shown = files.slice(0, MAX_LISTED_FILES).join(', ');
+  const more =
+    files.length > MAX_LISTED_FILES
+      ? ` (+${files.length - MAX_LISTED_FILES} more)`
+      : '';
+  return (
+    `Gate control-plane changed: ${shown}${more}. ` +
+    'Gate control-plane changes (the quality-check skill and its schemas, ' +
+    'review persona docs, the hooks and their registration) are never exempt ' +
+    'from the quality check, harness paths or not — quality policy §5.5. ' +
+    'Run /quality-check before merging.'
+  );
+}
+
 // The push-to-main case: the content is already committed on main, so
 // "before merging" is impossible advice. Name what actually happened instead.
 const STALE_MAIN_REASON =
@@ -742,23 +911,43 @@ process.stdin.on('end', () => {
   }
 
   // Harness-only exemption: a non-empty diff made up entirely of harness
-  // files needs no quality check at all.
+  // files needs no quality check at all — unless it changes a gate parameter
+  // or the gate control plane.
+  let controlHits = null;
   const base = mergeBaseRef();
   if (base) {
     const files = diffFiles(`${base}...${tip}`);
     if (files !== null && matchesHarnessPatterns(files)) {
-      if (gateConfigFiles(files).length === 0) return;
-      // The gate-parameter carve-out compares two revs, so use the same
-      // merge-base the `...` diff is taken against. Resolved only now: it is
-      // an extra process, and it is only needed once a gate-config file is
-      // actually in an otherwise harness-only diff.
-      const mergeBase = tryGit(['merge-base', base, tip]);
-      if (mergeBase && gateParamsUnchanged(files, mergeBase, tip)) return;
+      const pathHits = gateControlPathFiles(files);
+      if (pathHits.length > 0) {
+        controlHits = pathHits;
+      } else if (
+        gateConfigFiles(files).length === 0 &&
+        settingsFilesIn(files).length === 0
+      ) {
+        return; // Pure harness diff: nothing content-dependent to check.
+      } else {
+        // Both content-dependent carve-outs compare two revs, so use the same
+        // merge-base the `...` diff is taken against. Resolved only now: it is
+        // an extra process, and it is only needed once a gate-config file or
+        // a settings file is actually in an otherwise harness-only diff.
+        // An unresolvable merge-base is indeterminate, so it falls through to
+        // the flag check rather than exempting.
+        const mergeBase = tryGit(['merge-base', base, tip]);
+        if (mergeBase) {
+          const hits = gateControlFiles(files, mergeBase, tip);
+          if (hits.length > 0) controlHits = hits;
+          else if (gateParamsUnchanged(files, mergeBase, tip)) return;
+        }
+      }
     }
   }
 
   const flag = readFlag();
   if (!flag) {
+    // The carve-out removes the EXEMPTION, not the flag: a control-plane
+    // change that actually went through /quality-check still merges below.
+    if (controlHits) return block(gateControlReason(controlHits));
     return block(
       'Quality check not passed. Run /quality-check before merging into main.'
     );
@@ -772,18 +961,24 @@ process.stdin.on('end', () => {
     //
     // Ancestry alone only proves the check happened somewhere in history, not
     // that nothing landed after it, so the same post-flag diff rules as the
-    // merge path apply — including the §2 gate-parameter carve-out.
+    // merge path apply — including the §2 gate-parameter carve-out and the
+    // §5.5 control-plane carve-out.
     if (!gitOk(['merge-base', '--is-ancestor', flag.commit, 'HEAD'])) {
       // The checked commit is not in main's history at all: nothing about
       // this push was ever checked.
       return block(STALE_REASON);
     }
     const since = diffFiles(`${flag.commit}..HEAD`);
-    if (
-      since !== null &&
-      (since.length === 0 || isHarnessOnly(since, flag.commit, 'HEAD'))
-    ) {
-      return;
+    if (since !== null && (since.length === 0 || isHarnessOnly(since, flag.commit, 'HEAD'))) {
+      const hits =
+        since.length === 0 ? [] : gateControlFiles(since, flag.commit, 'HEAD');
+      if (hits.length === 0) return;
+      // A post-flag control-plane commit is unreviewed by definition: the
+      // flag only covers content up to flag.commit. The harness-only
+      // staleness exemption exists so self-improvement edits never force a
+      // re-review; gate control-plane edits are exactly the class it must
+      // not cover.
+      return block(gateControlReason(hits));
     }
     return block(STALE_MAIN_REASON);
   }
@@ -794,6 +989,14 @@ process.stdin.on('end', () => {
       'Cannot verify changes since the last quality check. Re-run /quality-check.'
     );
   }
-  if (changed.length === 0 || isHarnessOnly(changed, flag.commit, tip)) return;
+  if (changed.length === 0) return;
+  if (isHarnessOnly(changed, flag.commit, tip)) {
+    // Same rule as the push path above: the flag stays valid across harness
+    // commits, except gate control-plane commits, which no flag issued
+    // before them can have reviewed.
+    const hits = gateControlFiles(changed, flag.commit, tip);
+    if (hits.length === 0) return;
+    return block(gateControlReason(hits));
+  }
   return block(STALE_REASON);
 });

@@ -1,0 +1,22 @@
+# Detects a Promise combinator call used as the condition of an if statement.
+# The condition is then a Promise object, which is always truthy, so the same
+# branch always runs. Conservative by design: only a bare combinator call
+# sitting DIRECTLY in the condition is flagged. An awaited combinator is a
+# different node (await_expression) and is correctly ignored.
+id: no-promise-in-condition-ts
+language: TypeScript
+severity: error
+message: "A Promise object is always truthy, so this condition always takes the same branch. Await the promise first. (Catalog: A2)"
+rule:
+  kind: parenthesized_expression
+  inside:
+    kind: if_statement
+    field: condition
+  has:
+    kind: call_expression
+    any:
+      - pattern: Promise.all($$$ARGS)
+      - pattern: Promise.any($$$ARGS)
+      - pattern: Promise.race($$$ARGS)
+      - pattern: Promise.resolve($$$ARGS)
+      - pattern: Promise.allSettled($$$ARGS)

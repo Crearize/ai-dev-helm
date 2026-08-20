@@ -8,7 +8,7 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 
 分類は業界標準のタクソノミ（Sonar 品質モデル: Bug / Vulnerability / Security Hotspot / Code Smell、Semgrep レジストリ: security / correctness / best-practice / maintainability / performance / portability）と、AI 生成コードの欠陥研究（ハルシネーション import、廃止 API 使用、エラー握りつぶし、ハードコード秘密情報等）を突き合わせて策定した。
 
-本カタログは技術非依存の**基準**であり、実行機構ではない。プロダクトへの実際の配線（どのツールでどのルールを有効にするか）は `lint-scaffolding` スキル（フェーズ3で提供）が本カタログを判断基準として行う。
+本カタログは技術非依存の**基準**であり、実行機構ではない。プロダクトへの実際の配線（どのツールでどのルールを有効にするか）は `lint-scaffolding` スキルが本カタログを判断基準として行う。
 
 ---
 
@@ -128,14 +128,14 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 
 **プロダクトが当該 Lint を採用しない場合**、`lint-scaffolding` のカバレッジマップで該当カテゴリを「AI レビュー担保」に割り当て、レビューガイド（プロダクトでは `.github/review-*.md`）側に観点として残す。カテゴリを採用しないことでチェック自体が消えることはない。
 
-**レビューガイドへの記載形式**（節構成・カタログ番号の付記方法）は、フェーズ3の `lint-scaffolding` 実装で確定する。
+**レビューガイドへの記載形式**（節構成・カタログ番号の付記方法）は `lint-scaffolding` スキル（SKILL.md Step 4-2）が定義する: Lint 担保済みカテゴリは各 `.github/review-*.md` 末尾の `## Lint 担保済み項目（AI レビュー対象外）` 節に `- <カタログ番号> <カテゴリ名> — 担保手段: <資産参照>` の形式で列挙し、AI レビュー担保に割り当てたカテゴリはレビューガイド本文の関連チェック項目に `（Catalog: <番号>）` を付記する。
 
-### 4.1 移行注記（フェーズ3までの扱い）
+### 4.1 移行注記（Lint 資産が未配線のプロダクトの扱い）
 
-**ハーネスが提供する Lint 資産（`shared/lint/` の汎用資産、`stacks/<stack>/lint/` のスタック別資産、`lint:all` の配線）はフェーズ3まで存在しない。** ただし決定的チェックそのものが存在しないわけではない — **プロダクト側の既存静的チェック（ESLint / Checkstyle / tsc 等、CLAUDE.md に登録された静的チェックコマンド）で担保済みの項目は、そのまま Lint 担保として扱う**。それ以外の項目を AI レビュー（ペルソナ + レビューガイド）で担保する。したがって:
+**ハーネスの Lint 資産（`shared/lint/` の汎用資産、`stacks/<stack>/lint/` のスタック別資産）と `lint:all` を整備する `lint-scaffolding` スキルは提供済みである。** ただし配線状態は**プロダクトごと**の事実であり、`lint-scaffolding` を実行していないプロダクトでは資産は未配線のまま（または未配置）である。そうしたプロダクトでも決定的チェックそのものが存在しないわけではない — **プロダクト側の既存静的チェック（ESLint / Checkstyle / tsc 等、CLAUDE.md に登録された静的チェックコマンド）で担保済みの項目は、そのまま Lint 担保として扱う**。それ以外の項目を AI レビュー（ペルソナ + レビューガイド）で担保する。したがって:
 
-- レビューガイドからのカタログ項目の除外は、対応する Lint が（ハーネスの Lint 資産・プロダクト既存設定のいずれであれ）実際にプロダクトへ配線されていることを確認した後に行う
-- **フェーズ3までは、Lint 担保予定の項目を規約文書から削除せず、`> Catalog: <番号>` 参照を付けた移行形で残す。** 完全削除は対応する Lint 資産が配線された後に行う
+- レビューガイドからのカタログ項目の除外は、対応する Lint が（ハーネスの Lint 資産・プロダクト既存設定のいずれであれ）実際に**そのプロダクトへ**配線されていることを確認した後に行う
+- **対応する Lint 資産がそのプロダクトに配線されるまでは、Lint 担保予定の項目を規約文書から削除せず、`> Catalog: <番号>` 参照を付けた移行形で残す。** 完全削除は対応する Lint 資産が配線された後に行う
 - 「Lint 担保済み項目は規約文書に記載しない」最終形は本カタログの新設時点から方針として適用するが、その項目のチェックが失われないよう、移行期間中は上記の移行形と AI レビュー側の観点で担保を維持する
 - **スタック別ルール文書（`stacks/<stack>/rules/`）の項目は Lint 配線後も削除せず、「項目名 + カタログ番号 + Lint 資産参照」の形式に縮約する（削除は汎用規約文書側のみ）。** これらの項目は §4 のとおり本カタログへ移さないため、削除するとルールの本体が失われる
 
@@ -165,7 +165,7 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 
 ## 5. 配布時の注記
 
-本カタログは基準の定義であり、ハーネスが提供する実行機構（`shared/lint/` の汎用 Lint 資産、`stacks/<stack>/lint/` のスタック別資産、`lint-scaffolding` スキル）はフェーズ3で提供される。それまでの担保方法は §4.1 を参照。
+本カタログは基準の定義であり、ハーネスが提供する実行機構（`shared/lint/` の汎用 Lint 資産、`stacks/<stack>/lint/` のスタック別資産、`lint-scaffolding` スキル）は提供済みである。まだ配線していないプロダクトの担保方法は §4.1 を参照。
 
 **本文中のパスはハーネスリポジトリ（ai-dev-helm）表記であり、配布先のプロダクトでは下表の対応で読み替える。**
 
@@ -176,7 +176,7 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 | `stacks/<stack>/documents/coding-rules/`（スタック別の詳細規約） | `documents/development/coding-rules/` |
 | `stacks/<stack>/rules/` | AI ツール別に `.claude/rules/` / `.cursor/rules/`（※）/ `.codex/rules/` |
 | `shared/review-guides/` / `stacks/<stack>/review-guides/` | `.github/review-*.md` |
-| `shared/lint/` / `stacks/<stack>/lint/` | フェーズ3の配布実装でプロダクト側パスを確定する（未定） |
+| `shared/lint/` / `stacks/<stack>/lint/` | `lint/` 配下（汎用 ast-grep ルールは `lint/ast-grep/<カテゴリ>/`、スタック固有 ast-grep ルールは `lint/ast-grep/<スタック>/`、ESLint プリセットは `lint/eslint/`、Checkstyle は `lint/checkstyle/`、ArchUnit は `lint/archunit/`） |
 
 （※）**Cursor 配布時の変換**: `.cursor/rules/` へは Markdown ではなく `.mdc` 形式（`description` / `globs` / `alwaysApply` の frontmatter 付き）に変換して配置され、ディレクトリ階層は平坦化されてファイル名が `<領域>-<名前>.mdc` になる（例: `stacks/nextjs-react/rules/frontend/coding.md` → `.cursor/rules/frontend-coding.mdc`）。文書間の相対パス参照ではなく、本表の配布後パス表記で参照すること。
 

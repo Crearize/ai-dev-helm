@@ -1,0 +1,11 @@
+{
+  "exclude": [
+    "test/fixtures/**",
+    "skills/superpowers/systematic-debugging/condition-based-waiting-example.ts"
+  ],
+  "checks": {
+    "secrets": {
+      "allow": ["**/*.test.js"]
+    }
+  }
+}
