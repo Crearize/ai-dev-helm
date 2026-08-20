@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.2](https://github.com/Crearize/ai-dev-helm/compare/v1.10.1...v1.10.2) (2026-08-20)
+
+
+### Fixed
+
+* **superpowers:** sync skills v6.2.0 → v6.3.0 ([b7f163a](https://github.com/Crearize/ai-dev-helm/commit/b7f163aa1993dfb735304265fafccb26f620add6))
+
 ## [1.10.1](https://github.com/Crearize/ai-dev-helm/compare/v1.10.0...v1.10.1) (2026-08-20)
 
 
