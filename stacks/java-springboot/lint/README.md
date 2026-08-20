@@ -14,6 +14,8 @@ lint/
     checkstyle.xml            # the Checkstyle preset (grouped modules)
   archunit/
     ArchitectureRulesTest.java  # template - copy into src/test/java, replace __BASE_PACKAGE__
+  mutation/
+    pitest.gradle             # pulled in via apply from (see below)
 ```
 
 ## Wiring Checkstyle (Gradle)
@@ -109,6 +111,8 @@ plugins {
 
 apply from: 'lint/mutation/pitest.gradle'
 ```
+
+The `1.15.0` here is the **gradle-pitest-plugin** version (the Gradle integration), not the PIT core. It is independent of the PIT core version, which `pitest.gradle` pins explicitly to `1.16.1` via `pitestVersion` so the JUnit 5 companion (`junit5PluginVersion = '1.2.1'`) stays compatible regardless of the plugin version the product resolves. Use whatever recent gradle-pitest-plugin version you like here; the core stays pinned by the snippet.
 
 2. In the copied `lint/mutation/pitest.gradle`, replace every `__BASE_PACKAGE__` with the product's base package (e.g. `com.example.product`), exactly as for the ArchUnit template. That sets `targetClasses` to the product's production classes.
 

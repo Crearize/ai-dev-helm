@@ -18,6 +18,8 @@ lint/
     nextjs-react/
       no-loop-query-prisma.yml
       no-loop-query-drizzle.yml
+  mutation/
+    stryker.config.mjs        # pre-built Stryker config (see below)
 ```
 
 ## Wiring ESLint
@@ -108,6 +110,8 @@ The stack rules land at `lint/ast-grep/nextjs-react/` and are picked up by the s
 ```
 
 `mutation:full` mutates the whole `mutate` set; `mutation:diff` reuses `incrementalFile` and `--since=origin/main` to mutate only what changed against `main`.
+
+`--since=origin/main` assumes the product's base branch is `origin/main` and that the ref is fetched locally. Products whose default branch is named differently (`master`, `develop`, a release branch) must change the `--since` target to match; a shallow clone without the base ref will make Stryker fall back to a full run.
 
 3. Point Stryker at the copied config if it does not sit at the product root - Stryker reads `stryker.config.mjs` from the working directory, so either move it to the root or pass `--configFile lint/mutation/stryker.config.mjs`.
 

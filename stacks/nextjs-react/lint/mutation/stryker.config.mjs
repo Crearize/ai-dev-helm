@@ -38,6 +38,13 @@ export default {
   // quality-check reads for the mutation score.
   reporters: ['clear-text', 'json', 'html'],
 
+  // Pin the json report path so quality-check reads it from a fixed,
+  // predictable location instead of relying on Stryker's implicit default.
+  // Mirrors PIT's stable-path approach (timestampedReports = false).
+  jsonReporter: {
+    fileName: 'reports/mutation/mutation.json',
+  },
+
   // --- incremental (enables mutation:diff since-scoped runs) -------------
   incremental: true,
   incrementalFile: 'reports/mutation/stryker-incremental.json',
