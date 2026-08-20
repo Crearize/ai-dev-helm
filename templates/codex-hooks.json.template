@@ -6,7 +6,7 @@
         {
           "type": "command",
           "command": "node .codex/hooks/quality-gate.cjs",
-          "timeout": 10
+          "timeout": 30
         }
       ]
     }

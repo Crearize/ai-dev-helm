@@ -36,13 +36,146 @@ const { execFileSync } = require('child_process');
 
 const FLAG_FILE = '.quality-check-passed';
 
-// Subcommand detection anywhere in the command line, including chained
-// commands, subshells, and `git -C <dir> ...`. Group 2 captures the argument
-// segment up to the next shell operator.
-const GIT_PUSH_RE = /(^|[;&|(])\s*git\s+(?:-C\s+\S+\s+)?push\b([^;&|()]*)/;
-const GIT_MERGE_RE = /(^|[;&|(])\s*git\s+(?:-C\s+\S+\s+)?merge\b([^;&|()]*)/;
-const GH_PR_MERGE_RE = /(^|[;&|(])\s*gh\s+pr\s+merge\b([^;&|()]*)/;
-const MERGE_CONTROL_RE = /\s--(abort|continue|quit|skip)\b/;
+// --------------------------------------------------------------------------
+// Command detection: shell-style tokenization, not regexes.
+// --------------------------------------------------------------------------
+// The original detection probed the raw command line with regexes anchored on
+// `^|[;&|(]`. Downstream gate reviews reproduced real fail-OPEN bypasses
+// against that approach — each got through because the regex compared raw
+// text where the shell compares words, or recognized too few command
+// positions:
+//   git push origin "main"          (quotes defeated the refspec comparison)
+//   echo x <newline> git push ...   (newline separates commands; ^ did not)
+//   `git push origin main`          (backtick substitution still runs)
+//   { git push origin main; }       ({ was not a recognized position)
+//   if true; then git push ...      (then/do/else prefix words)
+//   VAR=1 git push ... / command git push ...
+//   git -c u.n=x push / git --no-pager push   (only `-C <dir>` was allowed)
+// Tokenizing the command like a POSIX shell closes the class rather than the
+// instances: words are compared after quote removal, and ANY `git`/`gh` word
+// in a segment is treated as a command — over-detection is fail-closed (the
+// block just asks for a quality check), so command position is deliberately
+// not enforced.
+//
+// This is still an advisory guard for a cooperating agent, not a sandbox:
+// `sh -c "git push origin main"`, a git alias, or a wrapper script can
+// always defeat static inspection of a command line.
+
+// Segment separators: command boundaries and redirections. `<`/`>` end a
+// word like the shell does; the redirection target then starts a harmless
+// segment of its own.
+const SEGMENT_SEPARATORS = ';&|()`\n{}<>';
+
+// Split a shell command into segments of unquoted words. Single quotes are
+// literal; double quotes honor backslash escapes; an unquoted backslash
+// escapes the next character (backslash-newline is a line continuation).
+// No expansion is performed: `$BRANCH` stays `$BRANCH` and simply resolves
+// to nothing later, which is the pre-existing (documented) limit.
+function tokenizeSegments(command) {
+  const segments = [];
+  let words = [];
+  let word = '';
+  let quote = null;
+
+  const endWord = () => {
+    if (word !== '') words.push(word);
+    word = '';
+  };
+  const endSegment = () => {
+    endWord();
+    if (words.length > 0) segments.push(words);
+    words = [];
+  };
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (quote === "'") {
+      if (ch === "'") quote = null;
+      else word += ch;
+    } else if (quote === '"') {
+      if (ch === '"') quote = null;
+      else if (ch === '\\' && '"\\$`\n'.includes(command[i + 1] ?? '')) {
+        if (command[i + 1] !== '\n') word += command[i + 1];
+        i++;
+      } else word += ch;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+    } else if (ch === '\\') {
+      if (command[i + 1] !== undefined && command[i + 1] !== '\n') {
+        word += command[i + 1];
+      }
+      i++;
+    } else if (ch === ' ' || ch === '\t' || ch === '\r') {
+      endWord();
+    } else if (SEGMENT_SEPARATORS.includes(ch)) {
+      endSegment();
+    } else {
+      word += ch;
+    }
+  }
+  endSegment(); // An unterminated quote leaves its text as a final word.
+  return segments;
+}
+
+// A word invokes `name` if its basename (either slash direction) is `name`
+// or `name.exe`, case-insensitively — `git`, `GIT`, `/usr/bin/git`,
+// `C:\Program Files\Git\bin\git.exe`.
+function isCmdWord(word, name) {
+  const base = word.replace(/^.*[\\/]/, '').toLowerCase();
+  return base === name || base === `${name}.exe`;
+}
+
+// git global options that consume the following word.
+const GIT_VALUE_OPTS = new Set([
+  '-C', '-c', '--git-dir', '--work-tree', '--namespace',
+  '--exec-path', '--super-prefix', '--config-env', '--attr-source',
+]);
+
+// Every `git <sub>` invocation across all segments, each as the argument
+// words after the subcommand. Global options between `git` and the
+// subcommand are skipped, so `git -c push.default=simple --no-pager push`
+// is a push and `git stash push` is not.
+function gitInvocations(segments, sub) {
+  const found = [];
+  for (const words of segments) {
+    for (let i = 0; i < words.length; i++) {
+      if (!isCmdWord(words[i], 'git')) continue;
+      let j = i + 1;
+      while (j < words.length && words[j].startsWith('-')) {
+        j += GIT_VALUE_OPTS.has(words[j]) ? 2 : 1;
+      }
+      if (words[j] === sub) found.push(words.slice(j + 1));
+    }
+  }
+  return found;
+}
+
+// gh global options that consume the following word.
+const GH_VALUE_OPTS = new Set(['-R', '--repo']);
+
+// Every `gh pr merge` invocation, each as the argument words after `merge`.
+function ghPrMergeInvocations(segments) {
+  const found = [];
+  for (const words of segments) {
+    for (let i = 0; i < words.length; i++) {
+      if (!isCmdWord(words[i], 'gh')) continue;
+      let j = i + 1;
+      while (j < words.length && words[j].startsWith('-')) {
+        j += GH_VALUE_OPTS.has(words[j]) ? 2 : 1;
+      }
+      if (words[j] !== 'pr') continue;
+      let k = j + 1;
+      while (k < words.length && words[k].startsWith('-')) {
+        k += GH_VALUE_OPTS.has(words[k]) ? 2 : 1;
+      }
+      if (words[k] === 'merge') found.push(words.slice(k + 1));
+    }
+  }
+  return found;
+}
+
+// --abort/--continue/--quit/--skip are conflict recovery, not merges.
+const MERGE_CONTROL_FLAGS = new Set(['--abort', '--continue', '--quit', '--skip']);
 
 // Harness config files that may carry a `### Quality Gate Overrides` block
 // (quality-policy.md §2「上書きの契約」). Spread into HARNESS_PATTERNS below so
@@ -97,11 +230,24 @@ const GATE_CONTROL_PATTERNS = [
   // normative `.codex/hooks.json`: `.claude/hooks.json` and `.cursor/hooks.json`
   // are gated too. Do not narrow it back — over-gating registration is safe.
   /^\.(claude|codex|cursor)\/hooks\.json$/i,
+  // Registration is not only hooks.json. `.codex/config.toml` can carry an
+  // inline `[hooks]` table, a `[features]` table able to disable hooks
+  // wholesale, and `[[rules]]` deny decisions — the rule layer that backs
+  // the gate's destructive-command guards. Parsing TOML here for a narrower
+  // content-dependent answer would be new attack surface for no benefit, so
+  // the whole file is gated (over-gating registration is safe, see above).
+  /^\.codex\/config\.toml$/i,
+  // MCP server definitions register command/args execution — the same class
+  // of registration as hooks.json (a crafted server definition runs on tool
+  // use). The root-level .mcp.json is outside the harness exemption already;
+  // the per-tool copies are inside it, so they are pinned here.
+  /^\.(claude|codex|cursor)\/mcp\.json$/i,
 ];
 
 // The control-plane files whose control-plane-ness depends on their content:
-// only their hooks REGISTRATION (the `hooks` block plus the hook-disable
-// kill-switches) registers the gate. Claude Code reads both, with
+// only their hooks REGISTRATION (the `hooks` block, the hook-disable
+// kill-switches, and the `permissions.deny` rule layer — see
+// registrationState) registers the gate. Claude Code reads both files, with
 // settings.local.json at higher precedence. Matched case-insensitively for
 // the same reason as GATE_CONTROL_PATTERNS above.
 const SETTINGS_FILE_RE = /^\.claude\/settings(\.local)?\.json$/i;
@@ -216,6 +362,13 @@ function tryGit(args, timeoutMs = 2000) {
   return out === null ? null : out.trim();
 }
 
+// Like tryGit but VERBATIM: no trim. For output where bytes are data
+// (`diff --name-only -z` paths); trimming there clipped leading/trailing
+// whitespace off the first and last path in the list.
+function tryGitRaw(args, timeoutMs = 2000) {
+  return runGit([...gitPrefix(), ...args], timeoutMs, 'utf8');
+}
+
 function tryGitBuf(args, timeoutMs = 2000) {
   return runGit([...gitPrefix(), ...args], timeoutMs, 'buffer');
 }
@@ -253,31 +406,45 @@ function isMainBranch(name) {
   return name === 'main' || name === 'master';
 }
 
-function positionalArgs(segment) {
-  return segment
-    .trim()
-    .split(/\s+/)
-    .filter((t) => t && !t.startsWith('-'));
+function positionalWords(args) {
+  return args.filter((a) => a && !a.startsWith('-'));
 }
 
-function pushTargetsMain(command, branch) {
-  // Scan every push segment in the command line, not just the first one:
-  // `git push origin feature && git push origin main` must gate on the second.
-  const segments = command.matchAll(new RegExp(GIT_PUSH_RE.source, 'g'));
-  for (const m of segments) {
-    // First positional arg is the remote; the rest are refspecs.
-    const refspecs = positionalArgs(m[2]).slice(1);
-    if (refspecs.length === 0) {
-      if (isMainBranch(branch)) return true;
+// push options that consume the following word.
+const PUSH_VALUE_OPTS = new Set([
+  '--repo', '--receive-pack', '--exec', '-o', '--push-option',
+]);
+
+// Does one push invocation target main/master? `args` are the words after
+// `push`, already unquoted, so `origin "main"` and `origin main` compare
+// identically — the quoted spelling used to sail through as a refspec that
+// literally contained the quote characters.
+function pushArgsTargetMain(args, branch) {
+  const positionals = [];
+  let repoOpt = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.startsWith('-')) {
+      // --all/--mirror/--branches push every branch, main included; the
+      // refspec loop below would never see it.
+      if (a === '--all' || a === '--mirror' || a === '--branches') return true;
+      if (a === '--repo' || a.startsWith('--repo=')) repoOpt = true;
+      if (PUSH_VALUE_OPTS.has(a)) i++;
       continue;
     }
-    const hit = refspecs.some((spec) => {
-      const dst = spec.includes(':') ? spec.split(':').pop() : spec;
-      return isMainBranch(dst.replace(/^\+/, '').replace(/^refs\/heads\//, ''));
-    });
-    if (hit) return true;
+    positionals.push(a);
   }
-  return false;
+  // First positional is the remote — unless --repo already named it, in
+  // which case every positional is a refspec (`git push --repo=origin main`
+  // used to misread `main` as the remote and fail open).
+  const refspecs = repoOpt ? positionals : positionals.slice(1);
+  if (refspecs.length === 0) return isMainBranch(branch);
+  return refspecs.some((spec) => {
+    const dst = spec.includes(':') ? spec.split(':').pop() : spec;
+    return isMainBranch(
+      dst.replace(/^\+/, '').replace(/^refs\/heads\//, '').replace(/^heads\//, '')
+    );
+  });
 }
 
 // --------------------------------------------------------------------------
@@ -677,10 +844,18 @@ const hooksBlockCache = new Map();
 // JSON.parse result (always serializable) or null for a genuinely absent file
 // (which registers nothing — the same empty answer as `{}`).
 function registrationState(parsed) {
+  const permissions = parsed && parsed.permissions;
   return JSON.stringify({
     hooks: (parsed && parsed.hooks) ?? null,
     disableAllHooks: (parsed && parsed.disableAllHooks) ?? null,
     allowManagedHooksOnly: (parsed && parsed.allowManagedHooksOnly) ?? null,
+    // permissions.deny is the rule layer backing the harness's guards (the
+    // force-push and destructive-command deny rules ship in settings.json).
+    // Deleting or weakening a deny rule is a protection change no flag
+    // issued before it has reviewed — the codex counterpart (`[[rules]]` in
+    // config.toml) is gated whole-file for the same reason. permissions.allow
+    // stays exempt: an allow rule cannot override a deny rule or skip a hook.
+    permissionsDeny: (permissions && permissions.deny) ?? null,
   });
 }
 
@@ -761,9 +936,16 @@ function isHarnessOnly(files, baseRev, tipRev) {
 function diffFiles(range) {
   // -z: paths come back verbatim rather than git-quoted, so a path with
   // quotes or non-ASCII bytes still matches HARNESS_PATTERNS correctly.
-  const out = tryGit(['diff', '--name-only', '-z', range], 5000);
+  //
+  // NEVER trimmed — neither the output as a whole nor per entry. Git paths
+  // are byte-exact, and trimming let a path with leading whitespace (a file
+  // named ` .claude/evil.md`, space included — NOT a harness path) normalize
+  // into a harness path and ride the exemption. Verbatim, the odd path just
+  // fails the harness match, which is the fail-closed direction. Only the
+  // empty string (the -z terminator) is dropped.
+  const out = tryGitRaw(['diff', '--name-only', '-z', range], 5000);
   if (out === null) return null;
-  return out.split('\0').map((l) => l.trim()).filter(Boolean);
+  return out.split('\0').filter((f) => f !== '');
 }
 
 function mergeBaseRef() {
@@ -785,19 +967,37 @@ function readFlag() {
   return null;
 }
 
+// gh pr merge options that consume the following word — their values must
+// not be mistaken for the PR-number/branch positional.
+const GH_MERGE_VALUE_OPTS = new Set([
+  '-R', '--repo', '-t', '--subject', '-b', '--body', '-F', '--body-file',
+  '-A', '--author-email', '--match-head-commit',
+]);
+
+function ghMergePositional(args) {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.startsWith('-')) {
+      if (GH_MERGE_VALUE_OPTS.has(a)) i++;
+      continue;
+    }
+    return a;
+  }
+  return undefined;
+}
+
 // Determine the commit whose content is about to land on main.
 // Never derived from the flag (see spec A-3).
 // The merge argument is the tip only when the merge itself is the gated
 // operation (i.e. it runs on main). A non-gated merge on a feature branch
 // (e.g. `git merge origin/main && git push origin main`) must not hijack
 // tip resolution away from HEAD.
-function resolveSourceTip(command, branch, isPush, mergeGated) {
-  if (mergeGated) {
-    const mergeMatch = command.match(GIT_MERGE_RE);
-    // Try each positional token until one resolves; skips -m message text
-    // and other flag values that are not refs. Tokens go to git as argv
+function resolveSourceTip({ branch, isPush, gatedMerges, ghMerges }) {
+  if (gatedMerges.length > 0) {
+    // Try each positional word until one resolves; skips -m message text
+    // and other flag values that are not refs. Words go to git as argv
     // elements, so a crafted "ref" is only ever an unresolvable ref.
-    for (const ref of positionalArgs(mergeMatch[2])) {
+    for (const ref of positionalWords(gatedMerges[0])) {
       const sha = tryGit(['rev-parse', '--verify', '--quiet', ref]);
       if (sha) return sha;
     }
@@ -809,9 +1009,8 @@ function resolveSourceTip(command, branch, isPush, mergeGated) {
   }
   // gh pr merge while on main: resolve the PR head via gh (network call,
   // bounded timeout; failure means "cannot verify" and blocks).
-  const ghMatch = command.match(GH_PR_MERGE_RE);
-  if (ghMatch) {
-    const prArg = positionalArgs(ghMatch[2])[0];
+  if (ghMerges.length > 0) {
+    const prArg = ghMergePositional(ghMerges[0]);
     if (prArg) {
       const head = tryGh(
         ['pr', 'view', prArg, '--json', 'headRefName', '--jq', '.headRefName'],
@@ -845,8 +1044,11 @@ function block(reason) {
   );
 }
 
+// Reason strings name "the quality-check skill", not the `/quality-check`
+// slash command: the hook runs under Claude Code, Codex, and Cursor alike,
+// and the slash spelling is Claude Code-specific (downstream feedback).
 const STALE_REASON =
-  'Code changed after the last quality check. Re-run /quality-check before merging.';
+  'Code changed after the last quality check. Re-run the quality-check skill before merging.';
 
 // Distinct from the generic "Quality check not passed" so the control-plane
 // carve-out is identifiable from the decision alone — by a reader deciding
@@ -863,7 +1065,7 @@ function gateControlReason(files) {
     'Gate control-plane changes (the quality-check skill and its schemas, ' +
     'review persona docs, the hooks and their registration) are never exempt ' +
     'from the quality check, harness paths or not — quality policy §5.5. ' +
-    'Run /quality-check before merging.'
+    'Run the quality-check skill before merging.'
   );
 }
 
@@ -871,8 +1073,8 @@ function gateControlReason(files) {
 // "before merging" is impossible advice. Name what actually happened instead.
 const STALE_MAIN_REASON =
   'main contains changes that were not part of the last quality check (the ' +
-  'merge brought in commits made after the flag). Re-run /quality-check on ' +
-  'the current main, then push.';
+  'merge brought in commits made after the flag). Re-run the quality-check ' +
+  'skill on the current main, then push.';
 
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -888,25 +1090,33 @@ process.stdin.on('end', () => {
     return; // Malformed payload: never block unrelated commands.
   }
 
-  const isGh = GH_PR_MERGE_RE.test(command);
-  const isMerge = GIT_MERGE_RE.test(command);
-  const isPush = GIT_PUSH_RE.test(command);
-  if (!isGh && !isMerge && !isPush) return;
+  const segments = tokenizeSegments(command);
+  const pushes = gitInvocations(segments, 'push');
+  const merges = gitInvocations(segments, 'merge');
+  const ghMerges = ghPrMergeInvocations(segments);
+  if (pushes.length === 0 && merges.length === 0 && ghMerges.length === 0) {
+    return;
+  }
 
   const branch = tryGit(['branch', '--show-current']);
   if (branch === null) return; // Not a git repo etc.: fail open.
 
-  // --abort/--continue/--quit/--skip are conflict recovery, not merges.
-  const mergeGated =
-    isMerge && isMainBranch(branch) && !MERGE_CONTROL_RE.test(command);
+  const realMerges = merges.filter(
+    (args) => !args.some((a) => MERGE_CONTROL_FLAGS.has(a))
+  );
+  const gatedMerges = isMainBranch(branch) ? realMerges : [];
+  const mergeGated = gatedMerges.length > 0;
+  const isPush = pushes.length > 0;
   const gated =
-    isGh || mergeGated || (isPush && pushTargetsMain(command, branch));
+    ghMerges.length > 0 ||
+    mergeGated ||
+    pushes.some((args) => pushArgsTargetMain(args, branch));
   if (!gated) return;
 
-  const tip = resolveSourceTip(command, branch, isPush, mergeGated);
+  const tip = resolveSourceTip({ branch, isPush, gatedMerges, ghMerges });
   if (!tip) {
     return block(
-      'Cannot verify the merge source. Run the merge from the feature branch, or re-run /quality-check.'
+      'Cannot verify the merge source. Run the merge from the feature branch, or re-run the quality-check skill.'
     );
   }
 
@@ -949,7 +1159,7 @@ process.stdin.on('end', () => {
     // change that actually went through /quality-check still merges below.
     if (controlHits) return block(gateControlReason(controlHits));
     return block(
-      'Quality check not passed. Run /quality-check before merging into main.'
+      'Quality check not passed. Run the quality-check skill before merging into main.'
     );
   }
 
@@ -986,7 +1196,7 @@ process.stdin.on('end', () => {
   const changed = diffFiles(`${flag.commit}..${tip}`);
   if (changed === null) {
     return block(
-      'Cannot verify changes since the last quality check. Re-run /quality-check.'
+      'Cannot verify changes since the last quality check. Re-run the quality-check skill.'
     );
   }
   if (changed.length === 0) return;
