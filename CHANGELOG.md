@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1](https://github.com/Crearize/ai-dev-helm/compare/v1.10.0...v1.10.1) (2026-08-20)
+
+
+### Fixed
+
+* **ci:** use legacy-peer-deps so npm ci resolves eslint 10 peers ([68240f1](https://github.com/Crearize/ai-dev-helm/commit/68240f19204b2fb688c6b99233cf71cb2cfd3c1f))
+* **ci:** use legacy-peer-deps so npm ci resolves eslint 10 peers ([ef212b7](https://github.com/Crearize/ai-dev-helm/commit/ef212b7622de9bee09b80057c2122eba8fb2ebec))
+* **hooks:** close quality-gate bypasses via shell tokenization and widen the control plane ([c81caa3](https://github.com/Crearize/ai-dev-helm/commit/c81caa3b79cd350baae38b62ad8a11ac1bd70bd6))
+* **lib:** harden init/merge/CLI file handling ([36bf1ce](https://github.com/Crearize/ai-dev-helm/commit/36bf1ce9bc79d3ee6e6edbf86cc2732319fa0f86))
+* quality-gate bypass hardening, lib fixes, and full-content review sync ([4d9761d](https://github.com/Crearize/ai-dev-helm/commit/4d9761de3401392dc9abc3c1e35de1b55fc65436))
+
+
+### Documentation
+
+* sync README, config guides and project skills with actual behavior ([bc108e5](https://github.com/Crearize/ai-dev-helm/commit/bc108e58114cb8f95176f83b525a1e746e92f723))
+
 ## [1.10.0](https://github.com/Crearize/ai-dev-helm/compare/v1.9.1...v1.10.0) (2026-08-20)
 
 
