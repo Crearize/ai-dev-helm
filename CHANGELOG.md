@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0](https://github.com/Crearize/ai-dev-helm/compare/v1.9.1...v1.10.0) (2026-08-20)
+
+
+### Added
+
+* add test-design skill (oracle-first test planning) ([3af5bb9](https://github.com/Crearize/ai-dev-helm/commit/3af5bb958f6dd1cbea3e73e0305bd5917b04eccf))
+* **cli:** add lint subcommand running the cross-cutting linter ([2409b85](https://github.com/Crearize/ai-dev-helm/commit/2409b85877f4ad5232369a9a1178ab394253ccda))
+* consolidate quality review into the merge gate, drop per-task reviews ([45620bd](https://github.com/Crearize/ai-dev-helm/commit/45620bd5e27701165c85977a0e68207772ce51e5))
+* **hooks:** enforce gate control-plane carve-out in quality-gate hook ([9cf9de6](https://github.com/Crearize/ai-dev-helm/commit/9cf9de688ad6cddea312859787f6bcdb73344b15))
+* **init:** distribute pre-built lint assets to product lint/ directory ([43ca73d](https://github.com/Crearize/ai-dev-helm/commit/43ca73dbe92378b9b47e551cd4aecdc90fbf5468))
+* **lint:** add commented-code and todo-deadline checks (catalog C8) ([62a6ecf](https://github.com/Crearize/ai-dev-helm/commit/62a6ecfaa6644543384217697c76ec6c835f99c6))
+* **lint:** add cross-cutting linter config loader ([2ca6a69](https://github.com/Crearize/ai-dev-helm/commit/2ca6a6927956b7da5b40233dcd0ae43152f9559e))
+* **lint:** add import existence check (catalog B3, hallucinated imports) ([115b701](https://github.com/Crearize/ai-dev-helm/commit/115b701ac7eddc9d2cf4e76b241f9a6424c3d4a1))
+* **lint:** add java-springboot checkstyle/archunit pre-built assets (execution-verified) ([63f5c16](https://github.com/Crearize/ai-dev-helm/commit/63f5c16b48dad9a7ae3bfef0ddc75838434971d5))
+* **lint:** add lint target file collection ([e255a9b](https://github.com/Crearize/ai-dev-helm/commit/e255a9bfca4f86d6dd3c0bcb67bf8f27da823d8d))
+* **lint:** add naming and commit message checks (catalog C7) ([1a0d50d](https://github.com/Crearize/ai-dev-helm/commit/1a0d50dd7bbab57ba8d4fa3d11c075623a8951b8))
+* **lint:** add nextjs-react pre-built eslint/ast-grep assets ([fbd3c24](https://github.com/Crearize/ai-dev-helm/commit/fbd3c24e024ac2c7b0829f4a488909f12efdd021))
+* **lint:** add pre-built generic ast-grep rules with executed fixtures ([05f16b5](https://github.com/Crearize/ai-dev-helm/commit/05f16b5e5dfddd8722e15b2e36b6744bbc0a4199))
+* **lint:** add secrets check (catalog B1) ([950be6e](https://github.com/Crearize/ai-dev-helm/commit/950be6e5c7fb029ad410c33401e14051440a005e))
+* **mutation:** add pre-built PIT config for java-springboot ([07f899d](https://github.com/Crearize/ai-dev-helm/commit/07f899dd991495d0498d2c847ad13b7903e295c3))
+* **mutation:** add pre-built Stryker config for nextjs-react ([441193c](https://github.com/Crearize/ai-dev-helm/commit/441193cc7089a7eccccaa1c2b57cd460bead4760))
+* **mutation:** phase 4 - pre-built Stryker/PIT mutation configs ([f082380](https://github.com/Crearize/ai-dev-helm/commit/f082380b3c57fb1313de1f943e95752b50560e99))
+* risk-based quality gates, mutation testing, and gate-parameter carve-out (Phase 2) ([e27250e](https://github.com/Crearize/ai-dev-helm/commit/e27250ed7b559316517944875d3fa14d35cc2216))
+* **skills:** add lint-scaffolding skill with coverage map ledger ([568ab7e](https://github.com/Crearize/ai-dev-helm/commit/568ab7e224a9e4933ccd1f6827f371d0b0debe36))
+* wire risk-based gates, mutation step and falsification review into quality-check ([e1d347c](https://github.com/Crearize/ai-dev-helm/commit/e1d347c161fc79690304f4a4eea059a3656a6176))
+
+
+### Fixed
+
+* compare override state instead of scanning diff lines in gate-parameter carve-out ([f86b987](https://github.com/Crearize/ai-dev-helm/commit/f86b98733659b21b4cd178972520bff22dc27c9f))
+* detect gate-parameter changes regardless of markdown notation ([54ca66e](https://github.com/Crearize/ai-dev-helm/commit/54ca66ecaff9268809a4a542c4c1dae1169c56cd))
+* exclude gate-parameter changes from harness-only merge exemption ([31ba0f1](https://github.com/Crearize/ai-dev-helm/commit/31ba0f1e5416b1804dc3497afbf7d853512061a2))
+* fail closed on ambiguous duplicate keys and oversized lines ([a924be9](https://github.com/Crearize/ai-dev-helm/commit/a924be98ee32f5b43d329d35bc632b6e134e3680))
+* harden gate-parameter carve-out against notation, encoding and path bypasses ([f9aae93](https://github.com/Crearize/ai-dev-helm/commit/f9aae93682806cb6ff0040530ab3a1717e34cae0))
+* **hooks:** close case-insensitive, settings.local, kill-switch, and symlink gate bypasses ([fe79628](https://github.com/Crearize/ai-dev-helm/commit/fe796283a34e74d042cd65ec6428602d117f3783))
+* **hooks:** invalidate quality flag on post-flag gate control-plane changes ([94c5497](https://github.com/Crearize/ai-dev-helm/commit/94c5497bbc2abd7fb13224f701f146c4d8bfdb14))
+* **lint:** add eslint security/react rules and checkstyle security group ([c125c64](https://github.com/Crearize/ai-dev-helm/commit/c125c6410c989e63528e4f23657cb469c660ed7b))
+* **lint:** cover tsx/js in ast-grep rules and broaden security detections ([e9ceccc](https://github.com/Crearize/ai-dev-helm/commit/e9cecccf45dfd12e6ae8495b782b6458d91f91c2))
+* **lint:** make checks string/markdown/tsconfig aware and close suppression bypasses ([6040eaf](https://github.com/Crearize/ai-dev-helm/commit/6040eafa2bc6ab5efa4cabf4dadca54894b24d33))
+* **lint:** run explicitly requested checks even when default-disabled ([774c0a0](https://github.com/Crearize/ai-dev-helm/commit/774c0a074833925fb4f9a574407539bca1a2a40b))
+* make override parser honor first-opened context and close remaining evasion paths ([0699192](https://github.com/Crearize/ai-dev-helm/commit/069919200ee0cad6cc575e21463c28b6f37c7d46))
+* **mutation:** address merge-gate review findings ([8036d5c](https://github.com/Crearize/ai-dev-helm/commit/8036d5cf7332ae5a6875431d5323e6ef22f35af2))
+* **mutation:** pin PIT core version and use classpath file in shipped config ([21b58e6](https://github.com/Crearize/ai-dev-helm/commit/21b58e618686c322eb92f0c308b690ee6d5d4ae0))
+* scope Step 2 command table to static checks so area-table commands still run ([88338e9](https://github.com/Crearize/ai-dev-helm/commit/88338e96715df8d153bdbda4aabb7e4ae7de7ae9))
+* **test:** restore CRLF endings in secrets crlf fixture after history rewrite ([2d46873](https://github.com/Crearize/ai-dev-helm/commit/2d468731f8772fd9c1cb750cd8ceea186ab208d0))
+
+
+### Changed
+
+* **rules:** condense rule docs covered by pre-built lint assets ([2d52fd0](https://github.com/Crearize/ai-dev-helm/commit/2d52fd0b7981c3cb053771182d053a74480053dc))
+
+
+### Documentation
+
+* add AI Quality Policy (risk levels, gates, loop protection) ([d7ff8ee](https://github.com/Crearize/ai-dev-helm/commit/d7ff8eeeb39d63be453fbcd81a33a299186c0c2d))
+* add development-process loop protection and update templates ([dd9828b](https://github.com/Crearize/ai-dev-helm/commit/dd9828b92f209faa7e46215003f88b6e88de2f51))
+* add risk_level, mutation, lint_cycles fields to report schema ([ac38a0f](https://github.com/Crearize/ai-dev-helm/commit/ac38a0f1270deda868f62bbfebe17e1a268424be))
+* add static check standard catalog (25 categories) ([f16c059](https://github.com/Crearize/ai-dev-helm/commit/f16c05928cb9b44efce0e3f3ca54de49875b424c))
+* align docs and templates with phase 3 lint foundation ([8cb8a35](https://github.com/Crearize/ai-dev-helm/commit/8cb8a35f982e7813042f50629fbc7471ca1b8c34))
+* close CLAUDE.md exemption carve-out and remaining annotation gaps ([9cd257c](https://github.com/Crearize/ai-dev-helm/commit/9cd257c441622af5f64e80d5aa37fdf16cdfd83b))
+* close gate-override wiring, override contract and distribution reachability gaps ([1754b14](https://github.com/Crearize/ai-dev-helm/commit/1754b1455984101d38c06babce95e5c7ecf25a36))
+* close merge-gate review findings on gate semantics, lifecycle and consumers ([217a948](https://github.com/Crearize/ai-dev-helm/commit/217a948796af415930fefffebea9ea4e4fae1a86))
+* close review-consolidation gaps found by reduced merge-gate review ([bc32cb3](https://github.com/Crearize/ai-dev-helm/commit/bc32cb392aeca06e6d0cb5f28f63757c937a6124))
+* complete catalog coverage annotations and satellite doc alignment ([e6cdddb](https://github.com/Crearize/ai-dev-helm/commit/e6cdddb386d7244ebb0d55fccd210be0745f0db6))
+* consolidate cross-references and resolve carried-over debts ([7c663dd](https://github.com/Crearize/ai-dev-helm/commit/7c663dd89114b010fcc9a6cb7d947a7ea24409a8))
+* cover not-applicable paths and fix schema example details ([49de10c](https://github.com/Crearize/ai-dev-helm/commit/49de10cfd3954bbf17521a13db398ebce674782d))
+* finalize report schema keys and update README flow ([ccfd52a](https://github.com/Crearize/ai-dev-helm/commit/ccfd52a0dbb53ddd6dfd931a0282a8561c96919a))
+* fix catalog transition rules, paths and precedence ([912703a](https://github.com/Crearize/ai-dev-helm/commit/912703a506c75723121a48f254c15f3e4767306c))
+* fix gate control-plane paths and add hook-registration files to carve-out ([f7dd909](https://github.com/Crearize/ai-dev-helm/commit/f7dd9099c35c740888078caab0a5e049b590d425))
+* fix rule annotations for distribution paths and coverage accuracy ([f2b6fae](https://github.com/Crearize/ai-dev-helm/commit/f2b6fae2707338ad8bbe138797620ca9b4a54d15))
+* fix schema JSON fragment and gate_override binding notes ([aaeb269](https://github.com/Crearize/ai-dev-helm/commit/aaeb269457d7d4d02dfff322c81592124c06da55))
+* fix stack rule references, coverage claims and marker conventions ([bf56f0c](https://github.com/Crearize/ai-dev-helm/commit/bf56f0c97d61afaf05202ed0c568d1c2598832bd))
+* flip phase-2 wiring notes from future to completed tense ([87d8f30](https://github.com/Crearize/ai-dev-helm/commit/87d8f3046535d3a7c352a4ef742695741b26542a))
+* forbid duplicate override keys within a file (quality-policy §2) ([7cff55e](https://github.com/Crearize/ai-dev-helm/commit/7cff55edabe0700d105b758d06f266aaf3413bd7))
+* make gate precedence one-directional and close Step 3.5 gap ([57020d2](https://github.com/Crearize/ai-dev-helm/commit/57020d2eaf50ac9b059f1043ce53e6459c355262))
+* make phase-3 lint discoverable and fix coverage/lifecycle gaps ([b9a5efc](https://github.com/Crearize/ai-dev-helm/commit/b9a5efc271e3b907f35b550c0a339395e2415cdb))
+* mark mutation pre-built configs as shipped (phase 4) ([ef0327f](https://github.com/Crearize/ai-dev-helm/commit/ef0327f428bf9aa5b27566e6f8118c526fd6df30))
+* normalize override-key matching rule and add risk-downgrade audit trail ([8ea83b5](https://github.com/Crearize/ai-dev-helm/commit/8ea83b575d83b8a45ebcdc93f381848959892e23))
+* Phase 1 quality harness foundation (quality policy, check catalog, rules restructuring) ([85b9d49](https://github.com/Crearize/ai-dev-helm/commit/85b9d4903001561066f4236e34220df9f33eb49c))
+* polish catalog annotation consistency ([721c9fc](https://github.com/Crearize/ai-dev-helm/commit/721c9fcb98fd436b8eb82f52b0992a1a96211c7c))
+* reconcile quality policy precedence and gate rules ([e757836](https://github.com/Crearize/ai-dev-helm/commit/e7578368dc8473f12e1d4827f0428d91840c7847))
+* reference quality policy and check catalog from README ([3f5fcce](https://github.com/Crearize/ai-dev-helm/commit/3f5fcce3f006cbd99166f89861a13952f602ddff))
+* resolve final review seams before merge ([03ecf3c](https://github.com/Crearize/ai-dev-helm/commit/03ecf3c3f841f9af27138a1f3026fc3729dcd70b))
+* restructure generic coding rules with catalog references ([a0b23c9](https://github.com/Crearize/ai-dev-helm/commit/a0b23c942025eba7aad2009ba8fb63f0573b66f4))
+* scope loop protection out of the final quality gate ([614fb1b](https://github.com/Crearize/ai-dev-helm/commit/614fb1b20d7f042e183607ae583c5a68a951cf3a))
+* **skills:** wire pre-built mutation configs in lint-scaffolding ([f9aa111](https://github.com/Crearize/ai-dev-helm/commit/f9aa111e2ac52d454bb18f7075078e0a036e151e))
+* split stack rules into generic vs stack-specific with catalog refs ([5a67991](https://github.com/Crearize/ai-dev-helm/commit/5a67991eaed1593fdf8997ff83a80f64d22771f5))
+* sync E2E application example with revised matrix ([674c262](https://github.com/Crearize/ai-dev-helm/commit/674c2629ef8da6b0b36ed8c51b58355c7c297242))
+
 ## [1.9.1](https://github.com/Crearize/ai-dev-helm/compare/v1.9.0...v1.9.1) (2026-08-12)
 
 
