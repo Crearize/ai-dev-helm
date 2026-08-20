@@ -8,7 +8,7 @@
   "files": [
     "bin/",
     "lib/",
-    "!lib/*.test.js",
+    "!lib/**/*.test.js",
     "templates/",
     "skills/",
     "stacks/",
