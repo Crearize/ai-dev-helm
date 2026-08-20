@@ -16,6 +16,7 @@ lint/
   eslint/                   # ESLint flat-config preset + custom rules (nextjs-react)
   checkstyle/               # Checkstyle preset (java-springboot)
   archunit/                 # ArchUnit test-class template (java-springboot)
+  mutation/                 # mutation-testing config (per selected stack; see below)
   product/                  # product-owned, NOT package-managed (init never touches it)
     ast-grep/               # generated rules that fill gaps; add to sgconfig.yml ruleDirs
 ```
@@ -29,6 +30,13 @@ Products opt in **per directory / per group** — nothing here is all-or-nothing
 - Enable only the groups that fit your product; the `lint-scaffolding` skill handles the mechanics.
 - **The durable opt-out is the coverage map plus leaving the group out of `sgconfig.yml` (or the equivalent tool config) — NOT deleting the directory.** These `lint/` directories are package-managed: re-running `ai-dev-helm init` restores a deleted directory, so a deletion does not durably opt out. Record the decision in the coverage map and simply do not wire the group in.
 - Do not weaken a rule in place to make it pass — opt out of the group whole and record why.
+
+## Mutation testing
+
+Stacks that ship a mutation-testing config place it under `lint/mutation/`: `stryker.config.mjs` (Stryker, nextjs-react) or `pitest.gradle` (PIT, java-springboot). Like everything else here it arrives **unwired**; the per-stack guide (`README-<stack>.md`) describes the wiring and the `mutation:full` / `mutation:diff` run scripts. Two contracts to know:
+
+- **Score gating is owned by quality-check, not by these configs.** They deliberately set no failing threshold (`thresholds.break` / `mutationThreshold`); quality-check reads the generated report and compares the score against the thresholds single-sourced in `documents/development/quality-policy.md` §2. Do not add a threshold to the config to "make it strict" — that moves the gate out of the policy's control.
+- **Mutation runs are local-only** (run time is cost); CI stays a build-confirmation stage. See quality-policy §2 for the execution policy.
 
 ## Generated rules
 

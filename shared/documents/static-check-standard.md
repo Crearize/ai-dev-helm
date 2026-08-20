@@ -176,7 +176,7 @@ AI レビュー（ペルソナレビュー）は確率的であり、同じコ�
 | `stacks/<stack>/documents/coding-rules/`（スタック別の詳細規約） | `documents/development/coding-rules/` |
 | `stacks/<stack>/rules/` | AI ツール別に `.claude/rules/` / `.cursor/rules/`（※）/ `.codex/rules/` |
 | `shared/review-guides/` / `stacks/<stack>/review-guides/` | `.github/review-*.md` |
-| `shared/lint/` / `stacks/<stack>/lint/` | `lint/` 配下（汎用 ast-grep ルールは `lint/ast-grep/<カテゴリ>/`、スタック固有 ast-grep ルールは `lint/ast-grep/<スタック>/`、ESLint プリセットは `lint/eslint/`、Checkstyle は `lint/checkstyle/`、ArchUnit は `lint/archunit/`） |
+| `shared/lint/` / `stacks/<stack>/lint/` | `lint/` 配下（汎用 ast-grep ルールは `lint/ast-grep/<カテゴリ>/`、スタック固有 ast-grep ルールは `lint/ast-grep/<スタック>/`、ESLint プリセットは `lint/eslint/`、Checkstyle は `lint/checkstyle/`、ArchUnit は `lint/archunit/`、ミューテーション設定（Stryker / PIT）は `lint/mutation/`） |
 
 （※）**Cursor 配布時の変換**: `.cursor/rules/` へは Markdown ではなく `.mdc` 形式（`description` / `globs` / `alwaysApply` の frontmatter 付き）に変換して配置され、ディレクトリ階層は平坦化されてファイル名が `<領域>-<名前>.mdc` になる（例: `stacks/nextjs-react/rules/frontend/coding.md` → `.cursor/rules/frontend-coding.mdc`）。文書間の相対パス参照ではなく、本表の配布後パス表記で参照すること。
 

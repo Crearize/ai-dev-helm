@@ -6,8 +6,11 @@
 |------|----------|-------------|
 | Skills | `.claude/skills/` | Symlink to `skills/` (superpowers + project skills) |
 | Rules | `.claude/rules/` | Stack-specific coding rules |
-| Settings | `.claude/settings.json` | Quality check hooks, permission rules |
+| Hook | `.claude/hooks/quality-gate.cjs` | Merge-gate hook (Node, cross-platform); registered as a PreToolUse hook by settings.json |
+| Settings | `.claude/settings.json` | Quality check hook registration, permission deny rules |
 | CLAUDE.md | `CLAUDE.md` (project root) | AI configuration file |
+
+Shared assets installed alongside (tool-independent): `documents/development/` (policies, coding rules), `.github/review-*.md` (review guides), `.github/PULL_REQUEST_TEMPLATE.md`, `lint/` (pre-built lint assets, wired later by the lint-scaffolding skill), and `.ai-dev-helm.json` (applied-version manifest).
 
 ## Directory Structure After Setup
 
@@ -18,10 +21,14 @@ your-project/
 │   ├── rules/
 │   │   ├── frontend/          # Frontend rules (from stack)
 │   │   └── backend/           # Backend rules (from stack)
-│   └── settings.json          # Hooks and permissions
+│   ├── hooks/
+│   │   └── quality-gate.cjs   # Merge-gate hook (always overwritten by init)
+│   └── settings.json          # Hook registration and permissions
 ├── skills/
 │   ├── superpowers/           # Development process skills
 │   └── project/               # Project workflow skills
+├── lint/                      # Pre-built lint assets (placed, not wired)
+├── documents/development/     # Shared policies and coding rules
 ├── CLAUDE.md                  # Main AI configuration
 └── ...
 ```

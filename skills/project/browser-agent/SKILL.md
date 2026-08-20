@@ -1,6 +1,6 @@
 ---
 name: browser-agent
-description: UI実装後の検証時に使用。agent-browser CLIでブラウザ上の動作を検証する。「UIを確認」「画面テスト」「E2Eテスト」と言われたら使用。
+description: UI実装後の検証時に使用。agent-browser CLIでブラウザ上の動作を手動検証する。「UIを確認」「画面テスト」と言われたら使用（プロジェクトの E2E スイート実行は quality-check Step 5 / server-startup が担当）。
 ---
 
 # Browser Agent Skill - agent-browser CLIによるUI検証
@@ -91,7 +91,7 @@ agent-browser screenshot
 
 ```bash
 agent-browser set viewport 375 812
-agent-browser screenshot /tmp/mobile.png
+agent-browser screenshot mobile.png
 agent-browser set viewport 1280 720
 ```
 

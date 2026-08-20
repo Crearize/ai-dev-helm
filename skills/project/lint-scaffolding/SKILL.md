@@ -121,18 +121,18 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 
 事前ビルド資産がないスタック固有の必要分（例: React + Hono のような未カバー組み合わせ）は、**カタログの「チェック内容の例」を基準に ast-grep ルール等を生成**して補完する。
 
-**生成ルールの配置（MUST）**: 生成したルールは、**package 管理された `lint/ast-grep/` の外にあるプロダクト所有ディレクトリ（例: `lint/product/ast-grep/`）に置き、`sgconfig.yml` の `ruleDirs` に追加する。** `lint/ast-grep/` 配下（`ast-grep/<category>/` や `ast-grep/<stack>/`）には決して置かない — このツリーは init 再実行で上書きされ、`copyDirSync` は失敗時に `rmSync` するため生成ルールが失われる。`lint/product/` は init が触れないため再実行後も残る（`lint/README.md`「Generated rules」の規定）。
+**生成ルールの配置（MUST）**: 生成したルールは、**package 管理された `lint/ast-grep/` の外にあるプロダクト所有ディレクトリ（例: `lint/product/ast-grep/`）に置き、`sgconfig.yml` の `ruleDirs` に追加する。** `lint/ast-grep/` 配下（`ast-grep/<category>/` や `ast-grep/<stack>/`）には決して置かない — このツリーは init 再実行でリリース版の内容に上書きされるため、生成ルールが失われうる。`lint/product/` は init が触れないため再実行後も残る（`lint/README.md`「Generated rules」の規定）。
 
 **生成ルールの検証（MUST）**: 生成したルールは、**違反サンプルと適合サンプルの両方に対して実際に実行し、違反サンプルで検出・適合サンプルで無検出となることを確認するまで「担保」として数えない。** ハーネスの事前ビルド資産が実実行で検証されて出荷されているのと同じ規律を、その場で生成したルールにも適用する。生成ルールには対応するカタログ番号を付記する（どのカテゴリの具体化かを辿れるようにする — カタログ §1）。
 
 ### 3-3. ミューテーションテスト設定の配線
 
-`ai-dev-helm init` は事前ビルドのミューテーション設定をプロダクトの `lint/mutation/` 配下に配置している（他の Lint 資産と同じく配置のみで未配線）。対象スタックに事前ビルド資産がある場合は、それを**配線する**（ゼロから生成しない）。詳細な手順・要件は各スタックの `lint/README.md`「Mutation testing」節を正とする。
+`ai-dev-helm init` は事前ビルドのミューテーション設定をプロダクトの `lint/mutation/` 配下に配置している（他の Lint 資産と同じく配置のみで未配線）。対象スタックに事前ビルド資産がある場合は、それを**配線する**（ゼロから生成しない）。詳細な手順・要件は各スタックの `lint/README-<stack>.md`「Mutation testing」節を正とする。
 
 | 資産 | 配線方法 |
 |---|---|
-| Stryker（nextjs-react → `lint/mutation/stryker.config.mjs`） | `@stryker-mutator/core` と `@stryker-mutator/vitest-runner`（jest プロダクトは `@stryker-mutator/jest-runner`）を**プロダクトの devDependency** に追加する。設定をプロダクトルートに置くか、`--configFile lint/mutation/stryker.config.mjs` で指し示す。package.json scripts に `mutation:full`（`stryker run`）/ `mutation:diff`（`stryker run --incremental --since=origin/main` の差分スコープ）を登録する（`lint/README.md`「Mutation testing」節） |
-| PIT（java-springboot → `lint/mutation/pitest.gradle`） | プラグイン id `info.solidsoft.pitest` を**プロダクトルートの `plugins{}`** に宣言し（`apply from` された `pitest.gradle` 内には置けない）、`apply from: 'lint/mutation/pitest.gradle'` で取り込む。`pitest.gradle` 内の `__BASE_PACKAGE__` をプロダクトのベースパッケージに置換する。Gradle タスクに `mutation:full`（全体スコープ = `gradle pitest`）/ `mutation:diff`（変更クラスにスコープを絞った実行 — `-Ppitest.targetClasses=` または history による incremental 解析）を登録する（`lint/README.md`「Mutation testing」節） |
+| Stryker（nextjs-react → `lint/mutation/stryker.config.mjs`） | `@stryker-mutator/core` と `@stryker-mutator/vitest-runner`（jest プロダクトは `@stryker-mutator/jest-runner`）を**プロダクトの devDependency** に追加する。設定をプロダクトルートに置くか、`--configFile lint/mutation/stryker.config.mjs` で指し示す。package.json scripts に `mutation:full`（`stryker run`）/ `mutation:diff`（`stryker run --incremental --since=origin/main` の差分スコープ）を登録する（`lint/README-<stack>.md`「Mutation testing」節） |
+| PIT（java-springboot → `lint/mutation/pitest.gradle`） | プラグイン id `info.solidsoft.pitest` を**プロダクトルートの `plugins{}`** に宣言し（`apply from` された `pitest.gradle` 内には置けない）、`apply from: 'lint/mutation/pitest.gradle'` で取り込む。`pitest.gradle` 内の `__BASE_PACKAGE__` をプロダクトのベースパッケージに置換する。Gradle タスクに `mutation:full`（全体スコープ = `gradle pitest`）/ `mutation:diff`（変更クラスにスコープを絞った実行 — `-Ppitest.targetClasses=` または history による incremental 解析）を登録する（`lint/README-<stack>.md`「Mutation testing」節） |
 
 **未カバースタックの生成**: 事前ビルド資産のないスタック（例: React + Hono）は、従来どおり Stryker（JS/TS）/ PIT（Java）の設定を**カタログ基準から生成**して補完する。生成した設定も下記の実実行確認を必須とする。
 

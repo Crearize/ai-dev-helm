@@ -22,8 +22,10 @@ description: DBマイグレーション作成時に使用。バージョン番�
 ### Step 1: mainの最新状態を取得
 
 ```bash
-git pull origin main
+git fetch origin main
 ```
+
+（feature ブランチ上で `git pull origin main` を使わないこと — main がマージされて余分なマージコミットが生じ、quality-check や hook が使う `origin/main...HEAD` の差分基準がずれる。バージョン確認は `origin/main` の参照だけで足りる）
 
 ### Step 2: 最新バージョン番号を確認
 

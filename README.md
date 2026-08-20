@@ -124,6 +124,7 @@ Select skill scope:
   1) All skills (superpowers + project)
   2) superpowers skills only
   3) project skills only
+  4) Custom selection
 > 1
 ```
 
@@ -132,6 +133,7 @@ Select skill scope:
 | All skills | 開発プロセス（superpowers）+ プロジェクト運用（project）の全スキル |
 | superpowers only | 設計・計画・デバッグなど開発プロセスのスキルのみ |
 | project only | 品質チェック・ブランチ管理などプロジェクト運用のスキルのみ |
+| Custom selection | superpowers は全て取り込み、project スキルを番号指定で個別選択する |
 
 #### Step 4: 技術スタックの選択
 
@@ -155,11 +157,14 @@ Available tech stacks (enter numbers separated by spaces):
 
 --- Setting up documents and review guides ---
   Documents and review guides copied
+  Lint assets copied to lint/
   PR template copied
+  .gitignore updated (4 entries added)
 
 --- Setting up AI tool configuration ---
 Setting up Claude Code...
   Symlink created: .claude/skills -> ../skills
+  quality-gate hook copied
   settings.json created
   CLAUDE.md created
   Claude Code setup complete
@@ -178,7 +183,8 @@ Next steps:
   1. Review and customize CLAUDE.md / .cursorrules
   2. Update tech stack and port information
   3. Add project-specific coding rules
-  4. Commit the generated files
+  4. Run the lint-scaffolding skill to wire the lint/ assets and create the lint:all command
+  5. Commit the generated files
 ```
 
 #### 適用バージョンの記録（`.ai-dev-helm.json`）
@@ -187,7 +193,7 @@ init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成さ
 
 ```json
 {
-  "version": "1.6.0",
+  "version": "x.y.z",
   "tools": ["claude-code", "cursor"],
   "stacks": ["nextjs-react"],
   "skillScope": "all",
@@ -276,6 +282,9 @@ Select options (space-separated): 1 2 3
 | **database-migration** | DB マイグレーション | マイグレーションファイルの作成手順 |
 | **browser-agent** | ブラウザテスト | UI 実装後のブラウザ上の動作検証 |
 | **feature-documentation** | 機能・知識ドキュメント化 | 機能/サービス/要件/前提条件を追加・変更したとき。新規ならドキュメント作成、既存があれば更新 |
+| **generate-docs** | ドキュメント生成 | コードベースから API・アーキテクチャ等のドキュメントを生成する |
+| **lint-scaffolding** | Lint 資産の配線 | init が配置した `lint/` 資産（ast-grep / ESLint / Checkstyle / ミューテーション設定）の採否判断と配線、カバレッジマップ作成 |
+| **log-design** | ログ設計 | ログ出力の設計・レビュー時の観点 |
 | **self-improvement** | 自己改善ハーネス | 作業完了前に改善候補を抽出し、承認されたルール・スキル改善を同じブランチで反映 |
 | **implementation-report** | 実装レポート | PR 作成時の実装レポート生成 |
 
@@ -317,7 +326,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ## 品質チェック（quality-check）の詳細
 
-`quality-check` スキルは、main へのマージ前にローカルで品質を担保するための多段ゲートです。CI はビルド確認のみの位置づけで、静的チェック・テスト・レビューは全てローカルで完結します。feature ブランチへの push はゲートされず、ハーネスファイル（CLAUDE.md、スキル等）のみの変更はチェック自体が不要です。ただしハーネス設定ファイルの差分がゲートパラメータ（`Quality Gate Overrides` のキー）の変更を含む場合はこの免除の対象外で、quality-check（最低でも縮退レビュー）が必要です。
+`quality-check` スキルは、main へのマージ前にローカルで品質を担保するための多段ゲートです。CI はビルド確認のみの位置づけで、静的チェック・テスト・レビューは全てローカルで完結します。feature ブランチへの push はゲートされず、ハーネスファイル（CLAUDE.md、スキル等）のみの変更はチェック自体が不要です。ただし次の 2 つはこの免除の対象外で、quality-check（最低でも縮退レビュー）が必要です: (1) ハーネス設定ファイルの差分がゲートパラメータ（`Quality Gate Overrides` のキー）の変更を含む場合、(2) **ゲート制御面ファイル**（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.codex/config.toml`・`mcp.json`・settings の `hooks` / `permissions.deny` 等 — 正確な集合は quality-check スキルの「ハーネスのみ変更の免除」を参照）に触れる場合。
 
 判断基準そのものは共有ドキュメント側に定義されています。リスクレベル（High/Medium/Low）とレベル別のゲート強度、テストオラクル原則、反復工程の打ち切り基準は `shared/documents/quality-policy.md`、静的チェックで機械的に担保すべき項目の標準（A1〜F2 の25カテゴリ）は `shared/documents/static-check-standard.md` を参照してください。
 
@@ -414,11 +423,11 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 
 `init` で生成される `.claude/settings.json` には、以下のコマンドがブロックリストとして設定されます。
 
-- `rm -rf /`, `rm -rf ~`, `rm -rf .`
-- `sudo rm -rf`, `sudo dd`, `sudo mkfs`, `sudo fdisk`
-- `git push --force origin main/master`（`-f` 短縮形も含む）
-- `git reset --hard`
-- `git clean -fd`
+- `rm -rf /`, `rm -rf ~`, `rm -rf .`（`~/`・`./` 形式も含む）
+- `sudo rm -rf`, `sudo dd`, `sudo mkfs`, `sudo fdisk`（引数付きの形式も含む）
+- `git push --force origin main/master`（`-f` 短縮形・`--force-with-lease` も含む）
+- `git reset --hard`（引数付きも含む）
+- `git clean -fd`（追加フラグ付きも含む）
 - `docker system prune`
 - `npm/pnpm/yarn publish`
 
@@ -426,9 +435,9 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 
 `settings.json` には `PreToolUse` フックが設定されており、`gh pr merge` / main 上での `git merge` / main への直接 `git push` を実行する際に `.quality-check-passed` フラグの有効性を検証します。**feature ブランチへの push はゲートされません**。
 
-- フラグは `/quality-check` 通過時の HEAD を記録した JSON（`{branch, commit}`）で、消費（削除）されません
-- 記録コミット以降の変更がハーネスファイル（CLAUDE.md、スキル等）のみであればフラグは有効なまま。非ハーネスのコード変更が入ると無効になり、再チェックが必要です
-- 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます（ただしゲートパラメータ（`Quality Gate Overrides` のキー）の変更を含む差分はこのカーブアウトにより免除されず、フラグが必要です）
+- フラグは quality-check 通過時の HEAD を記録した JSON（`{branch, commit}`）で、消費（削除）されません
+- 記録コミット以降の変更がハーネスファイル（CLAUDE.md、スキル等）のみであればフラグは有効なまま。非ハーネスのコード変更が入ると無効になり、再チェックが必要です。**例外**: ゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.codex/config.toml`・`mcp.json`・settings の `hooks` / `permissions.deny`）に触れる追加コミットはハーネスファイルであってもフラグを無効化し、hook が `Gate control-plane changed:` でブロックします
+- 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます（ただしゲートパラメータ（`Quality Gate Overrides` のキー）の変更、またはゲート制御面ファイルへの変更を含む差分はこのカーブアウトにより免除されず、フラグが必要です）
 
 つまり、main に取り込むたびに品質チェックを通す必要がありますが、レビュー後のハーネス微修正で再チェックは発生しません。
 
@@ -497,28 +506,35 @@ ai-dev-helm/
 │   ├── init.js                 # init モードのロジック
 │   ├── personal.js             # personal モードのロジック
 │   ├── merge-settings.js       # JSON 設定ファイルのマージ
+│   ├── merge-toml.js           # TOML 設定ファイルのマージ（Codex グローバル設定）
+│   ├── lint/                   # 横断リンター（`ai-dev-helm lint`）本体とチェック群
 │   └── utils.js                # 共通ユーティリティ
 │
 ├── skills/                     # AI スキル定義
 │   ├── superpowers/            #   開発プロセス系（14 スキル）
-│   └── project/                #   プロジェクト運用系（13 スキル）
+│   └── project/                #   プロジェクト運用系（15 スキル）
 │
 ├── stacks/                     # 技術スタック別リソース
 │   ├── java-springboot/        #   Java + Spring Boot
 │   │   ├── rules/              #     コーディングルール
 │   │   ├── review-guides/      #     レビューチェックリスト
-│   │   └── documents/          #     詳細な規約ドキュメント
+│   │   ├── documents/          #     詳細な規約ドキュメント
+│   │   └── lint/               #     Checkstyle / ArchUnit / PIT（mutation）設定
 │   ├── nextjs-react/           #   Next.js + React
 │   │   ├── rules/
 │   │   ├── review-guides/
-│   │   └── documents/
+│   │   ├── documents/
+│   │   └── lint/               #     ESLint / ast-grep / Stryker（mutation）設定
 │   └── _template/              #   新規スタック追加用テンプレート
 │
 ├── shared/                     # 技術スタック非依存のリソース
 │   ├── review-guides/          #   共通レビュー基準
 │   │   ├── review-docs.md      #     ドキュメントレビュー
 │   │   ├── review-infra.md     #     インフラ/CI レビュー
+│   │   ├── review-performance.md #    パフォーマンスレビュー
+│   │   ├── review-requirements.md #   要件・仕様整合性レビュー
 │   │   └── review-prompt.md    #     統合レビュー指示
+│   ├── lint/                   #   横断・汎用の事前ビルド Lint 資産（ast-grep ルール群ほか）
 │   └── documents/              #   共通開発ドキュメント
 │       ├── development-policy.md
 │       ├── quick-checklist.md
@@ -540,7 +556,6 @@ ai-dev-helm/
 │   ├── codex-config-global.toml.template
 │   ├── codex-hooks.json.template
 │   ├── hooks/quality-gate.cjs      # 品質ゲートフック本体（Node 製・クロスプラットフォーム）
-│   ├── cursor-rule.mdc.template
 │   └── PULL_REQUEST_TEMPLATE.md
 │
 ├── configs/                    # AI ツール別ドキュメント
@@ -587,6 +602,14 @@ your-project/
 │   ├── superpowers/                #   開発プロセススキル
 │   └── project/                    #   プロジェクト運用スキル
 │
+├── lint/                           # 事前ビルド Lint 資産（配置のみ・配線は lint-scaffolding スキル）
+│   ├── README.md                   #   資産全体の説明
+│   ├── README-<stack>.md           #   スタック別の配線ガイド（選択スタック分）
+│   ├── ast-grep/                   #   汎用 + スタック別 ast-grep ルール
+│   └── ...                         #   eslint/ checkstyle/ archunit/ mutation/（選択スタックに依存）
+│
+├── .ai-dev-helm.json               # 適用バージョンの記録（同期の起点）
+│
 ├── .github/                        # GitHub 設定
 │   ├── PULL_REQUEST_TEMPLATE.md    #   PR テンプレート
 │   ├── review-frontend.md          #   フロントエンドレビューガイド
@@ -620,7 +643,8 @@ your-project/
     ├── skills -> ../skills         #   スキルへのシンボリックリンク
     ├── rules/                      #   コーディングルール
     ├── config.toml                 #   approval_policy / sandbox_mode
-    └── hooks.json                  #   PreToolUse フック（quality-check 強制）
+    ├── hooks/quality-gate.cjs      #   品質ゲートフック本体（Node 製）
+    └── hooks.json                  #   PreToolUse フック登録（quality-check 強制）
 ```
 
 ### 各ファイルの役割
@@ -671,6 +695,8 @@ your-project/
 | **review-frontend.md** | フロントエンド固有の観点。TypeScript strict mode 必須、Server/Client Component の適切な選択、React Hook Form + Zod でのバリデーション、TanStack Query の設定（staleTime/gcTime）、パフォーマンス最適化（不要な再レンダリング防止、バンドルサイズ）、アクセシビリティ（WCAG 2.1 AA: コントラスト比 4.5:1、キーボード操作、セマンティック HTML） |
 | **review-docs.md** | ドキュメントレビューの観点。構造の一貫性（見出しレベル、目次）、技術的正確性（コード例の動作確認、リンク切れ）、CLAUDE.md との整合性、DB 設計ドキュメント（テーブル定義、インデックス、外部キー） |
 | **review-infra.md** | インフラ/CI レビューの観点。GitHub Actions（バージョン固定、timeout 設定、最小権限、シークレット管理）、Docker（マルチステージビルド、非 root ユーザー、ヘルスチェック）、ビルド設定（依存バージョン固定、脆弱性チェック）、セキュリティ（ハードコード秘密鍵の検出、CORS/SSL 設定） |
+| **review-performance.md** | パフォーマンスレビューの観点。アルゴリズム計算量（O(n²) の混入、ループ内の重複計算）、DB/クエリ性能（N+1、不要カラム取得、ページネーション）、メモリ・リソース使用、フロントエンドの再レンダリング・バンドルサイズ |
+| **review-requirements.md** | 要件・仕様整合性レビューの観点。Issue との整合（実装内容・スコープ逸脱）、受け入れ基準の充足とテストによる証明、要件に記載されたエッジ条件の処理 |
 
 ---
 
@@ -843,7 +869,7 @@ stacks/python-django/
 
 ## superpowers 自動同期
 
-`skills/superpowers/` は [superpowers](https://github.com/obra/superpowers) プラグイン（v5.1.0）から抽出したスキルです。
+`skills/superpowers/` は [superpowers](https://github.com/obra/superpowers) プラグインから抽出したスキルです（抽出元バージョンはリポジトリルートの `.superpowers-version` に記録）。
 
 ### 自動同期の仕組み
 

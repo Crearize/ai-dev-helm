@@ -1,6 +1,6 @@
 # .quality-check-report.json Schema
 
-品質チェックスキル (`/quality-check`) が出力し、実装レポートスキル (`/implementation-report`) が入力として読み取るJSONファイルのスキーマ定義。
+品質チェックスキル (`quality-check`) が出力し、実装レポートスキル (`implementation-report`) が入力として読み取るJSONファイルのスキーマ定義。
 
 ## フィールド定義
 
