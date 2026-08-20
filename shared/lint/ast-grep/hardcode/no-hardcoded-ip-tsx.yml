@@ -1,0 +1,32 @@
+# Detects an environment-specific IPv4 address baked into source. A pure
+# whole-literal IPv4 match is ambiguous - a four-part version string such as
+# "1.2.3.4" is indistinguishable from a real address by value alone (compare
+# the public DNS address "8.8.8.8"), which produced false positives. This rule
+# resolves the ambiguity with CONTEXT instead of value, flagging a literal
+# only when it is unmistakably a network address:
+#   1. the WHOLE literal is a PRIVATE-range IPv4 (10.0.0.0/8, 192.168.0.0/16,
+#      172.16.0.0/12) - these ranges are never version numbers in practice; or
+#   2. the literal is a URL / DSN whose host is an IPv4 in ANY range, matched
+#      as `scheme://[user:pass@]<ipv4>` (covers credential DSNs such as
+#      `postgres://u:p@10.0.0.1/db` and `http://8.8.8.8:9090/metrics`).
+# Consequence (documented trade-off): a bare PUBLIC IPv4 assigned to a plain
+# constant (e.g. `const x = '8.8.8.8'`) is NOT flagged unless it appears in a
+# URL/DSN - that is the deliberate price of never flagging a version string
+# like "1.2.3.4". IPv6 is out of scope. Loopback / wildcard / broadcast are
+# excluded because none fall in the private ranges above and none appear as a
+# URL host here. Severity stays `error` because both covered shapes are
+# unambiguous addresses, not guesses.
+# Languages: valid in TypeScript, TSX and plain JavaScript -> -ts / -tsx / -js
+# variants with identical rule bodies.
+# Variant: Tsx build of no-hardcoded-ip-ts - identical rule body; see no-hardcoded-ip-ts.yml for the full rationale and language notes.
+id: no-hardcoded-ip-tsx
+language: Tsx
+severity: error
+message: "Hardcoded IPv4 address (private-range literal or an IP host in a URL/DSN) ties the code to one environment and cannot be rotated without a code change. Move it to configuration or an environment variable. (Catalog: C6)"
+rule:
+  kind: string
+  any:
+    # 1. whole literal is a private-range IPv4
+    - regex: "^['\"](10\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])|192\\.168\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])|172\\.(1[6-9]|2[0-9]|3[01])\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]))['\"]$"
+    # 2. IPv4 host inside a URL / DSN (any range)
+    - regex: "://([^/@\\s'\"]*@)?(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}"

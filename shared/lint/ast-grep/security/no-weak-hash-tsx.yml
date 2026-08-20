@@ -1,0 +1,32 @@
+# Detects MD5 / SHA-1 used for hashing or MACs. Covered forms:
+#   - createHash('md5'|'sha1') and $RECV.createHash(...)
+#   - createHmac('md5'|'sha1', key) and $RECV.createHmac(...)
+#   - $RECV.hash('md5'|'sha1', ...) - the newer node:crypto `crypto.hash` API
+# The receiver is left open, so `crypto.createHash(...)`, a namespaced
+# `nodeCrypto.createHash(...)` and an imported bare `createHash(...)` are all
+# covered. The algorithm name is matched with a `constraints` regex on the
+# argument node so both quote styles and the common spellings (md5 / MD5 /
+# sha1 / SHA-1) are handled in one rule. Conservative: only a literal
+# argument is matched; an algorithm name held in a variable is out of scope
+# for a pure-AST rule.
+# Languages: valid in TypeScript, TSX and plain JavaScript -> -ts / -tsx / -js
+# variants with identical rule bodies.
+# Variant: Tsx build of no-weak-hash-ts - identical rule body; see no-weak-hash-ts.yml for the full rationale and language notes.
+id: no-weak-hash-tsx
+language: Tsx
+severity: error
+message: "MD5 and SHA-1 are broken for security use (createHash / createHmac / crypto.hash). Use SHA-256 or better, or a password KDF such as bcrypt/argon2. (Catalog: B2)"
+rule:
+  kind: call_expression
+  any:
+    - pattern: createHash($ALGO)
+    - pattern: $RECV.createHash($ALGO)
+    - pattern: createHmac($ALGO)
+    - pattern: createHmac($ALGO, $$$REST)
+    - pattern: $RECV.createHmac($ALGO)
+    - pattern: $RECV.createHmac($ALGO, $$$REST)
+    - pattern: $RECV.hash($ALGO)
+    - pattern: $RECV.hash($ALGO, $$$REST)
+constraints:
+  ALGO:
+    regex: "^['\"](?i:md5|sha-?1)['\"]$"

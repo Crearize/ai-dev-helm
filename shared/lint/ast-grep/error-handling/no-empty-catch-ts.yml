@@ -1,11 +1,16 @@
-# Detects catch clauses whose block contains no statements. A comment-only
-# body is still empty: the inner `pattern: $STMT` matches any named node
-# (comments included), so we additionally require the node NOT to be a
-# comment before counting the block as non-empty.
+# Detects catch clauses whose block contains no REAL statement. A body is
+# still "empty" when it holds only no-op filler: a comment, a bare `;`
+# (empty_statement), or a do-nothing expression statement (`null;`,
+# `undefined;`, `void 0;`). The inner `pattern: $STMT` matches any named node,
+# so the block is counted non-empty only when it has a direct child that is a
+# statement AND is none of those no-op shapes. A catch that logs, rethrows,
+# returns a fallback, or does any real work is not flagged.
+# Languages: valid in TypeScript, TSX and plain JavaScript -> -ts / -tsx / -js
+# variants with identical rule bodies.
 id: no-empty-catch-ts
 language: TypeScript
 severity: error
-message: "Empty catch block swallows the error. Handle it, rethrow it, or log with context. (Catalog: A3)"
+message: "Empty catch block swallows the error (a comment or bare `;`/`null;` is still empty). Handle it, rethrow it, or log with context. (Catalog: A3)"
 rule:
   kind: catch_clause
   has:
@@ -14,4 +19,8 @@ rule:
       has:
         pattern: $STMT
         not:
-          kind: comment
+          any:
+            - kind: comment
+            - kind: empty_statement
+            - kind: expression_statement
+              regex: "^(null|undefined|void\\s+0)\\s*;?$"

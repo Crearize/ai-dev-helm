@@ -1,15 +1,29 @@
-# Detects a focused test - describe.only / it.only / test.only. A single
-# focused test silently disables every other test in the file, so a
-# left-behind `.only` turns a green suite into a meaningless one.
-# Conservative by design - only the three standard runner entry points are
-# matched, so an unrelated `foo.only(...)` helper is not flagged.
+# Detects a focused test, which silently disables every other test in the
+# file, so a left-behind focus turns a green suite into a meaningless one.
+# Covered forms:
+#   - describe.only(...) / it.only(...) / test.only(...)
+#   - fit(...) / fdescribe(...)  (Jasmine/Jest focused aliases)
+#   - the parameterised focus describe.only.each(...) / it.only.each(...) /
+#     test.only.each(...)  (matched on the inner `.only.each(table)` call)
+# Conservative: only the standard runner entry points are matched, so an
+# unrelated `foo.only(...)` helper is not flagged.
+# Languages: valid in TypeScript, TSX and plain JavaScript -> -ts / -tsx / -js
+# variants with identical rule bodies.
+# Not covered (documented): the tagged-template `it.only.each\`...\`` form -
+# reliably matching a tagged template of a member chain is out of scope in
+# ast-grep 0.45.1, so that spelling stays assigned to AI review.
 id: no-focused-test-ts
 language: TypeScript
 severity: error
-message: "A focused test (.only) silently skips every other test in the file. Remove .only before committing. (Catalog: E2)"
+message: "A focused test (.only / fit / fdescribe) silently skips every other test in the file. Remove the focus before committing. (Catalog: E2)"
 rule:
   kind: call_expression
   any:
     - pattern: describe.only($$$ARGS)
     - pattern: it.only($$$ARGS)
     - pattern: test.only($$$ARGS)
+    - pattern: fit($$$ARGS)
+    - pattern: fdescribe($$$ARGS)
+    - pattern: describe.only.each($$$ARGS)
+    - pattern: it.only.each($$$ARGS)
+    - pattern: test.only.each($$$ARGS)

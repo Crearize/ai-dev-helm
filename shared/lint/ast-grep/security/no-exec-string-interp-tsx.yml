@@ -1,0 +1,64 @@
+# Detects a shell command assembled by string interpolation OR string
+# concatenation and handed to the child_process exec/spawn family
+# (exec / execSync / execFile / execFileSync / spawn / spawnSync): anything
+# that reaches the interpolated / concatenated slot becomes shell syntax
+# (command injection). The command argument (CMD) must be either a template
+# literal that actually contains a `${...}` substitution, or a string-
+# concatenation (`'...' + x`) that includes at least one string literal - a
+# constant template with no substitution and a plain constant string are safe
+# and are not flagged. The receiver is left open so both `exec(...)` and
+# `childProcess.exec(...)` forms are covered.
+# Languages: valid in TypeScript, TSX and plain JavaScript -> -ts / -tsx / -js
+# variants with identical rule bodies.
+# Narrowed / NOT covered (documented): the `spawn('sh', ['-c', <interp>])`
+# shape (interpolation sits in an args-array ELEMENT, not the command arg) and
+# the `{ shell: true }` option correlation cannot be matched reliably by a
+# pure-AST rule in ast-grep 0.45.1, so they stay assigned to AI review. The
+# common `spawn(\`cmd ${x}\`, { shell: true })` case IS caught because the
+# interpolated command line is the first argument.
+# Variant: Tsx build of no-exec-string-interp-ts - identical rule body; see no-exec-string-interp-ts.yml for the full rationale and language notes.
+id: no-exec-string-interp-tsx
+language: Tsx
+severity: error
+message: "Shell command assembled by string interpolation or concatenation (exec/spawn family) allows command injection. Use execFile/spawn with a fixed binary and an argument array, no shell:true. (Catalog: B2)"
+rule:
+  kind: call_expression
+  any:
+    # `$CMD, $$$REST` does not match a single-argument call in ast-grep
+    # 0.45, so the one-argument form is spelled out separately per callee.
+    - pattern: exec($CMD)
+    - pattern: exec($CMD, $$$REST)
+    - pattern: execSync($CMD)
+    - pattern: execSync($CMD, $$$REST)
+    - pattern: execFile($CMD)
+    - pattern: execFile($CMD, $$$REST)
+    - pattern: execFileSync($CMD)
+    - pattern: execFileSync($CMD, $$$REST)
+    - pattern: spawn($CMD)
+    - pattern: spawn($CMD, $$$REST)
+    - pattern: spawnSync($CMD)
+    - pattern: spawnSync($CMD, $$$REST)
+    - pattern: $RECV.exec($CMD)
+    - pattern: $RECV.exec($CMD, $$$REST)
+    - pattern: $RECV.execSync($CMD)
+    - pattern: $RECV.execSync($CMD, $$$REST)
+    - pattern: $RECV.execFile($CMD)
+    - pattern: $RECV.execFile($CMD, $$$REST)
+    - pattern: $RECV.execFileSync($CMD)
+    - pattern: $RECV.execFileSync($CMD, $$$REST)
+    - pattern: $RECV.spawn($CMD)
+    - pattern: $RECV.spawn($CMD, $$$REST)
+    - pattern: $RECV.spawnSync($CMD)
+    - pattern: $RECV.spawnSync($CMD, $$$REST)
+constraints:
+  CMD:
+    any:
+      - kind: template_string
+        has:
+          kind: template_substitution
+      - kind: binary_expression
+        has:
+          stopBy: end
+          any:
+            - kind: string
+            - kind: template_string

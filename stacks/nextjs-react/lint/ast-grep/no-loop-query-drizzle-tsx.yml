@@ -1,0 +1,36 @@
+# Heuristic N+1 detector for Drizzle. Matches a `db.select/insert/update/
+# delete(...)` call whose ancestors (stopBy: end) include a for / for-of /
+# for-in / while / do-while statement or a `.map(...)` callback. The receiver
+# is matched literally as `db` - the conventional Drizzle client binding -
+# because a metavariable receiver also matches unrelated member calls;
+# narrowing to `db` keeps the rule reliable in ast-grep 0.45.1. Chained
+# builders (db.select().from(t).where(...)) still match on the inner
+# db.select() call. Note `Promise.all(rows.map(r => db...))` IS flagged: per
+# catalog D1 the AST rule stays a coarse heuristic and is paired with the
+# runtime query-count check, which is the authority on real round-trip counts.
+# Variant: Tsx build of no-loop-query-drizzle - identical rule body; see no-loop-query-drizzle.yml for the full rationale and language notes.
+id: no-loop-query-drizzle-tsx
+language: Tsx
+severity: error
+message: "Heuristic: a Drizzle query inside a loop or .map() callback usually multiplies DB round-trips (N+1). Batch it (where(inArray(...)), multi-row values([...])) - or, if this is intentional, verify with the paired runtime query-count check. (Catalog: D1)"
+rule:
+  kind: call_expression
+  any:
+    - pattern: db.select($$$ARGS)
+    - pattern: db.insert($$$ARGS)
+    - pattern: db.update($$$ARGS)
+    - pattern: db.delete($$$ARGS)
+  inside:
+    stopBy: end
+    any:
+      - kind: for_statement
+      - kind: for_in_statement
+      - kind: while_statement
+      - kind: do_statement
+      - kind: call_expression
+        has:
+          field: function
+          kind: member_expression
+          has:
+            field: property
+            regex: ^map$
