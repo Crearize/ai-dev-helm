@@ -88,3 +88,37 @@ export default [
 ## Wiring ast-grep
 
 The stack rules land at `lint/ast-grep/nextjs-react/` and are picked up by the same per-directory `sgconfig.yml` opt-in used for the shared rules. Both rules are deliberate heuristics for catalog **D1** (N+1 query detection): a Prisma (`prisma.<model>.<fn>(...)`) or Drizzle (`db.select/insert/update/delete(...)`) call inside a for/for-of/for-in/while/do-while body or a `.map()` callback is flagged. `Promise.all(xs.map(x => query(x)))` is flagged too, by design - the AST rule stays coarse and is paired with the runtime query-count check, which is the authority on real round-trip counts. The receivers are matched literally (`prisma`, `db`); a differently named client binding is out of scope for the AST heuristic and is covered by the runtime pairing.
+
+## Mutation testing (Stryker)
+
+`init` copies `mutation/stryker.config.mjs` to the product's `lint/mutation/stryker.config.mjs`. It is a pre-built Stryker config: `testRunner: 'vitest'`, source-only `mutate` globs (tests, `*.d.ts` and generated/build output excluded), the `clear-text` / `json` / `html` reporters, and `incremental` on for diff-scoped runs.
+
+### Wiring
+
+1. Install the runner tooling as **product devDependencies** (these are product devDeps, not harness deps): `npm i -D @stryker-mutator/core @stryker-mutator/vitest-runner`.
+2. Register two package.json scripts:
+
+```json
+{
+  "scripts": {
+    "mutation:full": "stryker run",
+    "mutation:diff": "stryker run --incremental --since=origin/main"
+  }
+}
+```
+
+`mutation:full` mutates the whole `mutate` set; `mutation:diff` reuses `incrementalFile` and `--since=origin/main` to mutate only what changed against `main`.
+
+3. Point Stryker at the copied config if it does not sit at the product root - Stryker reads `stryker.config.mjs` from the working directory, so either move it to the root or pass `--configFile lint/mutation/stryker.config.mjs`.
+
+### Runner swap (jest products)
+
+The config ships for vitest. A jest product sets `testRunner: 'jest'` in its copy and installs `@stryker-mutator/jest-runner` in place of `@stryker-mutator/vitest-runner`. The `mutate` globs, reporters and incremental settings are unchanged.
+
+### Score and gating
+
+Stryker writes the mutation score to the **json report**. `quality-check` reads that report and compares the score against the mutation-score thresholds single-sourced in `quality-policy.md` §2 (do not restate the numbers here). This config deliberately does **not** set `thresholds.break`, so Stryker never fails the run on score - gating is entirely `quality-check`'s job. The `thresholds.high` / `thresholds.low` values in the config are report-coloring hints only and are not the gate.
+
+### Where it runs
+
+Mutation testing runs **locally only and is not part of CI** (run time is cost). CI stays a build-confirmation stage; see `quality-policy.md` §2 for the execution policy.
