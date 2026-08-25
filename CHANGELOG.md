@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0](https://github.com/Crearize/ai-dev-helm/compare/v1.10.2...v1.11.0) (2026-08-25)
+
+
+### Added
+
+* lighten the mutation gate - advisory Medium, triage pass criteria, changed-line diff scope (closes [#85](https://github.com/Crearize/ai-dev-helm/issues/85)) ([00f5d7c](https://github.com/Crearize/ai-dev-helm/commit/00f5d7c796484d6ce2a9a7b534ca7a70f8938269))
+* ミューテーションゲートの軽量化 — Medium advisory・トリアージ型通過条件・変更行スコープ (closes [#85](https://github.com/Crearize/ai-dev-helm/issues/85)) ([2a84335](https://github.com/Crearize/ai-dev-helm/commit/2a84335b61a0ddeea55c3eb9a05a0ea185a2dcf9))
+
+
+### Fixed
+
+* **mutation:** harden the diff scope and align docs after merge-gate review ([#86](https://github.com/Crearize/ai-dev-helm/issues/86)) ([2e8fa23](https://github.com/Crearize/ai-dev-helm/commit/2e8fa23f1385efb7791b30361e0ae758b9b39a7a))
+
 ## [1.10.2](https://github.com/Crearize/ai-dev-helm/compare/v1.10.1...v1.10.2) (2026-08-20)
 
 
