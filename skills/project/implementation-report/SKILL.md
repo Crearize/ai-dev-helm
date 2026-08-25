@@ -89,10 +89,10 @@ git diff origin/main...HEAD
 
 ### 品質チェック結果サマリ
 - リスクレベル: high / medium / low（`risk_level`）
-- 静的チェックサイクル: N回（打ち切り事由: なし / loop_limit / oscillation）（`lint_cycles` / `lint_abort_reason`）
+- 静的チェック AI 修正パス: N回（打ち切り事由: なし / oscillation）（`lint_cycles` / `lint_abort_reason`）
 - テスト設計メモ: verified / retroactive / out_of_scope / not_required（メモ: [パス] または なし）（`test_design.status` / `test_design.memo_path`）
-- ミューテーションテスト: モード gate / advisory、調整後スコア N%（生 N% / 閾値 N%）、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n）／ 未実行（理由: not_configured / low_risk / out_of_scope / mode_off / empty_scope / scope_error）（`mutation`）
-- 品質チェックサイクル数: N回（N回目で指摘ゼロ達成）
+- ミューテーションテスト: モード gate / advisory、実行 N回、調整後スコア N%（生 N% / 閾値 N%）、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n）／ 未実行（理由: not_configured / low_risk / out_of_scope / mode_off / empty_scope / scope_error）（`mutation`）
+- 品質チェックサイクル数: N回（N回目で高/中指摘ゼロ達成 / 打ち切り事由: なし / cycle_limit / stagnation / 追加サイクル: N回）（`total_cycles` / `cycle_abort_reason` / `cycle_extensions`）
 - E2Eテスト: 全件パス / N件失敗 / 対象外
 - ドキュメント更新: updated / not_required（`documentation.status`、updated の場合は対象ファイル）
 - self-improvement: applied / skipped / not_required（`self_improvement.status`）

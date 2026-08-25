@@ -92,7 +92,7 @@ Step 1: Change area + risk level detection (git diff; risk levels per quality po
     |
 Step 2/3: Static checks + tests (High/Medium: cross-check the test-design memo)
     |
-Step 3.5: Mutation testing on the changed lines (Stryker) / changed classes (PIT) (High: gate / Medium: advisory by default; skipped when not configured or the scope is empty)
+Step 3.5: Mutation testing on the changed lines (Stryker) / changed classes (PIT) (High and Medium: gate by default, once per quality-check cycle; skipped when not configured or the scope is empty)
     |
 Step 4: Review cycles (staged personas by diff size, min 1 cycle; the QA persona works
         falsification-first - hunt for inputs that prove the implementation wrong;
