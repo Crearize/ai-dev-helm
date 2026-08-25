@@ -10,6 +10,9 @@ export default defineConfig({
     // Stryker mutation sample's calc.test.ts) that are meant to run only
     // under their own runner during smoke checks, never as part of the
     // harness suite. Keep vitest's defaults and exclude the fixture tree.
-    exclude: [...configDefaults.exclude, 'test/fixtures/**'],
+    // .stryker-tmp is a full sandbox copy of the repo left behind by an
+    // aborted local Stryker run; without the exclude its duplicated test
+    // files would all run (and fail) inside the sandbox.
+    exclude: [...configDefaults.exclude, 'test/fixtures/**', '**/.stryker-tmp/**'],
   },
 });

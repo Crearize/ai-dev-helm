@@ -28,3 +28,7 @@ docs/superpowers/
 # Quality check artifacts
 .quality-check-report.json
 .quality-check-passed
+
+# Mutation-testing artifacts (Stryker sandbox / reports from local runs)
+.stryker-tmp/
+reports/

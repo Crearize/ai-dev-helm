@@ -91,7 +91,7 @@ git diff origin/main...HEAD
 - リスクレベル: high / medium / low（`risk_level`）
 - 静的チェックサイクル: N回（打ち切り事由: なし / loop_limit / oscillation）（`lint_cycles` / `lint_abort_reason`）
 - テスト設計メモ: verified / retroactive / out_of_scope / not_required（メモ: [パス] または なし）（`test_design.status` / `test_design.memo_path`）
-- ミューテーションテスト: スコア N%（閾値 N%）／ 未実行（理由: not_configured / low_risk / out_of_scope）（`mutation`）
+- ミューテーションテスト: モード gate / advisory、調整後スコア N%（生 N% / 閾値 N%）、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n）／ 未実行（理由: not_configured / low_risk / out_of_scope / mode_off / empty_scope / scope_error）（`mutation`）
 - 品質チェックサイクル数: N回（N回目で指摘ゼロ達成）
 - E2Eテスト: 全件パス / N件失敗 / 対象外
 - ドキュメント更新: updated / not_required（`documentation.status`、updated の場合は対象ファイル）

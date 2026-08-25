@@ -33,9 +33,10 @@ Products opt in **per directory / per group** — nothing here is all-or-nothing
 
 ## Mutation testing
 
-Stacks that ship a mutation-testing config place it under `lint/mutation/`: `stryker.config.mjs` (Stryker, nextjs-react) or `pitest.gradle` (PIT, java-springboot). Like everything else here it arrives **unwired**; the per-stack guide (`README-<stack>.md`) describes the wiring and the `mutation:full` / `mutation:diff` run scripts. Two contracts to know:
+Stacks that ship a mutation-testing config place it under `lint/mutation/`: `stryker.config.mjs` + `stryker.diff.config.mjs` + `changed-ranges.mjs` (Stryker, nextjs-react) or `pitest.gradle` (PIT, java-springboot). Like everything else here it arrives **unwired**; the per-stack guide (`README-<stack>.md`) describes the wiring and the two entry points - full scope and diff scope (`mutation:full` / `mutation:diff` package.json scripts on the JS side, `mutationFull` / `mutationDiff` Gradle tasks on the Java side). Three contracts to know:
 
 - **Score gating is owned by quality-check, not by these configs.** They deliberately set no failing threshold (`thresholds.break` / `mutationThreshold`); quality-check reads the generated report and compares the score against the thresholds single-sourced in `documents/development/quality-policy.md` §2. Do not add a threshold to the config to "make it strict" — that moves the gate out of the policy's control.
+- **The diff scope is changed lines (Stryker) or changed classes (PIT), never whole changed files.** `stryker.diff.config.mjs` derives mutation ranges from the working tree against the merge base of the base ref; `pitest.gradle` narrows `targetClasses` the same way when the `mutationDiff` task is invoked with `-PmutationDiffBase=<ref>`. An empty scope is reported and the run ends without mutating anything; a failed derivation (base ref not fetched) fails loudly instead. The shipped mutator set is lean on purpose (non-behavioural mutators excluded, see quality-policy §2); re-enable one in a product-owned config that extends the shipped one, never by editing these package-managed files.
 - **Mutation runs are local-only** (run time is cost); CI stays a build-confirmation stage. See quality-policy §2 for the execution policy.
 
 ## Generated rules

@@ -92,7 +92,7 @@ The slice cycle rule `top_level_packages_are_free_of_cycles` (`slices().matching
 
 ## Mutation testing (PIT)
 
-`init` copies `lint/mutation/pitest.gradle` into the product; the lint-scaffolding skill does the wiring below. The snippet is a **PIT (Pitest) configuration** for Gradle products - a `pitest { }` extension block only. It is **manually verified** (it needs a JVM + a real Spring Boot project to execute); there is no automated PIT run in this repo (no-CI policy), and the shipped snippet is exercised against a real project in a one-time manual verification, like the ArchUnit template.
+`init` copies `lint/mutation/pitest.gradle` into the product; the lint-scaffolding skill does the wiring below. The snippet is a **PIT (Pitest) configuration** for Gradle products - a `pitest { }` extension block plus the two entry-point tasks `mutationFull` and `mutationDiff`. It is **manually verified** (it needs a JVM + a real Spring Boot project to execute); there is no automated PIT run in this repo (no-CI policy), and the shipped snippet is exercised against a real project in a one-time manual verification, like the ArchUnit template. The `pitest { }` block was verified that way; the `mutationDiff` diff-scope logic added later follows the same discipline and is structurally guarded by `lib/mutation-assets.test.js`.
 
 ```
 lint/
@@ -116,21 +116,30 @@ The `1.15.0` here is the **gradle-pitest-plugin** version (the Gradle integratio
 
 2. In the copied `lint/mutation/pitest.gradle`, replace every `__BASE_PACKAGE__` with the product's base package (e.g. `com.example.product`), exactly as for the ArchUnit template. That sets `targetClasses` to the product's production classes.
 
-The snippet sets `junit5PluginVersion` (Spring Boot tests are JUnit 5), `outputFormats = ['XML', 'HTML']`, and `timestampedReports = false`. It deliberately sets **no `mutationThreshold`** or any other gate threshold: score gating is owned by quality-check (next section).
+The snippet sets `junit5PluginVersion` (Spring Boot tests are JUnit 5), `mutators = ['DEFAULTS']` (PIT's own default group of behaviour-changing mutators, pinned so the scope never silently widens to `STRONGER` / `ALL`), `outputFormats = ['XML', 'HTML']`, and `timestampedReports = false`. It deliberately sets **no `mutationThreshold`** or any other gate threshold: score gating is owned by quality-check (below).
 
-### Registering the tasks
+### Entry points
 
-Register two entry points on the product side:
+`pitest.gradle` registers both entry points itself. Gradle task names cannot contain `:` (it is the project-path separator), hence these names rather than the JS-side `mutation:full` / `mutation:diff` script names:
 
-- `mutation:full` - the full-scope run: `gradle pitest`. It mutates everything under `targetClasses` (`__BASE_PACKAGE__.*`) and is the config shipped here.
-- `mutation:diff` - the diff-scoped run used per change. Keep the shipped `pitest.gradle` full-scope and narrow the scope at invocation instead. Two documented approaches:
-  - Narrow `targetClasses` to the changed classes only - pass them through on the command line (`gradle pitest -Ppitest.targetClasses=com.example.product.order.OrderService`) or wrap this in a small Gradle task that derives the list from the diff, so PIT only mutates what changed.
-  - Or use PIT's incremental analysis: set `historyInputLocation` / `historyOutputLocation` to a persisted history file so PIT reuses prior results and re-analyses only classes whose bytecode or tests changed. This keeps the run inside the time budget (see quality-policy section 2) on large modules.
+- `gradle mutationFull` - the full-scope run (`gradle pitest` over everything under `targetClasses`, `__BASE_PACKAGE__.*`).
+- `gradle mutationDiff -PmutationDiffBase=origin/main` - the diff-scoped run quality-check Step 3.5 uses. The snippet lists the production sources changed in the **working tree** against the merge base of the base ref (uncommitted edits count), maps each to two `targetClasses` entries - the FQCN and `FQCN$*` for inner/nested classes (a bare `FQCN*` would also swallow unchanged sibling classes like `OrderServiceImpl`) - and narrows the run to them. PIT mutates whole classes - line-level scoping is not available - so this is the smallest scope PIT supports. Paths are resolved relative to the project the snippet is applied to, which also works for one module of a multi-module build.
+
+Guard rails on the diff run:
+
+- **The scope applies only when the `mutationDiff` task itself is requested** (checked against the invoked task names, which are part of Gradle's configuration-cache key - no `taskGraph.whenReady` listener, which the configuration cache forbids). An ambient `mutationDiffBase` in `gradle.properties` or `ORG_GRADLE_PROJECT_mutationDiffBase` can therefore never narrow `mutationFull` or plain `gradle pitest`, and unrelated builds never shell out to git. Invoking the task through a Gradle name abbreviation skips the gate and fails loudly via the task's guard - use the full task name.
+- Without the property the build fails fast with a message; an unresolvable base ref fails with a fetch hint (quality-check records `mutation.reason: "scope_error"`).
+- For every diff run `failWhenNoMutations` is off and `targetTests` is pinned to the full base-package scope - PIT's default derives the test filter from `targetClasses`, which would silently drop every test class not named after the changed class and deflate the score (verified against PIT 1.16.1).
+- An empty scope (no production class changed) disables the `pitest` task and completes immediately; changed classes with no mutation point under `DEFAULTS` (interfaces, constants-only classes) complete with zero mutants and no XML report. quality-check records `mutation.reason: "empty_scope"` for both cases.
+
+Known limitations: an additional package-private top-level class declared in the same file under a different name is not matched by `FQCN` / `FQCN$*`. Only `src/main/java` is scanned - Kotlin products (`src/main/kotlin`) must adjust the pathspec in their copy or the diff scope is always empty. Requires Gradle 7.5+ (`providers.exec`).
+
+Products that keep a persisted PIT history (`historyInputLocation` / `historyOutputLocation`) can combine it with `mutationDiff` to make the loop re-runs cheaper; it is optional.
 
 ### Maven products
 
-For a Maven build, use the `pitest-maven` plugin instead of this Gradle snippet: configure the `org.pitest:pitest-maven` plugin with the same intent - `targetClasses` set to the product base package, JUnit 5 support via `pitest-junit5-plugin`, XML + HTML `outputFormats`, and no `mutationThreshold`. The scaffolding is Maven-specific but the score gating and thresholds are identical.
+For a Maven build, use the `pitest-maven` plugin instead of this Gradle snippet: configure the `org.pitest:pitest-maven` plugin with the same intent - `targetClasses` set to the product base package, `mutators` at `DEFAULTS`, JUnit 5 support via `pitest-junit5-plugin`, XML + HTML `outputFormats`, and no `mutationThreshold`. For the diff scope, derive `targetClasses` from the changed sources the same way (a small script or profile passing `-DtargetClasses=...`). The scaffolding is Maven-specific but the score gating and thresholds are identical.
 
 ### How the score is gated
 
-quality-check reads the **XML** report PIT writes and compares the mutation score against the risk-based thresholds and time budget defined in quality-policy section 2 - the single source for those numbers. This snippet never hardcodes them, and neither should the product's build files (overrides go through the harness settings contract described in that section, not here). Mutation runs are **local-only**; there is no CI job in this repo that runs PIT.
+quality-check reads the **XML** report PIT writes (`build/reports/pitest/mutations.xml`), lists the survivors, triages them (gate mode) and compares the adjusted score against the risk-based thresholds and time budget defined in quality-policy section 2 - the single source for those numbers. This snippet never hardcodes them, and neither should the product's build files (overrides go through the harness settings contract described in that section, not here). Mutation runs are **local-only**; there is no CI job in this repo that runs PIT.

@@ -274,11 +274,14 @@ const HARNESS_PATTERNS = [
 
 // The only recognized gate-parameter keys, per quality-policy.md §2
 // 「上書きの契約」. A change to any of them is excluded from the harness-only
-// exemption: weakening a threshold must never merge unchecked.
+// exemption: weakening a threshold - or switching the Medium mutation mode
+// off - must never merge unchecked. Values are never interpreted here; only
+// the declaration state is compared.
 const GATE_PARAM_KEYS = [
   'mutation_threshold_high',
   'mutation_threshold_medium',
   'mutation_budget_minutes',
+  'mutation_mode_medium',
 ];
 // Tolerant key matcher: markdown prose renders the same key with different
 // case and word separators (`Mutation_Threshold_High`, `mutation-threshold-
