@@ -73,20 +73,20 @@
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | `executed` | `boolean` | 必須 | Step 3.5 を実行したか |
-| `reason` | `"not_configured" \| "low_risk" \| "out_of_scope" \| "mode_off" \| "empty_scope" \| null` | 必須 | 未実行の理由。`not_configured`: プロダクトにミューテーションテスト設定（Stryker / PIT）が存在しない / `low_risk`: Low リスク変更のため実行対象外 / `out_of_scope`: 変更領域別ステップ適用テーブルで Step 3（ユニットテスト）が `-` の領域のため対象外（quality-policy.md §2 マトリクス優先順位原則）/ `mode_off`: Medium リスクで `mutation_mode_medium: off` が宣言されている / `empty_scope`: 差分スコープが空（変更行にミュータント点がない・変更が除外対象のみ・production クラスの変更なし）。`executed` が `true` の場合は `null` |
+| `reason` | `"not_configured" \| "low_risk" \| "out_of_scope" \| "mode_off" \| "empty_scope" \| "scope_error" \| null` | 必須 | 未実行の理由。`not_configured`: プロダクトにミューテーションテスト設定（Stryker / PIT）が存在しない / `low_risk`: Low リスク変更のため実行対象外 / `out_of_scope`: 変更領域別ステップ適用テーブルで Step 3（ユニットテスト）が `-` の領域のため対象外（quality-policy.md §2 マトリクス優先順位原則）/ `mode_off`: Medium リスクで `mutation_mode_medium: off` が宣言されている / `empty_scope`: 差分スコープが空（変更が除外対象のみ・production クラスの変更なし・実行結果のミュータント数 0。正規シグナルは差分実行の終了コード 0 + 明示メッセージ）/ `scope_error`: 差分スコープの導出失敗（ベース ref 未解決等で差分実行が**非 0 終了** — `empty_scope` と記録してはならない。quality-policy.md §2「空スコープと導出失敗の区別」）。`executed` が `true` の場合は `null` |
 | `mode` | `"gate" \| "advisory"` | 任意 | 実行モード（quality-policy.md §2「ミューテーションテストの実行モード」）。High は常に `gate`、Medium は既定 `advisory`。`executed` が `true` の場合は必須 |
-| `scope` | `"changed_lines" \| "changed_classes" \| "changed_files"` | 任意 | 差分スコープの粒度。`changed_lines`: Stryker の変更行スコープ / `changed_classes`: PIT の変更クラススコープ / `changed_files`: 旧配線のままファイル単位で実行した場合（quality-policy.md §2「差分スコープの定義」）。`executed` が `true` の場合は必須 |
+| `scope` | `"changed_lines" \| "changed_classes" \| "changed_files"` | 任意 | 差分スコープの粒度。`changed_lines`: Stryker の変更行スコープ / `changed_classes`: PIT の変更クラススコープ / `changed_files`: 旧配線のままファイル単位で実行した場合の暫定値 — `gate` モードの通過判定には使えない（quality-policy.md §2「差分スコープの定義」）。`executed` が `true` の場合は必須 |
 | `base_ref` | `string` | 任意 | 差分スコープの基準 ref（既定 `origin/main`。Step 1 の差分判定と同一でなければならない）。`executed` が `true` の場合は必須 |
-| `mutants_total` | `number` | 任意 | スコープ内で生成・実行されたミュータント数（設定で除外され `Ignored` となった種別は含めない）。`executed` が `true` の場合は必須 |
-| `score_raw` | `number` | 任意 | ツールが算出したミューテーションスコア（%）。`executed` が `true` の場合は必須 |
-| `score` | `number` | 任意 | 調整後スコア（%）= killed ÷ (killed + `unresolved` + `untriaged`)。killed は初回実行で検出されたミュータントと `survivors` で `killed` になったものの合計で、`equivalent` / `accepted` は分母から除外する（quality-policy.md §2「通過条件とトリアージ」）。`advisory` ではトリアージ義務がないため `score_raw` と同値でよい。`executed` が `true` の場合は必須 |
-| `threshold` | `number` | 任意 | 適用した閾値（%）。既定は High 70 / Medium 60（`advisory` では判定に使わない参考値。プロダクトのハーネス設定ファイル（quality-policy.md §2「上書きの契約」）で上書き可 — 下記「上書きの契約」注記を参照）。`executed` が `true` の場合は必須 |
-| `loops` | `number` | 任意 | 「トリアージ → テスト追加 → 再実行」の是正ループ回数。上限は2（quality-policy.md §5）。`advisory` は `0`。`executed` が `true` の場合は必須 |
+| `mutants_total` | `number` | 任意 | スコープ内で生成・実行されたミュータント数。集計外 status（`Ignored`・`CompileError` 等 — quality-policy.md §2「ツール status との対応」）は含めない。実行結果が 0 の場合は `empty_scope`（本オブジェクトは未実行表現になる）。`executed` が `true` の場合は必須 |
+| `score_raw` | `number` | 任意 | **初回実行時点**のツール算出スコア（%）。killed / 生存 / 集計外の status 対応は quality-policy.md §2「ツール status との対応」を正とする（`NoCoverage` は生存）。`executed` が `true` の場合は必須 |
+| `score` | `number` | 任意 | 調整後スコア（%）= killed ÷ (killed + `unresolved` + `untriaged`)。killed は初回実行で検出されたミュータントと `survivors` で `killed` になったものの合計で、`equivalent` / `accepted` は分母から除外する。分母が 0 の場合は 100 とする（quality-policy.md §2「通過条件とトリアージ」）。`advisory` ではトリアージ義務がないため `score_raw` と同値でよい。`executed` が `true` の場合は必須 |
+| `threshold` | `number` | 任意 | 適用した閾値（%）。既定値とモード別の適用（`advisory` では判定に使わない参考値）は quality-policy.md §2 を正とする。上書きはプロダクトのハーネス設定ファイル（quality-policy.md §2「上書きの契約」）で可 — 下記「上書きの契約」注記を参照。`executed` が `true` の場合は必須 |
+| `loops` | `number` | 任意 | 「トリアージ → テスト追加 → 再実行」の是正ループ回数。上限は quality-policy.md §5 を正とする。`advisory` は `0`。`executed` が `true` の場合は必須 |
 | `survivors` | `Survivor[]` | 任意 | 初回実行で生存したミュータントの台帳（quality-policy.md §2）。生存がなければ空配列。`executed` が `true` の場合は必須 |
 | `scope_reduced` | `boolean` | 任意 | 実行時間バジェット（既定15分。ハーネス設定ファイル（quality-policy.md §2「上書きの契約」）で上書き可 — 下記「上書きの契約」注記を参照）超過により、リスクの高いファイル優先で対象を絞ったか。`executed` が `true` の場合は必須 |
-| `aborted_reason` | `"budget_exceeded" \| "stagnation" \| "loop_limit" \| null` | 任意 | 打ち切り事由。`budget_exceeded`: 実行時間バジェット超過 / `stagnation`: 1ループで調整後スコアの改善なしによる早期打ち切り / `loop_limit`: 2ループ上限到達。完走した場合は `null`。`executed` が `true` の場合は必須 |
+| `aborted_reason` | `"budget_exceeded" \| "stagnation" \| "loop_limit" \| null` | 任意 | 打ち切り事由。`budget_exceeded`: 実行時間バジェット超過 / `stagnation`: 是正ループの停滞による早期打ち切り / `loop_limit`: ループ上限到達（数値・定義は quality-policy.md §5 を正とする）。`advisory` は是正ループを持たないため `stagnation` / `loop_limit` は発生しない。完走した場合は `null`。`executed` が `true` の場合は必須 |
 
-未実行時は `{ "executed": false, "reason": "not_configured" }` のように `executed` と `reason` のみを記録する（他キーは**省略**する — 本オブジェクトの未実行時の表現はキーの省略に一本化し、`null` は置かない。`reason` / `aborted_reason` の `null` は「実行した上で該当なし」を表す別の意味である）。
+未実行時は `{ "executed": false, "reason": "not_configured" }` のように `executed` と `reason` のみを記録する（他キーは**省略**する — 本オブジェクトの未実行時の表現はキーの省略に一本化し、`null` は置かない。`reason` / `aborted_reason` の `null` は「実行した上で該当なし」を表す別の意味である）。打ち切り（`budget_exceeded` 等）でツールのレポートが得られなかった場合は、`mutants_total` / `score_raw` / `score` を `null` とし、`survivors` は空配列でよい。
 
 `mode` が `gate` で、`aborted_reason` が `null` 以外の場合（打ち切り）、または quality-policy.md §2 の通過条件（調整後スコア ≥ `threshold` ∧ `untriaged` の生存 = 0 ∧ `memo_linked` の生存が `killed` 以外で残っていない）を満たさないまま終了した場合、`.quality-check-passed` の作成にはユーザーの明示承認が必要であり、承認した場合は `gate_override` に記録する。`mode` が `advisory` の場合は判定を持たないため承認は不要である（打ち切りは `aborted_reason` に記録するのみ）。
 
@@ -102,7 +102,7 @@
 | `decision` | `"killed" \| "equivalent" \| "accepted" \| "unresolved" \| "untriaged"` | 必須 | トリアージの決定（quality-policy.md §2）。`killed`: 是正ループで追加したテストが検出できるようになった / `equivalent`: 動作が変わらない変異 / `accepted`: 振る舞いに影響しない変異（`category` 必須）/ `unresolved`: 振る舞いに影響するが是正ループ内で殺せなかった（分母に残る。`memo_linked` には使えない）/ `untriaged`: 未判断（`gate` では通過不可、`advisory` では既定） |
 | `category` | `"logging" \| "defensive_guard" \| "type_only" \| "ui_text" \| "dev_only" \| null` | 必須 | `decision` が `accepted` のときのカテゴリ（閉集合）。それ以外は `null` |
 | `reason` | `string` | 必須 | 判断の理由（`untriaged` では空文字でよい） |
-| `memo_linked` | `boolean` | 必須 | テスト設計メモの「保証すべき状態遷移・不変条件」「ファルシフィケーション項目」に対応する変更行のミュータントか。`true` のものは `accepted` / `unresolved` にできず、`gate` では `killed` 以外で通過できない |
+| `memo_linked` | `boolean` | 必須 | テスト設計メモの「保証すべき状態遷移・不変条件」「ファルシフィケーション項目」に対応する変更行のミュータントか。`true` のものは `accepted` / `unresolved` にできず、`gate` では `killed` / `equivalent` 以外で通過できない（`equivalent` の判断理由は QA エンジニアペルソナの検証対象 — quality-policy.md §2） |
 
 ### TestDesign オブジェクト
 

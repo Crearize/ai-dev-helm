@@ -36,7 +36,7 @@ High の判定は、該当領域の**実装コード**に直接差分がある�
 | 静的チェック（決定的チェック層） | 必須 | 必須 | 必須 |
 | ユニットテスト | 必須 | 必須 | 必須 |
 | test-design スキル（テストオラクル定義） | 必須 | 必須 | 不要 |
-| ミューテーションテスト（差分スコープ） | 必須・`gate`（調整後スコア閾値 70%）※未導入時はスキップ記録 | 必須・`advisory`（参考閾値 60%）※既定。`mutation_mode_medium` で `gate` / `off` に変更可 ※未導入時はスキップ記録 | 実行しない |
+| ミューテーションテスト（差分スコープ） | 必須・`gate`（調整後スコア閾値 70%）※未導入時はスキップ記録 | 実行必須・`advisory`（通過判定なし。閾値 60% は `gate` 運用時の判定値、advisory では参考値）※既定。`mutation_mode_medium` で `gate` / `off` に変更可 ※未導入時はスキップ記録 | 実行しない |
 | ペルソナレビュー | 変更領域で決まる（quality-check Step 4 の段階化 / 縮退ルール） | 変更領域で決まる（同左） | 変更領域で決まる（同左） |
 | E2E | 領域テーブルに従う（※適用例参照） | 領域テーブルに従う（同左） | 領域テーブルに従う（同左） |
 
@@ -56,14 +56,15 @@ High の判定は、該当領域の**実装コード**に直接差分がある�
 > 上書きキーは `mutation_threshold_high` / `mutation_threshold_medium` / `mutation_budget_minutes` / `mutation_mode_medium` の4つのみとする（上の例の値は本書の既定値そのもの）。ブロックを置かない場合、および記載のないキーは、本書の既定値が適用される。加えて、上書きには次の制約を課す。
 >
 > - High リスクのゲートを弱める上書きは**禁止（MUST NOT）**。`mutation_threshold_high` を既定値（70）未満にする上書きはこれに該当する。High の実行モードは常に `gate` であり、上書きキーを設けない。
-> - `mutation_mode_medium` の値は `gate` / `advisory` / `off` のいずれかとする（既定 `advisory`。モードの定義は下記「ミューテーションテストの実行モード」）。
+> - `mutation_mode_medium` の値は `gate` / `advisory` / `off` のいずれかとする（既定 `advisory`。モードの定義は下記「ミューテーションテストの実行モード」）。複数のハーネス設定ファイルで値が食い違う場合の「最も厳しい値」は `gate` > `advisory` > `off` の順で判定する。
+> - `mutation_mode_medium` は v1.11.0 で追加された鍵であり、**v1.10.x 以前の hook はこの鍵の変更を免除判定で認識しない**。鍵を宣言・変更する前に `ai-dev-helm init` を再実行して hook を更新すること（MUST — 旧 hook のままではこの鍵の変更がレビューなしでマージできてしまう）。
 > - ゲートパラメータ（閾値・バジェット・Medium の実行モード）を変更するハーネス設定ファイルの差分は「ハーネスのみ変更の免除」の対象外とし、必ず quality-check（最低でも縮退レビュー）を通す（hook の免除判定にも同カーブアウトが実装されており、ゲートパラメータ変更を含む差分はフラグなしでのマージがブロックされる）。ゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体（`init` がリンクとして作成する `.claude/skills` リンクノードと `.claude/hooks` ツリーおよびそれらの `.codex/**`・`.cursor/**` コピーを含む）・hook 登録ファイル・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json`）・`.claude/settings.json` と `.claude/settings.local.json` の `hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` 無効化キー・`permissions.deny` ルールリスト（`permissions.allow` の変更は免除のまま） — パスは大文字小文字を区別せず判定する）の差分も同様に hook が免除対象外として扱い、`Gate control-plane changed:` でブロックする（対象パス集合は `quality-check` SKILL.md「ハーネスのみ変更の免除」を正とする）。
 > - 既定値から乖離した上書きを適用した場合は、その事実と理由を `.quality-check-report.json` の `gate_parameter_overrides` に記録する（キー定義は `quality-check-report.schema.md` を参照）。
 > - HTML コメント（`<!-- -->`）の内側、および markdown コードスパン・コードフェンス内に置かれた `### Quality Gate Overrides` ブロックとキー記載は**宣言とみなさない**（無効。既定値が適用される）。テンプレートはこの形（コメントアウト）で雛形を配布する。有効化はコメント解除によって行い、その編集自体がマージゲートの対象になる。quality-check 実行体も hook もこの解釈に従う。
 > - キーの照合は**大文字小文字を区別せず、区切り文字（`_` / `-` / 空白）も区別しない**（`Mutation-Threshold-High` は `mutation_threshold_high` と同一の宣言とみなす）。正規表記は snake_case とし、それ以外の表記を見つけた場合は宣言として扱ったうえで、正規表記への是正をユーザーに求める。quality-check 実行体も hook もこの規則に従う。
 > - **1つのファイル内に同一キーを複数回記載してはならない（MUST NOT）。** 複数記載があり値が食い違う場合、値は不定として扱う: quality-check 実行体はユーザーにエスカレーションして是正を求め、hook は宣言状態を判定不能（免除なし）として扱う。
 
-**マトリクス優先順位原則（一方向）**: 本マトリクスは各ゲートの**強度**（閾値・要否の厳しさ）を定める。`quality-check` の変更領域別ステップ適用テーブルがステップを実行しないと定めている場合、リスクマトリクスの「必須」はそれを覆さない（逆方向の上書きはしない）。領域テーブルで `-` のステップはリスクレベルに関わらず実行しない。Step 3.5（ミューテーション）と test-design の照合は領域テーブルの Step 3 欄に従う（ユニットテストを実行しない領域ではいずれも実行せず、`out_of_scope` として記録する。記録キーは `.quality-check-report.json` の `test_design`）。**未実行理由の記録もこの優先順位に従う**: 領域による対象外（`out_of_scope`）と Low リスクによる非実行（`low_risk` / `not_required`）の双方に該当する場合は、領域による対象外を先に記録する。静的チェック（決定的チェック層）行が担保すべき内容はチェック基準カタログ（`static-check-standard.md`、配布後は `documents/development/static-check-standard.md`）に定義する。
+**マトリクス優先順位原則（一方向）**: 本マトリクスは各ゲートの**強度**（閾値・要否の厳しさ）を定める。`quality-check` の変更領域別ステップ適用テーブルがステップを実行しないと定めている場合、リスクマトリクスの「必須」はそれを覆さない（逆方向の上書きはしない）。領域テーブルで `-` のステップはリスクレベルに関わらず実行しない。Step 3.5（ミューテーション）と test-design の照合は領域テーブルの Step 3 欄に従う（ユニットテストを実行しない領域ではいずれも実行せず、`out_of_scope` として記録する。記録キーは `.quality-check-report.json` の `test_design`）。**未実行理由の記録もこの優先順位に従う**: 領域による対象外（`out_of_scope`）と Low リスクによる非実行（`low_risk` / `not_required`）の双方に該当する場合は、領域による対象外を先に記録する。`mode_off` / `not_configured` / `empty_scope` / `scope_error` を含む全理由の優先順位は、`quality-check` SKILL.md Step 3.5 の実行要否テーブルの行順を正とする。静的チェック（決定的チェック層）行が担保すべき内容はチェック基準カタログ（`static-check-standard.md`、配布後は `documents/development/static-check-standard.md`）に定義する。
 
 なお、マトリクス自身がリスクベースで「不要」「実行しない」と定めている場合（Low の test-design・ミューテーション）はそのとおり実行しない。本原則は領域テーブルが実行しないと定めたステップをリスクレベルで復活させないためのものであり、その逆ではない。
 
@@ -73,13 +74,15 @@ High の判定は、該当領域の**実装コード**に直接差分がある�
 
 **ミューテーションテストの実行ポリシー**: ミューテーションテストは**ローカルで実行し、CI には組み込まない**（実行時間がそのままコストになるため）。CI はビルド確認の位置づけを維持する。
 
-**差分スコープの定義**: 「差分スコープ」はツールが対応できる最小粒度とする — Stryker は**変更行**（`git diff -U0 <base>...HEAD` の hunk を行範囲として `mutate` に渡す。事前ビルドの `lint/mutation/stryker.diff.config.mjs` がこれを行う）、PIT は**変更クラス**（変更された production クラスを `targetClasses` に設定する。`mutationDiff -PmutationDiffBase=<base>`）。変更ファイル全体を対象にしない — 1行の変更でファイル全体を対象にすると、スコアは変更ではなくそのファイルの既存テストを測ってしまう。ベース ref は `quality-check` Step 1 の差分判定と同じ `origin/main` を既定とし、使用した ref を `mutation.base_ref` に記録する。変更行にミュータント点がない、または変更が除外対象（テスト・型定義・生成物）のみの場合は空スコープとして実行せず、`mutation: { executed: false, reason: "empty_scope" }` を記録する。
+**差分スコープの定義**: 「差分スコープ」はツールが対応できる最小粒度とする — Stryker は**変更行**（事前ビルドの `lint/mutation/stryker.diff.config.mjs` が、ベース ref との merge-base に対する**作業ツリー**の差分（`git diff -U0 <merge-base>`）の hunk を行範囲として `mutate` に渡す。ツールはディスク上のファイルを変異させるため、未コミットの編集も含めて行番号を一致させる）、PIT は**変更クラス**（変更された production クラスを `targetClasses` に設定する。`mutationDiff -PmutationDiffBase=<base>`）。変更ファイル全体を対象にしない — 1行の変更でファイル全体を対象にすると、スコアは変更ではなくそのファイルの既存テストを測ってしまう（例外: glob 特殊文字を含むパス（Next.js の `[id]` 等）は Stryker の範囲指定が使えないため、そのファイルのみファイル単位に縮退する）。ベース ref は `quality-check` Step 1 の差分判定と同じ基幹とする（既定は `origin/main`、無ければ `origin/master` を探索。基幹が異なるプロダクトは `MUTATION_BASE_REF` / `-PmutationDiffBase` で Step 1 と同じ ref に揃える）。使用した ref を `mutation.base_ref` に記録する。`scope: "changed_files"` は旧配線の暫定値であり、`gate` モードの通過判定に使ってはならない（`lint-scaffolding` の再配線を促す）。
+
+**空スコープと導出失敗の区別**: 変更が除外対象（テスト・型定義・生成物）のみ、または変更行・変更クラスにミュータント点がない（実行後にミュータント数 0 と判明した場合を含む）ときは**空スコープ**であり、`mutation: { executed: false, reason: "empty_scope" }` を記録する。空スコープの正規のシグナルは、差分実行の**終了コード 0 + 明示メッセージ**、または実行結果のミュータント数 0 である。ベース ref が解決できない等で差分実行が**非 0 終了**した場合は**導出失敗**（`reason: "scope_error"`）であり、`empty_scope` として記録してはならない — `gate` モードでは解消（ベース ref の fetch、`MUTATION_BASE_REF` の設定）を試み、解消できなければユーザーに判断を仰ぐ。`advisory` モードでは記録して先へ進む。
 
 **ミューテーションテストの実行モード**: Step 3.5 は次のいずれかのモードで実行する。High は常に `gate`、Medium は既定で `advisory`（`mutation_mode_medium` で変更可）。
 
 | モード | 適用 | 挙動 |
 |---|---|---|
-| `gate` | High（固定）/ Medium で `mutation_mode_medium: gate` を宣言した場合 | 実行し、下記「通過条件」で判定する。未達なら是正ループ（§5、最大2ループ）。なお未達なら §5「打ち切り時のゲート挙動」に従い、ユーザーの明示承認なしに通さない |
+| `gate` | High（固定）/ Medium で `mutation_mode_medium: gate` を宣言した場合 | 実行し、下記「通過条件」で判定する。未達なら是正ループ（§5 の上限まで）。なお未達なら §5「打ち切り時のゲート挙動」に従い、ユーザーの明示承認なしに通さない |
 | `advisory` | Medium 既定 | **1回だけ実行**して結果と生存台帳を記録する。スコアではブロックせず、是正ループもユーザー承認も行わない。生存台帳は Step 4 の QA エンジニアペルソナへレビュー入力として引き渡し、テスト設計メモ（§4）の不変条件・ファルシフィケーション項目に関わる生存が指摘された場合のみ、通常の Step 4 修正サイクルで対処する |
 | `off` | Medium で `mutation_mode_medium: off` を宣言した場合のみ | 実行しない（`mutation: { executed: false, reason: "mode_off" }`） |
 
@@ -97,13 +100,15 @@ advisory の狙いは、「生存ミュータントを機械的に全部殺す�
 
 通過条件は次の3つをすべて満たすこと。
 
-1. **調整後スコア ≥ 閾値**（High 70%）。調整後スコア = killed ÷ (killed + `unresolved` + `untriaged`)。killed は初回実行で検出されたミュータントと是正ループで `killed` になった生存の合計であり、`equivalent` / `accepted` に分類した生存は分母から除外する。ツールが算出した生のスコアは `score_raw` として併記する
+1. **調整後スコア ≥ 閾値**（High 70%。`mutation_mode_medium: gate` で運用する Medium は 60% = `mutation_threshold_medium`）。調整後スコア = killed ÷ (killed + `unresolved` + `untriaged`)。killed は初回実行で検出されたミュータントと是正ループで `killed` になった生存の合計であり、`equivalent` / `accepted` に分類した生存は分母から除外する。分母が 0 になる場合（初回の killed が 0 で、生存がすべて `equivalent` / `accepted`）は、振る舞いに影響する変異が存在しないため調整後スコアは 100 として扱う。ツールが算出した生のスコアは `score_raw` として併記する
 2. **`untriaged` の生存が 0**
-3. **メモ紐付き（memo-linked）の生存が 0**。memo-linked とは、テスト設計メモ（§4）の「保証すべき状態遷移・不変条件」「ファルシフィケーション項目」に対応する変更行のミュータントを指す。これは `accepted` にできず、テスト追加で殺す以外に通過経路はない（High の核心部分だけは数値ではなく実体で担保する）
+3. **memo-linked の生存のうち、`decision` が `killed` / `equivalent` 以外のものが 0**。memo-linked とは、テスト設計メモ（§4）の「保証すべき状態遷移・不変条件」「ファルシフィケーション項目」に対応する変更行のミュータントを指す。`accepted` / `unresolved` にはできない — 通過経路はテスト追加で殺すか、等価（どんなテストでも検出できない変異）と判断して理由を記録するかの2つだけであり、後者の判断は Step 4 の QA エンジニアペルソナの検証対象になる（High の核心部分だけは数値ではなく実体で担保する）
 
 小さな差分での統計的なノイズ（5個中1個の生存で 80%）は、振る舞いに影響しない生存を分母から外すことで解消する。残る生存は変更行の振る舞いに関わるものであり、殺す価値のある実シグナルなので最小母数のような追加規則は設けない。`accepted` の分類は quality-check 実行体が行うが、Step 4 の QA エンジニアペルソナが生存台帳を受け取り「振る舞いに影響する変異が `accepted` に紛れていないか」を検証する（実装者の自己判断だけで通さない）。
 
-**ミュータント種別**: 事前ビルド設定は振る舞いに影響する種別だけを既定で有効にする（Stryker は `StringLiteral` / `ObjectLiteral` / `ArrayDeclaration` / `Regex` / `OptionalChaining` を除外し `ignoreStatic` を有効化、PIT は `DEFAULTS` グループ）。除外されたミュータントはスコアの分母に含まれない。プロダクトが種別を戻す場合は自プロダクトの設定側で行う（`lint/README.md`）。
+**ツール status との対応**: killed・生存はツールのミュータント status で機械的に定める。killed = Stryker `Killed` + `Timeout` / PIT `KILLED` + `TIMED_OUT`。生存（`survivors` 台帳の対象）= Stryker `Survived` + **`NoCoverage`** / PIT `SURVIVED` + `NO_COVERAGE` — 変更行にテストが1本も到達していない `NoCoverage` は「検出できない変異」の最たるものであり、必ず生存として扱う。集計外（`mutants_total` にも分母にも含めない）= `Ignored`（除外種別）と `CompileError` / `RuntimeError` / `NON_VIABLE`。`score_raw` は**初回実行時点**のツール算出値を記録する。
+
+**ミュータント種別**: 事前ビルド設定は振る舞いに影響する種別だけを既定で有効にする（Stryker は非振る舞い系の種別を除外し `ignoreStatic` を有効化 — 正確な除外リストは配布設定 `lint/mutation/stryker.config.mjs` を単一ソースとし本書には転記しない。PIT は `DEFAULTS` グループ）。除外されたミュータントはスコアの分母に含まれない。プロダクトが種別を戻す場合は自プロダクトの設定側で行う（`lint/README.md`）。
 
 **ペルソナレビュー行についての注記**: 適用ペルソナセットの具体的な条件（段階化時は差分規模に応じ3〜6ペルソナ、縮退時は領域別の縮退セット）は `quality-check` SKILL.md Step 4 を正とする（§5 参照）。
 
@@ -168,7 +173,7 @@ Lint の3サイクル上限は **Step 2 自身のループにのみ適用され�
 
 **ミューテーションのループ手順と縮退**: 1ループは「生存ミュータントのトリアージ（§2「通過条件とトリアージ」）→ memo-linked および振る舞いに影響する生存に対するテストの追加 → 再実行」で構成する。`equivalent` / `accepted` に分類した生存はテスト追加の対象外であり、台帳（`mutation.survivors`）に理由付きで記録する。4点セットの③縮退にあたるのは**スコープの絞り込み**であり、対象ファイルをリスクレベルの高いものから優先して絞る（下記バジェット参照）。
 
-**ミューテーションの実行時間バジェット**: 1回の quality-check あたり既定15分（ハーネス設定ファイル（§2「上書きの契約」）で上書き可）。差分スコープが変更行・変更クラスである限り通常は超過しない。超過時（実行前の概算 — ミュータント数 × 初回テスト実行時間 — で超過が見込まれる場合を含む）は、`gate` モードではリスクレベルの高いファイル優先で対象を絞って1回だけ再試行し、絞った事実を `mutation.scope_reduced` として記録する。なお超過する場合は途中結果で打ち切り、ユーザーに判断を仰ぐ。`advisory` モードでは打ち切って `aborted_reason: "budget_exceeded"` を記録し、先へ進む。ミュータント単位のタイムアウトは Stryker / PIT の組み込み機構をそのまま使う。
+**ミューテーションの実行時間バジェット**: 1回の quality-check あたり既定15分（ハーネス設定ファイル（§2「上書きの契約」）で上書き可）。差分スコープが変更行・変更クラスである限り通常は超過しない。超過時（実行開始直後に判明する情報 — instrument 後のミュータント数 × 初回テスト実行時間 — や経過時間から超過が確実な場合を含む。ミュータント数は実行前には分からないため、事前の見積もりは要求しない）は、`gate` モードではリスクレベルの高いファイル優先で対象を絞って1回だけ再試行し、絞った事実を `mutation.scope_reduced` として記録する。なお超過する場合は途中結果で打ち切り、ユーザーに判断を仰ぐ。`advisory` モードでは打ち切って `aborted_reason: "budget_exceeded"` を記録し、先へ進む。ミュータント単位のタイムアウトは Stryker / PIT の組み込み機構をそのまま使う。
 
 > バジェットの上書きも §2「上書きの契約」に従い、ハーネス設定ファイルの `Quality Gate Overrides` ブロックに `mutation_budget_minutes` として記載する。記載がない場合は本書の既定値（15分）が適用される。
 

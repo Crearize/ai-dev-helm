@@ -95,11 +95,13 @@ The stack rules land at `lint/ast-grep/nextjs-react/` and are picked up by the s
 
 ## Mutation testing (Stryker)
 
-`init` copies `mutation/stryker.config.mjs`, `mutation/stryker.diff.config.mjs` and `mutation/changed-ranges.mjs` to the product's `lint/mutation/`. The base config is a pre-built Stryker config: `testRunner: 'vitest'`, source-only `mutate` globs (tests, `*.d.ts` and generated/build output excluded), a lean mutator set (`StringLiteral`, `ObjectLiteral`, `ArrayDeclaration`, `Regex` and `OptionalChaining` excluded; `ignoreStatic` on), the `clear-text` / `json` / `html` reporters, and `incremental` on. The diff config extends it and narrows `mutate` to the **lines changed since the base ref** - that is what quality-check Step 3.5 runs.
+`init` copies `mutation/stryker.config.mjs`, `mutation/stryker.diff.config.mjs` and `mutation/changed-ranges.mjs` to the product's `lint/mutation/`. The base config is a pre-built Stryker config: `testRunner: 'vitest'`, source-only `mutate` globs (tests, `*.d.ts` and generated/build output excluded), a lean mutator set (non-behavioural mutators excluded - the config's exclusion list is the single source; `ignoreStatic` on), the `clear-text` / `json` / `html` reporters, and `incremental` on for the full run. The diff config extends it, narrows `mutate` to the **changed lines**, and turns `incremental` off for its own runs (the cache is full-run state; sharing it would merge stale out-of-scope mutants into the diff report). The diff run is what quality-check Step 3.5 uses.
 
 ### Wiring
 
-1. Install the runner tooling as **product devDependencies** (these are product devDeps, not harness deps): `npm i -D @stryker-mutator/core @stryker-mutator/vitest-runner`.
+(Upgrading from a v1.10.x wiring: the old `mutation:diff` script used `--since`, which StrykerJS does not have - it never ran. Replace both scripts with the forms below.)
+
+1. Install the runner tooling as **product devDependencies** (these are product devDeps, not harness deps): `npm i -D @stryker-mutator/core @stryker-mutator/vitest-runner minimatch`. (`minimatch` is what `changed-ranges.mjs` filters files with - the same matcher Stryker itself uses. It is a transitive dependency of the core on npm, but isolated installs (pnpm, Yarn PnP) do not expose transitive packages, so declare it explicitly.)
 2. Register two package.json scripts. The config file is a **positional argument** - StrykerJS has no `--configFile` option, and no `--since` option either (that flag belongs to Stryker.NET):
 
 ```json
@@ -111,13 +113,13 @@ The stack rules land at `lint/ast-grep/nextjs-react/` and are picked up by the s
 }
 ```
 
-`mutation:full` mutates the whole `mutate` set. `mutation:diff` reads `git diff -U0 <base>...HEAD` (merge-base semantics), turns every hunk into a Stryker mutation range (`src/file.ts:12-15`) and mutates only those lines - a one-line change in a large file yields the mutants of that line, not of the whole file. Files outside the `mutate` globs (tests, `*.d.ts`, generated output) never enter the scope even when they changed, and `incremental` lets the loop re-runs quality-check performs reuse the previous results.
+`mutation:full` mutates the whole `mutate` set. `mutation:diff` diffs the **working tree** against the merge base of the base ref (`git diff -U0 <merge-base>` - uncommitted edits count, so line numbers always match the files Stryker actually mutates), turns every hunk into a Stryker mutation range (`src/file.ts:12-15`) and mutates only those lines - a one-line change in a large file yields the mutants of that line, not of the whole file. Files outside the `mutate` globs (tests, `*.d.ts`, generated output) never enter the scope even when they changed; the matching is done with minimatch, applied in Stryker's own order, so the diff scope is always a subset of the full run's scope. Paths containing glob-magic characters (Next.js dynamic routes: `[id]`, `[...slug]`) cannot carry a mutation range - those files fall back to whole-file scope via a character-class-escaped glob; plain `(group)` route segments keep their line ranges.
 
-The base ref defaults to `origin/main` and must be fetched locally. Products whose base branch is named differently set `MUTATION_BASE_REF` (for example `MUTATION_BASE_REF=origin/develop npm run mutation:diff`); quality-check requires the same base as its own diff detection and records it as `mutation.base_ref`.
+The base ref defaults to `origin/main` (then `origin/master`) and must be fetched locally. Products whose base branch is named differently set `MUTATION_BASE_REF` (for example `MUTATION_BASE_REF=origin/develop npm run mutation:diff`); quality-check requires the same base as its own diff detection and records it as `mutation.base_ref`. When no base ref can be resolved (single-branch or shallow clone), `mutation:diff` fails loudly with a fetch hint (`git fetch origin main`) - it never degrades into a silent empty scope; quality-check records that failure as `mutation.reason: "scope_error"`. The old wiring's silent full-run fallback on shallow clones is gone: fetch the base ref or set `MUTATION_BASE_REF`.
 
-**Empty scope**: when no changed line falls inside the mutate set, `mutation:diff` prints `[mutation:diff] empty scope ...` and exits 0 without starting Stryker (Stryker itself would otherwise abort with "No tests were executed"). quality-check records `mutation.reason: "empty_scope"` for that case.
+**Empty scope**: when no changed line falls inside the mutate set, `mutation:diff` deletes a stale `reports/mutation/mutation.json` from a previous run, prints `[mutation:diff] empty scope ...` and exits 0 without starting Stryker (Stryker itself would otherwise abort with "No tests were executed"). quality-check records `mutation.reason: "empty_scope"` for that case.
 
-Both configs stay in `lint/mutation/` and are addressed by path - nothing needs to move to the product root. Stryker resolves the `mutate` globs and ranges against the working directory, so run the scripts from the directory the globs are written for (the product root for the shipped globs).
+Both configs stay in `lint/mutation/` and are addressed by path - nothing needs to move to the product root. Stryker resolves the `mutate` globs and ranges against the working directory, so run the scripts from the directory the globs are written for (the product root for the shipped globs). Add `reports/` and `.stryker-tmp/` to the product `.gitignore` (`ai-dev-helm init` registers `reports/mutation/` and `.stryker-tmp/` automatically) - a committed `stryker-incremental.json` would share stale mutant state between developers.
 
 ### Product-specific tuning (jest runner, re-enabling a mutator)
 
@@ -146,7 +148,7 @@ Then point the two scripts at `lint/product/...`. The `mutate` globs, reporters 
 
 ### Score and gating
 
-Stryker writes the machine-readable result to the **json report** (`reports/mutation/mutation.json`): every mutant with its mutator, location and status. `quality-check` reads that report, lists the survivors, triages them (gate mode) and compares the adjusted score against the mutation-score thresholds single-sourced in `quality-policy.md` §2 (do not restate the numbers here). This config deliberately does **not** set `thresholds.break`, so Stryker never fails the run on score - gating is entirely `quality-check`'s job. The `thresholds.high` / `thresholds.low` values in the config are report-coloring hints only and are not the gate. Excluded mutators appear as `Ignored` in the report and stay outside the score.
+Stryker writes the machine-readable result to the **json report** (`reports/mutation/mutation.json`): every mutant with its mutator, location and status. `quality-check` reads that report, lists the survivors, triages them (gate mode) and compares the adjusted score against the mutation-score thresholds single-sourced in `quality-policy.md` §2 (do not restate the numbers here). This config deliberately does **not** set `thresholds.break`, so Stryker never fails the run on score - gating is entirely `quality-check`'s job. The `thresholds.high` / `thresholds.low` values in the config are report-coloring hints only and are not the gate. Excluded mutators appear as `Ignored` in the report and stay outside the score; `NoCoverage` mutants count as survivors in quality-check's triage (a changed line no test reaches is the strongest possible survivor).
 
 ### Where it runs
 

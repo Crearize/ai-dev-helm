@@ -24,7 +24,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 - `.github/review-*.md`
 - `documents/development/coding-rules/**`
 
-ただしハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）の差分がゲートパラメータ（quality-check の閾値・実行時間バジェット等。キー名は `documents/development/quality-policy.md` §2「上書きの契約」の `Quality Gate Overrides` 記法）の変更を含む場合、この免除は適用しない。この場合は本スキルを実行し（最低でも縮退レビュー）、フラグを作成する。hook 側もこのカーブアウトを免除判定に反映するため、フラグなしでのマージはブロックされうる。
+ただしハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）の差分がゲートパラメータ（quality-check の閾値・実行時間バジェット・Medium のミューテーション実行モード。キー名は `documents/development/quality-policy.md` §2「上書きの契約」の `Quality Gate Overrides` 記法）の変更を含む場合、この免除は適用しない。この場合は本スキルを実行し（最低でも縮退レビュー）、フラグを作成する。hook 側もこのカーブアウトを免除判定に反映するため、フラグなしでのマージはブロックされうる。
 
 同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`.claude/skills` と `.claude/hooks` のツリー（`.claude/skills` はリンクノード自体を含む — `init` はこれをシンボリックリンクとして作成するため、1 パスの張り替えで quality-check ツリー全体が差し替わる）とその `.codex/**`・`.cursor/**` コピー・`.github/review-*.md`・hook 登録ファイル（`.codex/hooks.json` と `.claude` / `.cursor` の同等物）・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json` — MCP サーバー定義は command/args 実行の登録であり hooks.json と同クラス）**および hook 登録を担う `.claude/settings.json` と `.claude/settings.local.json`（Claude Code は両方を読み、後者が高優先度）の `hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` の hook 無効化キー・`permissions.deny` ルールリスト（破壊的コマンドガードを支える deny 層。`permissions.allow` の変更は免除のまま） — 登録を外す・無効化する・deny 層を弱めれば実体を守っても同じため）**。パスのマッチは大文字小文字を区別しない（Windows/macOS では `.claude/Hooks/...` は `.claude/hooks/...` と同一ファイル）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（最低でも縮退レビューを実施しフラグを作成する。本カーブアウトは hook が強制する — 該当差分はフラグなしでのマージ・push が `Gate control-plane changed:` でブロックされる）。
 
@@ -233,24 +233,25 @@ Low リスクの変更、および領域テーブルの Step 3 欄が `-` の領
 | Low リスク | 実行しない。`mutation: { executed: false, reason: "low_risk" }` を記録 |
 | Medium リスクで、ハーネス設定ファイルに `mutation_mode_medium: off` が宣言されている | 実行しない。`reason: "mode_off"` を記録 |
 | ミューテーションテストのツール（Stryker / PIT 等）がプロダクトに未導入 | **ブロックせずスキップする。** `reason: "not_configured"` を記録する。ミューテーション設定は事前ビルドの `lint/mutation/` 設定（JS/TS は Stryker、Java は PIT）から `lint-scaffolding` スキル（Step 3-3）が配線する。未配線のプロダクトは `lint-scaffolding` を実行して配線するか、スキップ理由を記録するようユーザーに案内する |
-| 差分スコープが空（変更行にミュータント点がない / 変更が除外対象のみ / production クラスの変更なし。`mutation:diff` は空スコープを明示して終了する） | 実行しない。`reason: "empty_scope"` を記録 |
+| 差分スコープが空（変更が除外対象のみ / production クラスの変更なし — `mutation:diff` / `mutationDiff` が**終了コード 0 + `empty scope` メッセージ**で終了する。実行して初めてミュータント数 0（全て除外種別等）と判明した場合も同様） | 実行しない（または実行結果を破棄する）。`reason: "empty_scope"` を記録 |
+| 差分スコープの導出に失敗（ベース ref 未取得等で `mutation:diff` / `mutationDiff` が**非 0 終了**。`cannot resolve the merge base` 等） | **`empty_scope` として記録してはならない。** `reason: "scope_error"` を記録する。`gate` モードでは解消（`git fetch origin main`、`MUTATION_BASE_REF` の設定）を試み、解消できなければユーザーに判断を仰ぐ。`advisory` モードでは記録して先へ進む |
 | 上記以外（High / Medium かつツール導入済み） | 実行する。High は `gate`、Medium は `mutation_mode_medium` の宣言に従う（既定 `advisory`） |
 
 複数の条件に該当する場合は、**上の行から先に一致した行**の `reason` を記録する（`mutation` の未実行時は `executed` と `reason` のみを記録し、他キーは省略する）。
 
 ### スコープ
 
-差分スコープ = **変更行**（Stryker: `mutation:diff` が `git diff -U0 origin/main...HEAD` の hunk を行範囲として `mutate` に渡す）または**変更クラス**（PIT: `mutationDiff -PmutationDiffBase=origin/main`）。定義は `documents/development/quality-policy.md` §2「差分スコープの定義」。変更ファイル全体・プロジェクト全体のフル実行はこのステップでは行わない。
+差分スコープ = **変更行**（Stryker: `mutation:diff` が、ベース ref との merge-base に対する作業ツリーの差分の hunk を行範囲として `mutate` に渡す。glob 特殊文字を含むパスはファイル単位に縮退）または**変更クラス**（PIT: `mutationDiff -PmutationDiffBase=origin/main`）。定義は `documents/development/quality-policy.md` §2「差分スコープの定義」。変更ファイル全体・プロジェクト全体のフル実行はこのステップでは行わない。
 
-`mutation:diff` のベース ref は Step 1 の差分判定と同じ `origin/main` でなければならない。使用した ref を `mutation.base_ref` に、粒度を `mutation.scope`（`changed_lines` / `changed_classes`。旧配線のままファイル単位で実行した場合は `changed_files`）に記録する。
+`mutation:diff` のベース ref は Step 1 の差分判定と同じ基幹でなければならない（既定は `origin/main`、無ければ `origin/master`。基幹が異なるプロダクトは `MUTATION_BASE_REF` で Step 1 と同じ ref を指定する）。使用した ref を `mutation.base_ref` に、粒度を `mutation.scope`（`changed_lines` / `changed_classes`。旧配線のままファイル単位で実行した場合は `changed_files` — `gate` の通過判定には使えず、`lint-scaffolding` の再配線が必要）に記録する。
 
 ### 実行手順
 
-1. `mutation:diff`（JS）/ `mutationDiff`（Java）を実行し、レポート（Stryker: `reports/mutation/mutation.json` / PIT: `build/reports/pitest/mutations.xml`）からミュータント総数・生スコア・生存ミュータントを読み取る
+1. `mutation:diff`（JS）/ `mutationDiff`（Java）を実行し、レポート（Stryker: `reports/mutation/mutation.json` / PIT: `build/reports/pitest/mutations.xml`）からミュータント総数・生スコア・生存ミュータントを読み取る（killed / 生存 / 集計外の status 対応は quality-policy §2「ツール status との対応」— **`NoCoverage` は生存**として台帳に載せる）
 2. 生存ミュータントを台帳 `mutation.survivors` に一覧化する（テスト設計メモの不変条件・ファルシフィケーション項目に対応する変更行のものは `memo_linked: true` とする）
 3. **`advisory` モードはここで終了する。** 判定・是正ループ・ユーザー承認は行わず、台帳（`decision` は `untriaged` のままでよい）を Step 4 の QA エンジニアペルソナへ引き渡す
 4. **`gate` モード**: 各生存ミュータントをトリアージする（決定値・カテゴリは quality-policy §2）。`memo_linked` の生存と振る舞いに影響する生存にはテストを追加して再実行する（1ループ。上限・停滞時の早期打ち切りは quality-policy §5）。`equivalent` / `accepted` / `unresolved`（ループ内で殺せなかった振る舞い系）は理由（`accepted` はカテゴリも）を記録する
-5. quality-policy §2 の通過条件（調整後スコア ≥ 閾値 ∧ `untriaged` = 0 ∧ `memo_linked` の生存 = 0）で判定する
+5. quality-policy §2 の通過条件（調整後スコア ≥ 閾値 ∧ `untriaged` = 0 ∧ `memo_linked` の生存のうち `killed` / `equivalent` 以外が 0）で判定する
 
 - スコア閾値（リスクレベル別）・実行時間バジェット・テスト追加ループの上限・停滞時の早期打ち切り・バジェット超過時のスコープ絞り込みの基準は `documents/development/quality-policy.md` §2 / §5 を参照する（**数値は本スキルに置かない**）。閾値・バジェット・モードの上書きは同 §2「上書きの契約」に従う
 - スコープを絞った場合は `mutation.scope_reduced` に記録する
@@ -377,10 +378,11 @@ backend / frontend のコード変更を含まない場合、ペルソナセッ�
 ## 全ペルソナ共通の観点
 - テスト期待値の変更には要件上の根拠があるか（仕様・要件・計算根拠に遡れるか）。実装 Agent の自己申告を Quality Gate にしない — 「実装に合わせて期待値を修正した」という説明は根拠として認めない。
 - ハーネス設定ファイルの差分にゲートパラメータの変更が含まれる場合、quality-policy §2 の制約（High リスクゲートを弱めない）への適合を判定してください。
+- ミューテーションの `mutate` スコープ・除外種別を狭める差分（`lint/mutation/**` やプロダクト側の Stryker / PIT 設定）は、ゲートを弱める変更として妥当性を判定してください。
 
 ## ペルソナ固有の補足
 （以下から、起動するペルソナに該当する行のみを含めること。他ペルソナ向けの行は含めない）
-- QAエンジニア: 「テストが十分か」ではなく「この実装が間違っていることを証明するテスト・入力」を探してください。既知のテスト値へのハードコード、実装と同一ロジックの複製による期待値生成、意味のない assertion、`.only` / `.skip` の残留、定数同士の比較を検出対象に含めます。下記「ミューテーション生存台帳」がある場合は、`accepted` に分類された生存ミュータントのうち振る舞いに影響するものがないか、`untriaged` の生存（advisory モード）のうちテスト設計メモの不変条件・ファルシフィケーション項目に関わるものがないかを検証し、該当があれば優先度 高 / 中 の指摘として出してください。
+- QAエンジニア: 「テストが十分か」ではなく「この実装が間違っていることを証明するテスト・入力」を探してください。既知のテスト値へのハードコード、実装と同一ロジックの複製による期待値生成、意味のない assertion、`.only` / `.skip` の残留、定数同士の比較を検出対象に含めます。下記「ミューテーション生存台帳」がある場合は、`accepted` に分類された生存ミュータントのうち振る舞いに影響するものがないか、`unresolved`（是正ループで殺せなかった振る舞い系）の理由が妥当か（memo-linked が紛れていないか）、`untriaged` の生存（advisory モード）のうちテスト設計メモの不変条件・ファルシフィケーション項目に関わるものがないかを検証し、該当があれば優先度 高 / 中 の指摘として出してください。
 - 統合アーキテクチャレビュー: 個別ファイルではなく、変更全体の整合性・依存方向・副作用を重視してください。
 - パフォーマンスエンジニア: 計算量、クエリ、バンドル、キャッシュ、リソース効率の劣化を重視してください。
 - 要件・仕様整合性レビュアー: Issue、要件、設計、ドキュメント、受け入れ条件と実装の一致を重視してください。

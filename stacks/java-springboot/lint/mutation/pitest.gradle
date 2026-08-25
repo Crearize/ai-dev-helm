@@ -10,6 +10,8 @@
 // product adds the plugin id in its own `plugins { }` (see the README), and this
 // file only configures the `pitest { }` extension that the plugin registers,
 // plus the two entry-point tasks `mutationFull` and `mutationDiff`.
+//
+// Requires Gradle 7.5+ (providers.exec).
 
 pitest {
     // Pin the PIT core version. junit5PluginVersion 1.2.1 (below) requires PIT
@@ -55,38 +57,94 @@ pitest {
     // hardcoded in this build snippet.
 }
 
-// --- diff-scoped run ---------------------------------------------------------
-// `gradle mutationDiff -PmutationDiffBase=origin/main` narrows targetClasses to
-// the production classes changed since the base ref (merge-base semantics).
-// PIT mutates whole classes - line-level scoping is not available - so the
-// changed .java files are mapped to their fully qualified names; the trailing
-// `*` also covers inner and nested classes. Paths are taken relative to this
-// project directory, so the snippet works in a single-module build and in the
-// module of a multi-module build it is applied to.
+// --- diff scope (applies ONLY when the mutationDiff task was requested) ------
+// Gated on gradle.startParameter.taskNames, NOT on a taskGraph.whenReady
+// listener (configuration-cache incompatible - on a cache hit the listener
+// would not fire and the narrowing would silently not apply) and NOT on mere
+// property presence (an ambient mutationDiffBase persisted in
+// gradle.properties or via ORG_GRADLE_PROJECT_mutationDiffBase must never
+// narrow mutationFull / plain `gradle pitest`, nor make unrelated builds
+// shell out to git). Task names are part of the configuration-cache key, so
+// this branch is cache-correct; the git output below is read through
+// providers.exec and therefore revalidated on every build it applies to.
+// Limitation: invoking the task through a Gradle name abbreviation skips this
+// branch - the mutationDiff task then fails loudly via its guard below.
 //
-// Empty scope (no production class changed): the run is reported as empty and
-// completes without mutating anything (failWhenNoMutations is switched off for
-// that run). quality-check records `mutation.reason: "empty_scope"` for it.
-def mutationDiffBase = project.findProperty('mutationDiffBase')
-if (mutationDiffBase) {
+// Narrowing rules:
+// - The scope is the production classes changed in the WORKING TREE against
+//   the merge base of the base ref (uncommitted edits count - PIT mutates the
+//   compiled state of the tree, matching the Stryker twin's behavior).
+// - Each changed source maps to two targetClasses entries: the FQCN itself
+//   and FQCN$* for inner/nested classes. A bare FQCN* would also match
+//   unchanged sibling classes (OrderService* matching OrderServiceImpl).
+//   Additional top-level package-private classes declared in the same file
+//   under a different name are NOT covered - a documented limitation, see the
+//   README.
+// - targetTests is pinned to the FULL class scope before narrowing: PIT's
+//   default derives the test filter from targetClasses, which would silently
+//   drop every test class not named after the changed class and deflate the
+//   score (verified against PIT 1.16.1).
+// - failWhenNoMutations is switched off for EVERY diff run: changed classes
+//   with no mutation point under DEFAULTS (interfaces, constants-only
+//   classes) must complete as an empty scope, not fail the build
+//   (quality-policy section 2). PIT 1.16.1 then logs "Skipping coverage and
+//   analysis as no mutations found" and writes no XML.
+// - An empty changed-class list disables the pitest task entirely: PIT is not
+//   booted just to conclude nothing matched. quality-check records
+//   `mutation.reason: "empty_scope"` for both empty cases.
+def mutationDiffRequested = gradle.startParameter.taskNames.any {
+    it == 'mutationDiff' || it.endsWith(':mutationDiff')
+}
+def mutationDiffScoped = false
+if (mutationDiffRequested) {
+    def mutationDiffBase = project.findProperty('mutationDiffBase')?.toString()
+    if (!mutationDiffBase) {
+        throw new org.gradle.api.GradleException('mutationDiff requires -PmutationDiffBase=<base ref>, e.g. -PmutationDiffBase=origin/main')
+    }
+    if (mutationDiffBase.startsWith('-')) {
+        // A revision must never be able to smuggle a git option.
+        throw new org.gradle.api.GradleException("mutationDiffBase must be a git revision, got: ${mutationDiffBase}")
+    }
+    def mergeBase
+    try {
+        mergeBase = providers.exec {
+            workingDir = projectDir
+            commandLine 'git', 'merge-base', mutationDiffBase, 'HEAD'
+        }.standardOutput.asText.get().trim()
+    } catch (Exception e) {
+        throw new org.gradle.api.GradleException("[mutationDiff] cannot resolve the merge base of ${mutationDiffBase} and HEAD - is the base ref fetched? (git fetch origin main)", e)
+    }
     def changedSources = providers.exec {
         workingDir = projectDir
-        commandLine 'git', 'diff', '--name-only', '--relative', '--diff-filter=AMR',
-                    "${mutationDiffBase}...HEAD", '--', 'src/main/java'
-    }.standardOutput.asText.get().readLines().findAll { it.endsWith('.java') }
-    def changedClasses = changedSources.collect { path ->
-        path.replaceFirst(/^src\/main\/java\//, '')
-            .replaceFirst(/\.java$/, '')
-            .replace('/', '.') + '*'
+        commandLine 'git', '-c', 'core.quotePath=false', 'diff', '--name-only',
+                    '--no-ext-diff', '--no-color', '--relative', '--diff-filter=ACMRT',
+                    mergeBase, '--', 'src/main/java'
+    }.standardOutput.asText.get().readLines()
+        .collect { it.trim() }
+        .collect { line ->
+            // Paths containing quotes or control bytes arrive C-quoted even
+            // with core.quotePath=false; unquote so .java detection works.
+            (line.startsWith('"') && line.endsWith('"'))
+                ? line.substring(1, line.length() - 1).replace('\\"', '"').replace('\\\\', '\\')
+                : line
+        }
+        .findAll { it.endsWith('.java') }
+    def changedClasses = changedSources.collectMany { sourcePath ->
+        def fqcn = sourcePath.replaceFirst(/^src\/main\/java\//, '')
+                             .replaceFirst(/\.java$/, '')
+                             .replace('/', '.')
+        [fqcn, fqcn + '$*']
     }
+    pitest.failWhenNoMutations = false
     if (changedClasses.isEmpty()) {
         logger.warn("[mutationDiff] empty scope: no production classes changed since ${mutationDiffBase} - nothing to mutate")
-        pitest.failWhenNoMutations = false
-        pitest.targetClasses = ['__EMPTY_SCOPE__']
+        tasks.named('pitest').configure { enabled = false }
     } else {
-        logger.lifecycle("[mutationDiff] base ${mutationDiffBase}: ${changedClasses.size()} changed class scope(s)")
+        logger.lifecycle("[mutationDiff] base ${mutationDiffBase}: ${changedClasses.size() / 2} changed class(es) in scope")
+        pitest.targetTests = pitest.targetClasses.get()
         pitest.targetClasses = changedClasses
     }
+    mutationDiffScoped = true
 }
 
 // --- entry points ------------------------------------------------------------
@@ -103,11 +161,12 @@ tasks.register('mutationDiff') {
     group = 'verification'
     description = 'Diff-scoped PIT run: gradle mutationDiff -PmutationDiffBase=origin/main'
     dependsOn 'pitest'
-}
-
-gradle.taskGraph.whenReady { graph ->
-    def diffRequested = graph.allTasks.any { it.name == 'mutationDiff' && it.project == project }
-    if (diffRequested && !mutationDiffBase) {
-        throw new org.gradle.api.GradleException('mutationDiff requires -PmutationDiffBase=<base ref>, e.g. -PmutationDiffBase=origin/main')
+    doFirst {
+        // Fail-safe for the task-name gate above: reaching this task without
+        // the narrowing applied (e.g. via a Gradle task-name abbreviation)
+        // must fail loudly rather than pass a full-scope run off as a diff.
+        if (!mutationDiffScoped) {
+            throw new org.gradle.api.GradleException('mutationDiff ran without its diff scope applied - invoke it by its full name: gradle mutationDiff -PmutationDiffBase=origin/main')
+        }
     }
 }
