@@ -47,13 +47,13 @@
 事前ビルド設定は init がプロダクトの `lint/mutation/` に配置する（nextjs-react → `lint/mutation/stryker.config.mjs`、java-springboot → `lint/mutation/pitest.gradle`）。対象スタックに資産があれば**配線**し、なければ生成する（`lint-scaffolding` SKILL Step 3-3）。選択と担保手段を記録する。
 
 - **担保手段**: 配線した場合は事前ビルド設定の参照（`lint/mutation/stryker.config.mjs` / `lint/mutation/pitest.gradle`）を、他行が `lint/...` 資産を参照するのと同じ形式で書く。生成した場合は生成物のパスを書く
-- **選択**: `配線` / `生成` / `スキップ` のいずれか。配線・生成は `mutation:full` / `mutation:diff` の登録と**実実行によるミュータント生成・スコア算出の確認**まで済ませて初めて完了（Step 3-3 配線完了条件）
+- **選択**: `配線` / `生成` / `スキップ` のいずれか。配線・生成は全体 / 差分スコープのエントリポイント（JS: `mutation:full` / `mutation:diff`、Java: `mutationFull` / `mutationDiff`）の登録と**実実行によるミュータント生成・スコア算出の確認**まで済ませて初めて完了（Step 3-3 配線完了条件）
 
 | 項目 | 記録 |
 |---|---|
 | 選択（配線 / 生成 / スキップ） | <!-- 記入 --> |
 | 担保手段 | <!-- 例: lint/mutation/stryker.config.mjs（配線）/ lint/mutation/pitest.gradle（配線）/ 生成物パス -->  |
-| 登録コマンド（配線・生成時） | <!-- mutation:full / mutation:diff の実体 --> |
+| 登録コマンド（配線・生成時） | <!-- mutation:full / mutation:diff（JS）または mutationFull / mutationDiff（Java）の実体 --> |
 | 実実行確認 | <!-- ミュータント生成・スコア算出を確認した run（未確認なら配線未完了） --> |
 | 理由 | <!-- 記入 --> |
 

@@ -91,7 +91,7 @@ Step 1: Change area + risk level detection (git diff; risk levels per quality po
     |
 Step 2/3: Static checks + tests (High/Medium: cross-check the test-design memo)
     |
-Step 3.5: Mutation testing on the changed diff (High/Medium risk only; skipped when not configured)
+Step 3.5: Mutation testing on the changed lines (High: gate / Medium: advisory by default; skipped when not configured or the scope is empty)
     |
 Step 4: Review cycles (staged personas by diff size, min 1 cycle; the QA persona works
         falsification-first - hunt for inputs that prove the implementation wrong;
@@ -113,13 +113,14 @@ When you run `gh pr merge`, `git merge` on main, or push to main, Codex validate
      write your value. Defaults are deliberately NOT written here - they live in
      documents/development/quality-policy.md §2 (single source). Weakening a High-risk
      gate is prohibited, and changing these keys is never exempt from the merge gate.
-     These three keys are the only recognized override keys. While commented out (or
+     These four keys are the only recognized override keys. While commented out (or
      inside a code span/fence) the block declares nothing and the policy defaults apply.
 
 ### Quality Gate Overrides
 - mutation_threshold_high: <percent>
 - mutation_threshold_medium: <percent>
 - mutation_budget_minutes: <minutes>
+- mutation_mode_medium: <gate|advisory|off>
 -->
 
 ### Multi-Persona Review

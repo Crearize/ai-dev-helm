@@ -8,7 +8,8 @@
 // `plugins { }` DSL inside a script applied via `apply from`, and a `buildscript`
 // classpath in an applied script clashes with the root plugins block. So the
 // product adds the plugin id in its own `plugins { }` (see the README), and this
-// file only configures the `pitest { }` extension that the plugin registers.
+// file only configures the `pitest { }` extension that the plugin registers,
+// plus the two entry-point tasks `mutationFull` and `mutationDiff`.
 
 pitest {
     // Pin the PIT core version. junit5PluginVersion 1.2.1 (below) requires PIT
@@ -30,8 +31,14 @@ pitest {
 
     // Scope of classes to mutate. lint-scaffolding replaces __BASE_PACKAGE__ with
     // the product base package (see the README). Full-scope by default; the
-    // mutation:diff variant narrows this at invocation time (documented below).
+    // mutationDiff entry point below narrows this to the changed classes.
     targetClasses = ['__BASE_PACKAGE__.*']
+
+    // Behaviour-changing mutators only: Conditionals Boundary, Negate
+    // Conditionals, Math, Increments, Invert Negatives, Void Method Calls and
+    // the Empty / False / True / Null Returns. This is PIT's own default group,
+    // pinned here so the scope never silently widens to STRONGER / ALL.
+    mutators = ['DEFAULTS']
 
     // Report formats. XML is the machine-readable report that quality-check parses
     // for the mutation score; HTML is for human inspection during local runs.
@@ -46,4 +53,61 @@ pitest {
     // report and compares it against the risk-based thresholds in
     // quality-policy.md section 2 (the single source). Numbers must never be
     // hardcoded in this build snippet.
+}
+
+// --- diff-scoped run ---------------------------------------------------------
+// `gradle mutationDiff -PmutationDiffBase=origin/main` narrows targetClasses to
+// the production classes changed since the base ref (merge-base semantics).
+// PIT mutates whole classes - line-level scoping is not available - so the
+// changed .java files are mapped to their fully qualified names; the trailing
+// `*` also covers inner and nested classes. Paths are taken relative to this
+// project directory, so the snippet works in a single-module build and in the
+// module of a multi-module build it is applied to.
+//
+// Empty scope (no production class changed): the run is reported as empty and
+// completes without mutating anything (failWhenNoMutations is switched off for
+// that run). quality-check records `mutation.reason: "empty_scope"` for it.
+def mutationDiffBase = project.findProperty('mutationDiffBase')
+if (mutationDiffBase) {
+    def changedSources = providers.exec {
+        workingDir = projectDir
+        commandLine 'git', 'diff', '--name-only', '--relative', '--diff-filter=AMR',
+                    "${mutationDiffBase}...HEAD", '--', 'src/main/java'
+    }.standardOutput.asText.get().readLines().findAll { it.endsWith('.java') }
+    def changedClasses = changedSources.collect { path ->
+        path.replaceFirst(/^src\/main\/java\//, '')
+            .replaceFirst(/\.java$/, '')
+            .replace('/', '.') + '*'
+    }
+    if (changedClasses.isEmpty()) {
+        logger.warn("[mutationDiff] empty scope: no production classes changed since ${mutationDiffBase} - nothing to mutate")
+        pitest.failWhenNoMutations = false
+        pitest.targetClasses = ['__EMPTY_SCOPE__']
+    } else {
+        logger.lifecycle("[mutationDiff] base ${mutationDiffBase}: ${changedClasses.size()} changed class scope(s)")
+        pitest.targetClasses = changedClasses
+    }
+}
+
+// --- entry points ------------------------------------------------------------
+// Task names cannot contain ':' (Gradle's project-path separator), hence
+// mutationFull / mutationDiff rather than the JS-side mutation:full /
+// mutation:diff script names.
+tasks.register('mutationFull') {
+    group = 'verification'
+    description = 'Full-scope PIT run over every class under targetClasses.'
+    dependsOn 'pitest'
+}
+
+tasks.register('mutationDiff') {
+    group = 'verification'
+    description = 'Diff-scoped PIT run: gradle mutationDiff -PmutationDiffBase=origin/main'
+    dependsOn 'pitest'
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def diffRequested = graph.allTasks.any { it.name == 'mutationDiff' && it.project == project }
+    if (diffRequested && !mutationDiffBase) {
+        throw new org.gradle.api.GradleException('mutationDiff requires -PmutationDiffBase=<base ref>, e.g. -PmutationDiffBase=origin/main')
+    }
 }

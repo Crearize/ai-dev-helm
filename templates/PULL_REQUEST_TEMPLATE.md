@@ -48,7 +48,7 @@ Closes #
 - Risk level:
 - Static check cycles (abort reason):
 - Test design memo (status, path):
-- Mutation testing (score / threshold, or skip reason):
+- Mutation testing (mode, adjusted score / threshold, survivors killed / equivalent / accepted / untriaged, or skip reason):
 - Quality check cycles:
 - E2E tests:
 

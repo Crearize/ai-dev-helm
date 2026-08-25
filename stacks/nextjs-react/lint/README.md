@@ -20,6 +20,8 @@ lint/
       no-loop-query-drizzle.yml
   mutation/
     stryker.config.mjs        # pre-built Stryker config (see below)
+    stryker.diff.config.mjs   # diff-scoped variant: mutates only the changed lines
+    changed-ranges.mjs        # git diff -> Stryker mutation ranges (used by the diff config)
 ```
 
 ## Wiring ESLint
@@ -93,35 +95,58 @@ The stack rules land at `lint/ast-grep/nextjs-react/` and are picked up by the s
 
 ## Mutation testing (Stryker)
 
-`init` copies `mutation/stryker.config.mjs` to the product's `lint/mutation/stryker.config.mjs`. It is a pre-built Stryker config: `testRunner: 'vitest'`, source-only `mutate` globs (tests, `*.d.ts` and generated/build output excluded), the `clear-text` / `json` / `html` reporters, and `incremental` on for diff-scoped runs.
+`init` copies `mutation/stryker.config.mjs`, `mutation/stryker.diff.config.mjs` and `mutation/changed-ranges.mjs` to the product's `lint/mutation/`. The base config is a pre-built Stryker config: `testRunner: 'vitest'`, source-only `mutate` globs (tests, `*.d.ts` and generated/build output excluded), a lean mutator set (`StringLiteral`, `ObjectLiteral`, `ArrayDeclaration`, `Regex` and `OptionalChaining` excluded; `ignoreStatic` on), the `clear-text` / `json` / `html` reporters, and `incremental` on. The diff config extends it and narrows `mutate` to the **lines changed since the base ref** - that is what quality-check Step 3.5 runs.
 
 ### Wiring
 
 1. Install the runner tooling as **product devDependencies** (these are product devDeps, not harness deps): `npm i -D @stryker-mutator/core @stryker-mutator/vitest-runner`.
-2. Register two package.json scripts:
+2. Register two package.json scripts. The config file is a **positional argument** - StrykerJS has no `--configFile` option, and no `--since` option either (that flag belongs to Stryker.NET):
 
 ```json
 {
   "scripts": {
-    "mutation:full": "stryker run",
-    "mutation:diff": "stryker run --incremental --since=origin/main"
+    "mutation:full": "stryker run lint/mutation/stryker.config.mjs",
+    "mutation:diff": "stryker run lint/mutation/stryker.diff.config.mjs"
   }
 }
 ```
 
-`mutation:full` mutates the whole `mutate` set; `mutation:diff` reuses `incrementalFile` and `--since=origin/main` to mutate only what changed against `main`.
+`mutation:full` mutates the whole `mutate` set. `mutation:diff` reads `git diff -U0 <base>...HEAD` (merge-base semantics), turns every hunk into a Stryker mutation range (`src/file.ts:12-15`) and mutates only those lines - a one-line change in a large file yields the mutants of that line, not of the whole file. Files outside the `mutate` globs (tests, `*.d.ts`, generated output) never enter the scope even when they changed, and `incremental` lets the loop re-runs quality-check performs reuse the previous results.
 
-`--since=origin/main` assumes the product's base branch is `origin/main` and that the ref is fetched locally. Products whose default branch is named differently (`master`, `develop`, a release branch) must change the `--since` target to match; a shallow clone without the base ref will make Stryker fall back to a full run.
+The base ref defaults to `origin/main` and must be fetched locally. Products whose base branch is named differently set `MUTATION_BASE_REF` (for example `MUTATION_BASE_REF=origin/develop npm run mutation:diff`); quality-check requires the same base as its own diff detection and records it as `mutation.base_ref`.
 
-3. Point Stryker at the copied config if it does not sit at the product root - Stryker reads `stryker.config.mjs` from the working directory, so either move it to the root or pass `--configFile lint/mutation/stryker.config.mjs`.
+**Empty scope**: when no changed line falls inside the mutate set, `mutation:diff` prints `[mutation:diff] empty scope ...` and exits 0 without starting Stryker (Stryker itself would otherwise abort with "No tests were executed"). quality-check records `mutation.reason: "empty_scope"` for that case.
 
-### Runner swap (jest products)
+Both configs stay in `lint/mutation/` and are addressed by path - nothing needs to move to the product root. Stryker resolves the `mutate` globs and ranges against the working directory, so run the scripts from the directory the globs are written for (the product root for the shipped globs).
 
-The config ships for vitest. A jest product sets `testRunner: 'jest'` in its copy and installs `@stryker-mutator/jest-runner` in place of `@stryker-mutator/vitest-runner`. The `mutate` globs, reporters and incremental settings are unchanged.
+### Product-specific tuning (jest runner, re-enabling a mutator)
+
+`lint/mutation/` is package-managed - re-running `init` overwrites it. Put product tuning in a product-owned config that spreads the shipped one, and wrap it the same way for the diff scope:
+
+```js
+// lint/product/stryker.config.mjs
+import base from '../mutation/stryker.config.mjs';
+
+export default {
+  ...base,
+  testRunner: 'jest', // jest products: install @stryker-mutator/jest-runner instead of the vitest runner
+  mutator: { excludedMutations: ['StringLiteral'] }, // a narrower exclusion list than the lean default
+};
+```
+
+```js
+// lint/product/stryker.diff.config.mjs
+import { withChangedLines } from '../mutation/changed-ranges.mjs';
+import config from './stryker.config.mjs';
+
+export default withChangedLines(config);
+```
+
+Then point the two scripts at `lint/product/...`. The `mutate` globs, reporters and incremental settings are inherited.
 
 ### Score and gating
 
-Stryker writes the mutation score to the **json report**. `quality-check` reads that report and compares the score against the mutation-score thresholds single-sourced in `quality-policy.md` §2 (do not restate the numbers here). This config deliberately does **not** set `thresholds.break`, so Stryker never fails the run on score - gating is entirely `quality-check`'s job. The `thresholds.high` / `thresholds.low` values in the config are report-coloring hints only and are not the gate.
+Stryker writes the machine-readable result to the **json report** (`reports/mutation/mutation.json`): every mutant with its mutator, location and status. `quality-check` reads that report, lists the survivors, triages them (gate mode) and compares the adjusted score against the mutation-score thresholds single-sourced in `quality-policy.md` §2 (do not restate the numbers here). This config deliberately does **not** set `thresholds.break`, so Stryker never fails the run on score - gating is entirely `quality-check`'s job. The `thresholds.high` / `thresholds.low` values in the config are report-coloring hints only and are not the gate. Excluded mutators appear as `Ignored` in the report and stay outside the score.
 
 ### Where it runs
 
