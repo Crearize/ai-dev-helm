@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0](https://github.com/Crearize/ai-dev-helm/compare/v1.11.0...v1.12.0) (2026-08-25)
+
+
+### Added
+
+* **quality-check:** single outer cycle and Medium mutation gate by default ([9068354](https://github.com/Crearize/ai-dev-helm/commit/9068354e62237089eeb86ed5c3c2972ad15c1a28))
+* **quality-check:** single outer cycle and Medium mutation gate by default ([5bc1b69](https://github.com/Crearize/ai-dev-helm/commit/5bc1b69457e4e35e9fcb8e58d6992a7ed1088ae9))
+
 ## [1.11.0](https://github.com/Crearize/ai-dev-helm/compare/v1.10.2...v1.11.0) (2026-08-25)
 
 
