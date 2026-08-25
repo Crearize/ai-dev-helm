@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * ミューテーションゲートの軽量化 — Medium advisory・トリアージ型通過条件・変更行スコープ (closes [#85](https://github.com/Crearize/ai-dev-helm/issues/85)) ([2a84335](https://github.com/Crearize/ai-dev-helm/commit/2a84335b61a0ddeea55c3eb9a05a0ea185a2dcf9))
 
 
+### Changed
+
+* **ミューテーションゲートの既定値を変更**（quality-policy §2 / §5）: Medium リスクは `advisory`（実行して生存台帳を記録し Step 4 の QA ペルソナへ渡すのみ・ブロックしない）が既定になり、従来どおりブロックさせるには `mutation_mode_medium: gate` を宣言する。High の閾値は 80 → 70（トリアージ後の調整後スコアに適用）、是正ループ上限は 5 → 2。Stryker の既定ミュータント種別は lean セット（非振る舞い系を除外・`ignoreStatic` 有効）、PIT は `DEFAULTS` に固定
+* **1.10.x からの移行手順**: ① `ai-dev-helm init` を再実行する（ポリシー文書・スキル・**quality-gate hook**・`lint/mutation/` 資産が更新される。旧 hook は新しい上書き鍵 `mutation_mode_medium` の変更を免除判定で認識しないため、hook の更新は必須） ② `lint-scaffolding` Step 3-3 を再実行し、`mutation:full` / `mutation:diff`（Java は `mutationFull` / `mutationDiff`）を新しい配線に差し替える — 旧 `mutation:diff`（`stryker run --incremental --since=origin/main`）は StrykerJS に `--since` が存在せず動作しない。あわせて `minimatch` をプロダクトの devDependency に追加する ③ `.gitignore` に `reports/mutation/` と `.stryker-tmp/` が入っていることを確認する（init 再実行で自動追加される）
+
+
 ### Fixed
 
 * **mutation:** harden the diff scope and align docs after merge-gate review ([#86](https://github.com/Crearize/ai-dev-helm/issues/86)) ([2e8fa23](https://github.com/Crearize/ai-dev-helm/commit/2e8fa23f1385efb7791b30361e0ae758b9b39a7a))
