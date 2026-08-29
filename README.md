@@ -26,7 +26,7 @@ AI コーディングツール（Claude Code, Cursor, Codex）のための汎用
 - [共有ドキュメントの詳細](#共有ドキュメントの詳細)
 - [レビューガイドの詳細](#レビューガイドの詳細)
 - [技術スタック別ルールの詳細](#技術スタック別ルールの詳細)
-- [CLAUDE.md テンプレートの設計](#claudemd-テンプレートの設計)
+- [AGENTS.md 正本テンプレートの設計](#agentsmd-正本テンプレートの設計)
 - [カスタマイズ方法](#カスタマイズ方法)
 - [技術スタックの追加](#技術スタックの追加)
 - [superpowers 自動同期](#superpowers-自動同期)
@@ -180,7 +180,7 @@ Setting up Cursor...
 Setup complete!
 
 Next steps:
-  1. Review and customize CLAUDE.md / .cursorrules
+  1. Review and customize AGENTS.md / .cursorrules
   2. Update tech stack and port information
   3. Add project-specific coding rules
   4. Run the lint-scaffolding skill to wire the lint/ assets and create the lint:all command
@@ -398,7 +398,7 @@ Step 4 では、専門家ペルソナが並列のサブエージェントとし�
 
 Claude Code の Task ツールの `model` パラメータは短縮エイリアス（`fable` / `opus` / `sonnet` / `haiku`）のみを受理するため、テンプレートでは `claude-opus-5` などのフル ID ではなく短縮名で指定します。また、テンプレートのモデル表はスキル内のモデル選択ガイド（例: subagent-driven-development の Model Selection 節）より優先されます。
 
-Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
+Claude Code / Codex はサブエージェントごとのモデルを共通正本テンプレート（`AGENTS.md`）で明示指定しています。Claude Code は `CLAUDE.md` 経由で同じ正本を読みます。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
 
 計画の実行はハーネスを問わず**サブエージェント駆動（subagent-driven-development）がデフォルト**です。メインセッション（Fable / GPT-5.6-Sol）は計画・オーケストレーションに専念し、実装タスクは Opus 5 等のサブエージェントに委譲することで、Fable のトークン消費を計画・設計に集中させます。インライン実行（executing-plans）はユーザーが明示的に指示した場合のみ使用します。
 
@@ -412,7 +412,7 @@ Claude Code / Codex はサブエージェントごとのモデルをテンプレ
 
 ### 自己改善ハーネス
 
-Step 5.75 では、`self-improvement` スキルによりセッション中の改善候補を確認します。改善候補がある場合はユーザーに適用可否を確認し、承認された変更だけを同じブランチ内で `CLAUDE.md` / `AGENTS.md` / `.cursorrules` / `documents/development/coding-rules/` / project スキルへ反映します。候補の有無と判断結果は `.quality-check-report.json` に保存されます。
+Step 5.75 では、`self-improvement` スキルによりセッション中の改善候補を確認します。改善候補がある場合はユーザーに適用可否を確認し、承認された変更だけを同じブランチ内で `AGENTS.md` / `.cursorrules` / `documents/development/coding-rules/` / project スキルへ反映します。候補の有無と判断結果は `.quality-check-report.json` に保存されます。
 
 ### レポート出力
 
@@ -586,7 +586,8 @@ ai-dev-helm/
 
 ```
 your-project/
-├── CLAUDE.md                       # Claude Code のメイン設定ファイル
+├── AGENTS.md                       # AI 共通の正本設定ファイル
+├── CLAUDE.md                       # Claude Code の入口（@AGENTS.md を読む）
 ├── .cursorrules                    # Cursor のメイン設定ファイル
 │
 ├── .claude/                        # Claude Code 用ディレクトリ
@@ -643,7 +644,7 @@ your-project/
 
 ```
 your-project/
-├── AGENTS.md                       # Codex のメイン設定ファイル（プロジェクトルート）
+├── AGENTS.md                       # Codex が直接読む共通正本（プロジェクトルート）
 └── .codex/                         # Codex 用ディレクトリ
     ├── skills -> ../skills         #   スキルへのシンボリックリンク
     ├── rules/                      #   コーディングルール
@@ -656,9 +657,9 @@ your-project/
 
 | ファイル | 役割 |
 |---------|------|
-| `CLAUDE.md` | Claude Code が会話開始時に読み込む設定ファイル。プロジェクト概要、ルール、コマンド一覧を記述 |
+| `CLAUDE.md` | Claude Code が会話開始時に読み込む入口ファイル。`@AGENTS.md` で共通正本を読む |
 | `.cursorrules` | Cursor が参照するプロジェクト設定ファイル |
-| `AGENTS.md` | Codex CLI が会話開始時に読み込む設定ファイル（プロジェクトルートからチェーンマージ） |
+| `AGENTS.md` | Codex CLI が直接読み、Claude Code も `CLAUDE.md` 経由で読む共通正本。プロジェクト概要、ルール、コマンド一覧を記述 |
 | `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施のマージ（main への取り込み）をブロックするフックなど |
 | `.claude/hooks/` / `.codex/hooks/` | 品質ゲートフック本体（`quality-gate.cjs`）。Node 製のため Windows / macOS / Linux で同一動作（`jq` 等の外部ツール不要） |
 | `.codex/config.toml` | Codex のプロジェクトローカル設定（approval/sandbox） |
@@ -744,9 +745,11 @@ Cursor を選択した場合、スタック固有のコーディングルール�
 
 ---
 
-## CLAUDE.md テンプレートの設計
+## AGENTS.md 正本テンプレートの設計
 
-`init` で生成される `CLAUDE.md` は、Claude Code が会話開始時に読み込む設定ファイルです。単なるルール集ではなく、AI の行動基準をレベル分けして定義しています。
+`init` で生成される `AGENTS.md` は、Codex が直接読み、Claude Code も `CLAUDE.md` の `@AGENTS.md` 経由で読む共通正本です。単なるルール集ではなく、AI の行動基準をレベル分けして定義しています。
+
+`CLAUDE.md` は正本を複製せず、Claude Code の入口として `@AGENTS.md` を読む薄いファイルにします。メンテナンス対象は原則 `AGENTS.md` だけです。
 
 ### SuperPowers 適用ルール
 
@@ -776,9 +779,9 @@ Cursor を選択した場合、スタック固有のコーディングルール�
 
 セットアップ後、プロジェクトに合わせてカスタマイズしてください。
 
-### 1. CLAUDE.md / .cursorrules の編集
+### 1. AGENTS.md / .cursorrules の編集
 
-生成された `CLAUDE.md` にはプレースホルダーやテンプレート的な記述が含まれています。以下を更新してください。
+生成された `AGENTS.md` にはプレースホルダーやテンプレート的な記述が含まれています。以下を更新してください。
 
 - プロジェクト概要・アーキテクチャの説明
 - 技術スタック（使用ライブラリ、バージョン）
