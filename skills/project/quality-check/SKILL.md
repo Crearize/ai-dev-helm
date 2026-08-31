@@ -419,8 +419,15 @@ JSONフォーマット例：
   "total_cycles": 1,
   "cycle_abort_reason": null,
   "cycle_extensions": [],
-  "e2e_result": "pass",
-  "e2e_issues": [],
+  "e2e": {
+    "recommendation": "none",
+    "recommendation_basis": ["バックエンドのみの変更"],
+    "user_decision": "not_proposed",
+    "decline_reason": null,
+    "result": "skipped",
+    "issues": [],
+    "new_scenarios": []
+  },
   "risk_level": "high",
   "lint_cycles": 1,
   "lint_abort_reason": null,
