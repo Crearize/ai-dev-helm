@@ -14,7 +14,7 @@ description: init 直後またはスタック変更時に実行。静的チェ�
 - 配線した Lint 資産は**実際に実行して動くことを確認するまで配線完了としない**
 - `quality-check` スキルの Step 2 は、`lint:all` が定義されていればそれを静的チェックコマンドとして使う（`quality-check` SKILL.md 側に規定済み）。本スキルはその `lint:all` を整備する側である
 
-数値・閾値（修正サイクル上限・ミューテーションスコア閾値等）は本スキルに置かない。`documents/development/quality-policy.md` §2 / §5 を正とする。
+数値（修正サイクル上限・ミューテーションの実行時間バジェット等）は本スキルに置かない。`documents/development/quality-policy.md` §2 / §5 を正とする。
 
 ---
 
@@ -136,9 +136,9 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 
 **未カバースタックの生成**: 事前ビルド資産のないスタック（例: React + Hono）は、従来どおり Stryker（JS/TS）/ PIT（Java）の設定を**カタログ基準から生成**して補完する。生成した設定も下記の実実行確認を必須とする。
 
-いずれの場合も、全体スコープと差分スコープのエントリポイント（JS: `mutation:full` / `mutation:diff` の package.json scripts、Java: `mutationFull` / `mutationDiff` の Gradle タスク）を登録し、**選択と配線先をカバレッジマップに記録する**。差分スコープはツールの最小粒度（Stryker は変更行、PIT は変更クラス）であり、変更ファイル全体を対象にしない（`documents/development/quality-policy.md` §2「差分スコープの定義」）。事前ビルド資産があるのに配線せずスキップする場合も、その選択と理由を記録する（`quality-check` Step 3.5 は未配線を `reason: "not_configured"` で記録する）。
+いずれの場合も、全体スコープと差分スコープのエントリポイント（JS: `mutation:full` / `mutation:diff` の package.json scripts、Java: `mutationFull` / `mutationDiff` の Gradle タスク）を登録し、**選択と配線先をカバレッジマップに記録する**。差分スコープはツールの最小粒度（Stryker は変更行、PIT は変更クラス）であり、変更ファイル全体を対象にしない（`documents/development/quality-policy.md` §2「差分スコープの定義」）。事前ビルド資産があるのに配線せずスキップする場合も、その選択と理由を記録する（`test-recommendation` スキル（`quality-check` Step 5 から参照実行）は未配線のプロダクトではミューテーションを提案せず、`reason: "not_configured"` を記録する）。
 
-**配線完了条件（MUST・Lint 資産と同一の規律）**: ミューテーション配線は、**実際に一度実行して（`mutation:full` / `mutationFull`、またはミュータントが生成される変更を対象にした差分スコープの実行 — 差分スコープは変更行にミュータント点がないと空スコープとして何もせず終了するため、確認には必ずミュータントが生成される対象を選ぶ）、ミュータントが生成されスコアが算出されることを確認するまで「配線完了」としない。** 事前ビルド資産が実実行で検証されて出荷されているのと同じ「数える前に走らせる」規律を配線にも適用する。スコア閾値・実行時間バジェットは本スキルに置かず `documents/development/quality-policy.md` §2 を正とする — スコアはレポートに出力され、§2 のゲート適用は `quality-check` が行う。
+**配線完了条件（MUST・Lint 資産と同一の規律）**: ミューテーション配線は、**実際に一度実行して（`mutation:full` / `mutationFull`、またはミュータントが生成される変更を対象にした差分スコープの実行 — 差分スコープは変更行にミュータント点がないと空スコープとして何もせず終了するため、確認には必ずミュータントが生成される対象を選ぶ）、ミュータントが生成されスコアが算出されることを確認するまで「配線完了」としない。** 事前ビルド資産が実実行で検証されて出荷されているのと同じ「数える前に走らせる」規律を配線にも適用する。実行時間バジェットは本スキルに置かず `documents/development/quality-policy.md` §2 を正とする — スコアはレポートに出力され、実行の提案・トリアージは `test-recommendation` スキルが担う（通過判定なし・非ブロック）。
 
 ### 3-4. `lint:all` の作成と実行確認
 

@@ -116,14 +116,14 @@ The `1.15.0` here is the **gradle-pitest-plugin** version (the Gradle integratio
 
 2. In the copied `lint/mutation/pitest.gradle`, replace every `__BASE_PACKAGE__` with the product's base package (e.g. `com.example.product`), exactly as for the ArchUnit template. That sets `targetClasses` to the product's production classes.
 
-The snippet sets `junit5PluginVersion` (Spring Boot tests are JUnit 5), `mutators = ['DEFAULTS']` (PIT's own default group of behaviour-changing mutators, pinned so the scope never silently widens to `STRONGER` / `ALL`), `outputFormats = ['XML', 'HTML']`, and `timestampedReports = false`. It deliberately sets **no `mutationThreshold`** or any other gate threshold: score gating is owned by quality-check (below).
+The snippet sets `junit5PluginVersion` (Spring Boot tests are JUnit 5), `mutators = ['DEFAULTS']` (PIT's own default group of behaviour-changing mutators, pinned so the scope never silently widens to `STRONGER` / `ALL`), `outputFormats = ['XML', 'HTML']`, and `timestampedReports = false`. It deliberately sets **no `mutationThreshold`** or any other gate threshold: there is no score gate anywhere - survivor triage is the `test-recommendation` skill's job (below).
 
 ### Entry points
 
 `pitest.gradle` registers both entry points itself. Gradle task names cannot contain `:` (it is the project-path separator), hence these names rather than the JS-side `mutation:full` / `mutation:diff` script names:
 
 - `gradle mutationFull` - the full-scope run (`gradle pitest` over everything under `targetClasses`, `__BASE_PACKAGE__.*`).
-- `gradle mutationDiff -PmutationDiffBase=origin/main` - the diff-scoped run quality-check Step 3.5 uses. The snippet lists the production sources changed in the **working tree** against the merge base of the base ref (uncommitted edits count), maps each to two `targetClasses` entries - the FQCN and `FQCN$*` for inner/nested classes (a bare `FQCN*` would also swallow unchanged sibling classes like `OrderServiceImpl`) - and narrows the run to them. PIT mutates whole classes - line-level scoping is not available - so this is the smallest scope PIT supports. Paths are resolved relative to the project the snippet is applied to, which also works for one module of a multi-module build.
+- `gradle mutationDiff -PmutationDiffBase=origin/main` - the diff-scoped run the `test-recommendation` skill (quality-check Step 5, propose-then-decide) uses. The snippet lists the production sources changed in the **working tree** against the merge base of the base ref (uncommitted edits count), maps each to two `targetClasses` entries - the FQCN and `FQCN$*` for inner/nested classes (a bare `FQCN*` would also swallow unchanged sibling classes like `OrderServiceImpl`) - and narrows the run to them. PIT mutates whole classes - line-level scoping is not available - so this is the smallest scope PIT supports. Paths are resolved relative to the project the snippet is applied to, which also works for one module of a multi-module build.
 
 Guard rails on the diff run:
 
@@ -138,8 +138,8 @@ Products that keep a persisted PIT history (`historyInputLocation` / `historyOut
 
 ### Maven products
 
-For a Maven build, use the `pitest-maven` plugin instead of this Gradle snippet: configure the `org.pitest:pitest-maven` plugin with the same intent - `targetClasses` set to the product base package, `mutators` at `DEFAULTS`, JUnit 5 support via `pitest-junit5-plugin`, XML + HTML `outputFormats`, and no `mutationThreshold`. For the diff scope, derive `targetClasses` from the changed sources the same way (a small script or profile passing `-DtargetClasses=...`). The scaffolding is Maven-specific but the score gating and thresholds are identical.
+For a Maven build, use the `pitest-maven` plugin instead of this Gradle snippet: configure the `org.pitest:pitest-maven` plugin with the same intent - `targetClasses` set to the product base package, `mutators` at `DEFAULTS`, JUnit 5 support via `pitest-junit5-plugin`, XML + HTML `outputFormats`, and no `mutationThreshold`. For the diff scope, derive `targetClasses` from the changed sources the same way (a small script or profile passing `-DtargetClasses=...`). The scaffolding is Maven-specific but the reading of the report - by the `test-recommendation` skill, with no score gate - is identical.
 
 ### How the score is gated
 
-quality-check reads the **XML** report PIT writes (`build/reports/pitest/mutations.xml`), lists the survivors, triages them (gate mode) and compares the adjusted score against the risk-based thresholds and time budget defined in quality-policy section 2 - the single source for those numbers. This snippet never hardcodes them, and neither should the product's build files (overrides go through the harness settings contract described in that section, not here). Mutation runs are **local-only**; there is no CI job in this repo that runs PIT.
+The `test-recommendation` skill (quality-check Step 5, propose-then-decide) reads the **XML** report PIT writes (`build/reports/pitest/mutations.xml`), lists the survivors, triages them with the user and presents the raw score as reference information - there is no pass/fail score. The run's time budget is defined in quality-policy section 2 - the single source for that number. This snippet never hardcodes it, and neither should the product's build files (overrides go through the harness settings contract described in that section, not here). Mutation runs are **local-only**; there is no CI job in this repo that runs PIT.

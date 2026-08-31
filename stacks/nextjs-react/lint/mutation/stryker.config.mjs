@@ -11,9 +11,10 @@
 //     lines changed since the base ref (see changed-ranges.mjs).
 //   - Run locally only. Mutation testing is not part of CI.
 //
-// Score gating is NOT done here. quality-check reads the json report below and
-// compares the mutation score against the thresholds single-sourced in
-// quality-policy.md §2. Do not hardcode gate numbers in this file.
+// There is no score gate - not here, not downstream. The test-recommendation
+// skill (quality-check Step 5) reads the json report below, presents the score
+// as reference information and triages survivors with the user
+// (quality-policy.md §2). Do not add gate numbers to this file.
 
 export default {
   // --- runner (product tunes: swap for jest products) --------------------
@@ -69,10 +70,10 @@ export default {
 
   // --- reporters ---------------------------------------------------------
   // clear-text: console summary. html: human report. json: the machine report
-  // quality-check reads for the mutation score.
+  // the test-recommendation skill reads for the mutation score.
   reporters: ['clear-text', 'json', 'html'],
 
-  // Pin the json report path so quality-check reads it from a fixed,
+  // Pin the json report path so the report is read from a fixed,
   // predictable location instead of relying on Stryker's implicit default.
   // Mirrors PIT's stable-path approach (timestampedReports = false).
   jsonReporter: {
@@ -86,12 +87,12 @@ export default {
   incremental: true,
   incrementalFile: 'reports/mutation/stryker-incremental.json',
 
-  // --- report-coloring hints only (NOT the gate) -------------------------
+  // --- report-coloring hints only (NOT a gate) ---------------------------
   // thresholds.high / thresholds.low only color the html/clear-text report
-  // bands and are deliberately NOT set to the policy gate values. They are NOT
-  // the quality gate. The gate lives in quality-policy.md §2 and is applied by
-  // quality-check. thresholds.break is intentionally left unset so Stryker
-  // never fails the run on score; gating is quality-check's job.
+  // bands. There is no mutation-score gate: the score is reference
+  // information for the test-recommendation skill's survivor triage
+  // (quality-policy.md §2). thresholds.break is intentionally left unset so
+  // Stryker never fails the run on score.
   thresholds: {
     high: 90,
     low: 50,

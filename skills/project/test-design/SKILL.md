@@ -222,7 +222,7 @@ Step 1・2 で挙げたリスクと不変条件を Failure Mode カテゴリに�
 
 `verified` を名乗れるのは、メモの作成が対象実装の最初のコミットより前であることを確認できた場合のみであり、確認できないときは `retroactive` に倒す。
 
-**Step 3.5（ミューテーションテスト）との接続**: `gate` モードの通過条件（`documents/development/quality-policy.md` §2「通過条件とトリアージ」）は、本メモの「保証すべき状態遷移・不変条件」（Step 2）と「ファルシフィケーション項目」（Step 5）に対応する変更行で生存したミュータント（memo-linked）を `accepted` / `unresolved` にできないと定める。この2項目が具体的であるほど、Step 3.5 の生存ミュータントのうち「必ず殺すべきもの」が機械的に特定できる。
+**ミューテーションテスト（test-recommendation スキル）との接続**: ミューテーションを実施した場合、本メモの「保証すべき状態遷移・不変条件」（Step 2）と「ファルシフィケーション項目」（Step 5）に対応する変更行で生存したミュータントは `memo_linked: true` として台帳に載り、**対処提案の優先度が上がる**（`test-recommendation` スキル「通過判定なし — 対処範囲の合意」）。この2項目が具体的であるほど、生存ミュータントのうち「優先的に対処提案すべきもの」が機械的に特定できる。
 
 照合結果は `.quality-check-report.json` の `test_design`（`memo_path` を含む）に記録される。フィールド定義は `skills/project/_schemas/quality-check-report.schema.md` を参照する。
 
