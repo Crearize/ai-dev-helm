@@ -49,6 +49,7 @@ This file is loaded by Claude Code at the start of each session.
 5. **Document reviews stay** - The spec-document and plan-document review loops (during brainstorming / writing-plans) are retained: dispatch a document reviewer, with the iteration cap and escalation rule defined in `documents/development/quality-policy.md` §5.5 (read them there - do not restate the numbers here). **This overrides the "fix inline, no need to re-review" guidance in `superpowers:brainstorming` / `superpowers:writing-plans`** - the reviewer loop is required here even though those skills do not run one. A wrong design or plan compounds through every task and cannot be repaired by the final gate.
 6. **Subagent budget in the plan** - Every implementation plan must state an expected subagent-dispatch count (target and cap). When the run is projected to exceed it, escalate to the user instead of continuing silently.
 7. **The merge gate is not relaxed** - The final `quality-check` gate (Step 4) keeps its own rule that every High/Medium finding is addressed. If the gate produces many findings, do not reinstate per-task reviews; route the causes instead (mechanically detectable issues to the lint layer, design-level issues into the spec/plan review checklists).
+8. **Platform constraints are confirmed first** - Designs or verifications that rely on a platform constraint (rate limits, execution time caps, size limits) MUST confirm the constraint against official documentation before work starts - never assume a limit from memory.
 
 ### Subagent Model Selection
 
@@ -92,13 +93,14 @@ Step 1: Change area + risk level detection (git diff; risk levels per quality po
     |
 Step 2/3: Static checks + tests (High/Medium: cross-check the test-design memo)
     |
-Step 3.5: Mutation testing on the changed lines (Stryker) / changed classes (PIT) (High and Medium: gate by default, once per quality-check cycle; skipped when not configured or the scope is empty)
+Step 4: Review cycles (staged personas by diff size, min 1 cycle; cycles 2+ verify fixes
+        with only the personas that raised findings; a new high finding reverts to the
+        full set; the QA persona works falsification-first)
     |
-Step 4: Review cycles (staged personas by diff size, min 1 cycle; the QA persona works
-        falsification-first - hunt for inputs that prove the implementation wrong;
-        repeat only on High/Medium findings)
-    |
-Step 5: E2E tests (final verification)
+Step 5: Additional-test proposal (test-recommendation skill: heuristics recommend
+        mutation/E2E runs with rationale, the user decides, approved runs execute;
+        declines are recorded and never block - except an executed E2E that fails
+        must be fixed)
     |
 Step 6: Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
 ```
@@ -112,23 +114,20 @@ Thresholds, cycle caps and time budgets are defined in `documents/development/qu
 - If main advanced independently after the flag was issued, the merged main (feature + main combined) is unverified: the merge may succeed but the push to main is blocked. Re-run `/quality-check` on the merged main, then push.
 - Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths. It must go through quality-check (a reduced-persona review at minimum). The same applies to **gate control-plane files** - `skills/project/quality-check/**` and `skills/project/_schemas/**`, the `.claude/skills` and `.claude/hooks` trees (including the `.claude/skills` symlink node itself - `init` creates it as a link, and re-pointing that one path swaps the whole quality-check tree) and their `.codex/**` / `.cursor/**` copies, `.github/review-*.md`, the hook registration files (`.codex/hooks.json` and the `.claude` / `.cursor` equivalents), `.codex/config.toml` (whole-file: it can carry an inline `[hooks]` table, a `[features]` hooks kill-switch and `[[rules]]` deny decisions), the MCP registration files (`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json` - MCP server definitions register command execution, the same class as hooks), and the hook registration inside `.claude/settings.json` AND `.claude/settings.local.json` (Claude Code reads both, the latter at higher precedence): the `hooks` block, the `disableAllHooks` / `allowManagedHooksOnly` hook-disable keys, and the `permissions.deny` rule list (the deny layer backing the destructive-command guards; `permissions.allow` changes stay exempt) - unregistering or disabling the hook, or weakening the deny layer, disables protection just as surely as editing the hook does. Path matching is case-insensitive (`.claude/Hooks/...` is the same file as `.claude/hooks/...` on Windows/macOS). With in-development reviews consolidated into the merge gate, these must never change with zero review (the quality-gate hook enforces this carve-out and blocks such diffs with `Gate control-plane changed:`).
 
-<!-- Quality Gate Overrides (optional). Uncomment only the key(s) you want to change and
-     write your value. Defaults are deliberately NOT written here - they live in
-     documents/development/quality-policy.md §2 (single source). Weakening a High-risk
-     gate is prohibited, and changing these keys is never exempt from the merge gate.
-     These four keys are the only recognized override keys. While commented out (or
-     inside a code span/fence) the block declares nothing and the policy defaults apply.
+<!-- Quality Gate Overrides (optional). Uncomment the key if you want to change it and
+     write your value. The default is deliberately NOT written here - it lives in
+     documents/development/quality-policy.md §2 (single source). `mutation_budget_minutes`
+     is the only recognized override key, and changing it is never exempt from the merge
+     gate. While commented out (or inside a code span/fence) the block declares nothing
+     and the policy default applies.
 
 ### Quality Gate Overrides
-- mutation_threshold_high: <percent>
-- mutation_threshold_medium: <percent>
 - mutation_budget_minutes: <minutes>
-- mutation_mode_medium: <gate|advisory|off>
 -->
 
 ### Multi-Persona Review
 
-Specialist personas review in parallel as Agents (each dispatched with `model: opus` - see Subagent Model Selection):
+`quality-check` owns a single outer cycle (Step 2 static checks -> Step 3 tests -> Step 4 personas -> consolidated-findings fixes). Within Step 4, specialist personas review in parallel as Agents (each dispatched with `model: opus` - see Subagent Model Selection):
 
 | Persona | Focus Area |
 |---------|-----------|
@@ -139,10 +138,10 @@ Specialist personas review in parallel as Agents (each dispatched with `model: o
 | Performance Engineer | Algorithmic complexity, query performance, bundle size, caching |
 | Requirements Consistency Reviewer | Issue/design alignment, acceptance criteria, domain terminology |
 
-- **Completion criteria**: 0 must-fix items (Priority: High) from all applied personas
+- **Completion criteria**: no High/Medium findings remaining in the consolidated results, minimum 1 cycle, and the Step 5 additional-test proposal presented with the user's decision recorded (the `quality-check` skill holds the full definition - read it there)
 - Code changes under 200 diff lines (generated files excluded): 3 personas (Security, QA, Integration Architecture). 200+ lines: all 6 personas. Docs/infra-only changes: reduced persona set (see `quality-check` skill)
-- Minimum 1 cycle. Run another cycle only if the previous one had High/Medium findings; repeat until 0 must-fix items
-- After fixes, re-verify only the affected scope (static checks + related tests + re-check by the personas that raised the findings) - no full restart
+- Minimum 1 cycle. Run another cycle only if the previous one left High/Medium consolidated findings
+- Cycles 2+ are a verification review: only the personas that raised High/Medium findings in the previous cycle re-review the fix diffs and responses; a new high finding reverts the next cycle to the full persona set over the full diff
 - Run `self-improvement` before creating `.quality-check-passed`
 
 ---
