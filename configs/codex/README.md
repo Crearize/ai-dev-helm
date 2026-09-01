@@ -40,7 +40,24 @@ Files are merged with closer paths overriding earlier ones (combined size limit:
 
 ## How Hooks Work
 
-`.codex/hooks.json` defines a `PreToolUse` hook that:
+`.codex/hooks.json` registers events under a top-level `hooks` key (Codex's schema, not a bare event key at the top level — see [#112](https://github.com/Crearize/ai-dev-helm/issues/112)):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          { "type": "command", "command": "node .codex/hooks/quality-gate.cjs", "timeout": 30 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The registered `PreToolUse` hook:
 
 1. Runs before every Bash tool invocation
 2. If the command is `gh pr merge`, `git merge` on main/master, or a push targeting main/master, validates `.quality-check-passed` (commit-bound JSON written by the quality-check skill)
