@@ -26,7 +26,9 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ただしハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）の差分がゲートパラメータ（quality-check の実行時間バジェット。キー名は `documents/development/quality-policy.md` §2「上書きの契約」の `Quality Gate Overrides` 記法）の変更を含む場合、この免除は適用しない。この場合は本スキルを実行し（最低でも縮退レビュー）、フラグを作成する。hook 側もこのカーブアウトを免除判定に反映するため、フラグなしでのマージはブロックされうる。
 
-同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`.claude/skills` と `.claude/hooks` のツリー（`.claude/skills` はリンクノード自体を含む — `init` はこれをシンボリックリンクとして作成するため、1 パスの張り替えで quality-check ツリー全体が差し替わる）とその `.codex/**`・`.cursor/**` コピー・`.github/review-*.md`・hook 登録ファイル（`.codex/hooks.json` と `.claude` / `.cursor` の同等物）・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json` — MCP サーバー定義は command/args 実行の登録であり hooks.json と同クラス）**および hook 登録を担う `.claude/settings.json` と `.claude/settings.local.json`（Claude Code は両方を読み、後者が高優先度）の `hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` の hook 無効化キー・`permissions.deny` ルールリスト（破壊的コマンドガードを支える deny 層。`permissions.allow` の変更は免除のまま） — 登録を外す・無効化する・deny 層を弱めれば実体を守っても同じため）**。パスのマッチは大文字小文字を区別しない（Windows/macOS では `.claude/Hooks/...` は `.claude/hooks/...` と同一ファイル）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（最低でも縮退レビューを実施しフラグを作成する。本カーブアウトは hook が強制する — 該当差分はフラグなしでのマージ・push が `Gate control-plane changed:` でブロックされる）。
+同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`skills/project/test-recommendation/**`（Step 5 は完了条件の構成要素であり、判定・提示・実行・記録の規定は同スキルを単一ソースとするため）・`.claude/skills` と `.claude/hooks` のツリー（`.claude/skills` はリンクノード自体を含む — `init` はこれをシンボリックリンクとして作成するため、1 パスの張り替えで quality-check ツリー全体が差し替わる）とその `.codex/**`・`.cursor/**` コピー・`.github/review-*.md`・hook 登録ファイル（`.codex/hooks.json` と `.claude` / `.cursor` の同等物）・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json` — MCP サーバー定義は command/args 実行の登録であり hooks.json と同クラス）**および hook 登録を担う `.claude/settings.json` と `.claude/settings.local.json`（Claude Code は両方を読み、後者が高優先度）の `hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` の hook 無効化キー・`permissions.deny` ルールリスト（破壊的コマンドガードを支える deny 層。`permissions.allow` の変更は免除のまま） — 登録を外す・無効化する・deny 層を弱めれば実体を守っても同じため）**。パスのマッチは大文字小文字を区別しない（Windows/macOS では `.claude/Hooks/...` は `.claude/hooks/...` と同一ファイル）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（最低でも縮退レビューを実施しフラグを作成する。本カーブアウトは hook が強制する — 該当差分はフラグなしでのマージ・push が `Gate control-plane changed:` でブロックされる）。
+
+hook（quality-gate.cjs）への `skills/project/test-recommendation/**` パターンの追加は次期 hook 改修（Issue #90）で行う。それまで本カーブアウトは文書規範として拘束する。
 
 README や `documents/` 配下の利用者向けドキュメントはハーネスファイルに**含まれない**（docs 縮退レビューの対象）。
 
@@ -105,6 +107,8 @@ git diff --name-only origin/main...HEAD
 git diff --name-only origin/main...HEAD
 ```
 
+Step 0 で取得済みの変更ファイル一覧を再利用してよい（同一コマンド）。
+
 変更ファイルのパスから以下の領域を判定する：
 
 | パスパターン | 領域 |
@@ -126,7 +130,7 @@ git diff --name-only origin/main...HEAD
 | infra | 該当ビルドコマンド | - | review-infra.md + 統合レビュー | test-recommendation スキルで判定 |
 | 複合 | 各領域の静的チェックを全て実行 | 各領域のテストを全て実行 | 各領域のレビューガイド + 統合レビュー | test-recommendation スキルで判定 |
 
-> docs のみの変更では Step 2, 3 がスキップされ、縮退レビュー（Step 4「レビュー縮退ルール」参照）と Step 5（追加テスト提案）・Step 5.75（self-improvement）が実行される。infra のみの変更では **Step 2（該当ビルドコマンド）を実行し**、Step 3 をスキップして同じく縮退レビュー以降を実行する。docs / infra のみの変更では Step 5 の E2E ヒューリスティクスは「提案しない」に該当する（判定・記録の詳細は test-recommendation スキルに委譲する）。
+> docs のみの変更では Step 2, 3 がスキップされ、縮退レビュー（Step 4「レビュー縮退ルール」参照）と Step 5（追加テスト提案）・Step 5.75（self-improvement）が実行される。infra のみの変更では **Step 2（該当ビルドコマンド）を実行し**、Step 3 をスキップして同じく縮退レビュー以降を実行する。docs / infra のみの変更では、Step 5 のミューテーションは領域による対象外（`reason: "out_of_scope"` を直接記録する — test-recommendation の「未実行理由の優先順位」表を正とする）、E2E はヒューリスティクスで「提案しない」（`recommendation: "none"` / `user_decision: "not_proposed"`）となる。スキルの全文参照実行は不要で、判定結果の記録のみ行う。
 >
 > Step 3 欄が `-` の領域ではテスト設計メモの照合も実行しない（`documents/development/quality-policy.md` §2「マトリクス優先順位原則」）。
 
@@ -285,7 +289,7 @@ backend / frontend のコード変更を含まない場合、ペルソナセッ�
 縮退時の注意：
 
 - 縮退時もペルソナは並列サブエージェントとして実行し、指示テンプレート・出力形式・統合手順は通常時と同じ
-- 必須修正（優先度: 高）が残る限り、縮退時でもサイクルを繰り返す
+- 縮退時もサイクルの終了判定は本スキルの「完了条件」節に従う（縮退の有無で完了条件は変わらない）
 - docs のみの変更でのセキュリティ観点は、機密情報の混入（資格情報、内部URL、個人情報）の検出に絞る
 - 縮退の適用有無と適用ペルソナを `.quality-check-report.json` の各サイクルに記録する
 
@@ -315,7 +319,7 @@ backend / frontend のコード変更を含まない場合、ペルソナセッ�
 [ペルソナの説明]
 
 ## レビュー対象
-`git diff origin/main...HEAD` の変更差分
+[通常（サイクル1・フルセット復帰時）: `git diff origin/main...HEAD` の全差分 / 検証レビュー（`review_mode: "verification"`）: 前サイクルの自身の指摘に対する修正差分と対応内容]
 
 ## 前段工程の結果（このサイクルの Step 2〜3）
 - 静的チェック: [残存違反の一覧。なければ「なし」]
@@ -345,7 +349,7 @@ backend / frontend のコード変更を含まない場合、ペルソナセッ�
 - 要件・仕様整合性レビュアー: Issue、要件、設計、ドキュメント、受け入れ条件と実装の一致を重視してください。
 
 ## ミューテーション生存台帳（QA エンジニアのみ）
-[Step 5 / test-recommendation を先行して単体実行済みの場合のみ、その生存台帳（mutant / decision / category / reason / memo_linked の一覧）を含める。なければ本節ごと省略]
+[**同一セッション内で** test-recommendation を単体実行済みで、生存台帳（mutant / decision / category / reason / memo_linked の一覧）がセッションに残っている場合のみ含める（永続台帳には生存台帳の表は無い）。なければ本節ごと省略]
 
 ## 出力形式
 以下の形式で指摘を出力してください：
@@ -385,9 +389,13 @@ backend / frontend のコード変更を含まない場合、ペルソナセッ�
 |---|---|---|---|
 | 1 | 段階化・縮退ルールどおり（3〜6ペルソナ） | 全差分 | `staged` / `full` / `reduced` |
 | 2以降（既定） | **前サイクルで高/中指摘を出したペルソナのみ** | 前サイクルの自身の指摘・対応内容・修正差分（`git diff` の該当部分）を検証 | `verification` |
-| 2以降（復帰条件） | 検証レビューで**新規の高指摘**が出た場合、次サイクルは**フルセット**（サイクル1と同一セット）に復帰 | 全差分 | サイクル1と同じ |
+| 2以降（復帰条件: 新規の高指摘） | 検証レビューで**新規の高指摘**（**前サイクルの統合指摘に同一箇所・同一内容の項目が存在しない高指摘**。前サイクル指摘への再指摘は停滞判定の対象であり「新規」に含めない — 停滞検出と同じ判定を流用する）が出た場合、次サイクルは**フルセット**（サイクル1と同一セット）に復帰 | 全差分 | サイクル1と同じ |
+| 2以降（復帰条件: 規模） | 前サイクルの修正差分が **200行以上**、または指摘元ペルソナの担当領域外のファイルに及ぶ場合、次サイクルは**フルセット**（サイクル1と同一セット）に復帰 | **修正差分のみ**に限定してよい | サイクル1と同じ |
 
-- 前サイクルの残存指摘が非ペルソナ由来（`source: "lint"` / `"test"` の高指摘）のみでペルソナの高/中指摘が0件の場合、サイクル2以降の Step 4 は**スキップする**（`personas: []`・`review_mode: "verification"` を記録）。lint / テスト起因の修正は次サイクルの Step 2 / 3 が機械的に再検証するため、ペルソナによる検証対象がない
+- 前サイクルの残存指摘が非ペルソナ由来（`source: "lint"` / `"test"` の高指摘）のみでペルソナの高/中指摘が0件の場合、サイクル2以降の Step 4 は次のとおり分岐する:
+  - 修正差分が**テスト・設定・フォーマットのみ**（production コード非該当）→ Step 4 を**スキップする**（`personas: []`・`review_mode: "verification"` を記録）
+  - 修正差分が **production コードに及ぶ** → スキップせず、**セキュリティエンジニアと QA エンジニアの2ペルソナ**による検証レビューを実施する（対象は直近のペルソナレビュー以降の差分）。テストを緑にするために実装側の検証・認可・エラー処理を緩めていないかを判定観点に含める（quality-policy §0 のリワードハッキング）
+  - 理由: Step 2 / 3 が再検証するのは「静的チェックが通るか」「テストが緑か」だけであり、緑にするために実装へ何を加えたかは検証しない。ペルソナが一度も見ていない production 差分をフラグに到達させない
 
 #### 4-4. レポートデータ蓄積
 
@@ -451,10 +459,6 @@ JSONフォーマット例：
 }
 ```
 
-### 完了条件
-
-**統合指摘に高/中指摘が残っておらず、最低1サイクル完了し、Step 5（追加テスト提案）の提示とユーザー判断の記録が完了していること。** 上限到達・停滞で打ち切った場合はユーザー承認（`gate_override`）をもって完了とみなす。本節が quality-check の完了条件の唯一の定義箇所であり、quality-policy §5.5 等からは本節を参照する。
-
 ---
 
 ## Step 5: 追加テスト提案（test-recommendation）
@@ -467,6 +471,13 @@ JSONフォーマット例：
 - **E2E を実施して失敗した場合のみ例外**: 実バグとして修正 + 影響範囲のみ再検証（静的チェック・該当テスト・E2E 再実行。サイクルには含めない）を経ないとフラグを作成できない
 - 実施したミューテーションの生存への対処（テスト追加 / 台帳持ち越し / 対処不要）はいずれもフラグ作成をブロックしない
 - E2E 実行時のサーバー起動・停止（server-startup 参照・実行後必ず停止）はスキル内の手順に従う
+- **Step 5 で生じた差分（永続台帳の更新・撃殺テスト・新規 E2E シナリオ・E2E 失敗の修正）は、フラグ作成より前にコミットする（MUST）**（台帳はハーネス免除の対象外のため、フラグ発行後のコミットはフラグを無効化する — Step 6「フラグの性質」参照）
+
+---
+
+## 完了条件
+
+**統合指摘に高/中指摘が残っておらず、最低1サイクル完了し、Step 5（追加テスト提案）の提示とユーザー判断の記録が完了していること。** 上限到達・停滞で打ち切った場合はユーザー承認（`gate_override`）をもって完了とみなす。本節が quality-check の完了条件の唯一の定義箇所であり、quality-policy §5.5 等からは本節を参照する。
 
 ---
 
@@ -492,6 +503,8 @@ JSONフォーマット例：
 Step 0 以降の各ステップで蓄積してきた`.quality-check-report.json`に最終結果フィールドを追記する。
 
 ### フラグファイル作成
+
+**フラグ作成の前に、Step 5 で生じた差分（永続台帳の更新・撃殺テスト・新規 E2E シナリオ・E2E 失敗の修正）がコミット済みであることを確認する（MUST）**（台帳はハーネス免除の対象外のため、フラグ発行後のコミットはフラグを無効化する — 下記「フラグの性質」）。
 
 サイクルを打ち切って終了した場合（上限到達・停滞）は、`documents/development/quality-policy.md` §5 に従いユーザーの明示承認なしにフラグを作成しない。承認時は `.quality-check-report.json` の `gate_override` に記録する（スキーマ参照）。
 
@@ -532,7 +545,7 @@ node -e "const c=require('child_process'),f=require('fs');const g=a=>c.execSync(
 - [ ] 差分規模を判定し適用ペルソナセットを決定した（生成ファイル除外済み）
 - [ ] 適用した全ペルソナのレビュー完了
 - [ ] 前段工程の結果（Lint 残存・テスト失敗・test-design 照合）をペルソナのプロンプトに含めた
-- [ ] サイクル2以降は検証レビュー縮退を適用した（前サイクルで高/中指摘を出したペルソナのみ / 新規の高指摘でフルセット復帰 / ペルソナ指摘0件なら Step 4 スキップを `personas: []` で記録）
+- [ ] サイクル2以降は検証レビュー縮退を適用した（前サイクルで高/中指摘を出したペルソナのみ / 新規の高指摘または修正差分の規模・領域逸脱でフルセット復帰 / ペルソナ指摘0件は修正差分が production コード非該当の場合のみ Step 4 スキップを `personas: []` で記録 — production コードに及ぶ場合はセキュリティ + QA の2ペルソナで検証レビュー）
 - [ ] 統合指摘に高/中指摘なし（最低1サイクル完了。上限到達・停滞時はユーザー判断 + `cycle_abort_reason` / `gate_override` 記録）
 - [ ] レポートデータ保存完了
 
@@ -541,6 +554,7 @@ node -e "const c=require('child_process'),f=require('fs');const g=a=>c.execSync(
 - [ ] `strong` / `recommended` の対象を根拠付きで提示し、ユーザー判断を記録した（見送りは理由付き — フラグ作成をブロックしない）
 - [ ] 承認された追加テストの実行が完了した
 - [ ] 永続台帳を更新した
+- [ ] 台帳・Step 5 生成物の差分をコミットしてから Step 6 に進んだ
 - [ ] （E2E 実施時）失敗を実バグとして修正し、影響範囲のみ再検証した
 
 ### 最終確認
