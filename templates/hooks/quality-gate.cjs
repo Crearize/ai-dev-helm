@@ -221,6 +221,9 @@ const GATE_CONFIG_PATTERNS = [
 // re-pointing that link node swaps the whole quality-check tree with a diff
 // of the single path `.claude/skills` (no trailing slash). Matching the node
 // subsumes the old trailing-slash hooks-dir pattern.
+//
+// NOTE: skills/project/test-recommendation/** is control-plane per
+// quality-check SKILL.md but not yet enforced here - add it in the #90 overhaul.
 const GATE_CONTROL_PATTERNS = [
   /(^|\/)skills\/project\/quality-check\//i,
   /(^|\/)skills\/project\/_schemas\//i,
@@ -277,6 +280,12 @@ const HARNESS_PATTERNS = [
 // exemption: weakening a threshold - or switching the Medium mutation mode
 // off - must never merge unchecked. Values are never interpreted here; only
 // the declaration state is compared.
+//
+// NOTE: quality-policy.md §2 currently recognizes only `mutation_budget_minutes`.
+// The other three keys are abolished (no declarations will exist), so the
+// over-inclusion here is harmless (fail-closed). Cleanup happens in the next
+// hook overhaul (#90) - when trimming, KEEP mutation_budget_minutes: dropping
+// it would exempt budget tampering from the merge gate.
 const GATE_PARAM_KEYS = [
   'mutation_threshold_high',
   'mutation_threshold_medium',

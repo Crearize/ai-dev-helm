@@ -97,6 +97,8 @@ The stack rules land at `lint/ast-grep/nextjs-react/` and are picked up by the s
 
 `init` copies `mutation/stryker.config.mjs`, `mutation/stryker.diff.config.mjs` and `mutation/changed-ranges.mjs` to the product's `lint/mutation/`. The base config is a pre-built Stryker config: `testRunner: 'vitest'`, source-only `mutate` globs (tests, `*.d.ts` and generated/build output excluded), a lean mutator set (non-behavioural mutators excluded - the config's exclusion list is the single source; `ignoreStatic` on), the `clear-text` / `json` / `html` reporters, and `incremental` on for the full run. The diff config extends it, narrows `mutate` to the **changed lines**, and turns `incremental` off for its own runs (the cache is full-run state; sharing it would merge stale out-of-scope mutants into the diff report). The diff run is what the `test-recommendation` skill (quality-check Step 5, propose-then-decide) uses.
 
+Known limitation: `ignoreStatic` does not take effect for static mutants that have perTest coverage - Stryker core can still report them as Survived. Triage machine-classifies such survivors as `tool_false_negative` (see the `test-recommendation` skill's triage rules).
+
 ### Wiring
 
 (Upgrading from a v1.10.x wiring: the old `mutation:diff` script used `--since`, which StrykerJS does not have - it never ran. Replace both scripts with the forms below.)

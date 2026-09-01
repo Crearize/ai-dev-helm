@@ -201,6 +201,14 @@ init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成さ
 }
 ```
 
+### 1.12.x からの移行
+
+1.12.x 以前を取り込んでいるプロジェクトは、次の 3 点で最新版に追随します。
+
+1. **`npx ai-dev-helm init` を再実行する** — 新スキル（`test-recommendation`）・台帳雛形・改訂済みドキュメントが配置されます。台帳（`documents/development/test-recommendation-ledger.md`）は copy-if-missing のため、既存の台帳は上書きされません
+2. **ハーネス設定ファイル（CLAUDE.md / AGENTS.md / `.cursorrules`）の `### Quality Gate Overrides` から `mutation_threshold_high` / `mutation_threshold_medium` / `mutation_mode_medium` の宣言を削除する** — quality-check はこれらのキーを認識しなくなりました（認識するのは `mutation_budget_minutes` のみ）。hook は次期改修（Issue #90）まで旧キーの変更を過剰に検知しますが、フェイルセーフ方向（余分にゲートに掛かるだけ）であり実害はありません
+3. **`.quality-check-report.json` を読む自作ツールがある場合は追随する** — 旧トップレベルの `e2e_result` / `e2e_issues` は `e2e` オブジェクトに置き換わり、`mutation.mode` / `mutation.score` / `mutation.threshold` は廃止されました（スキーマは `skills/project/_schemas/quality-check-report.schema.md`）
+
 ### `ai-dev-helm personal` の対話フロー
 
 個人のグローバル環境に安全設定を追加します。
@@ -682,6 +690,7 @@ your-project/
 | **error-codes.md** | エラーコード体系の定義。`[FEATURE]_[TYPE]_[DETAIL]` 形式で HTTP ステータスコードとの対応（400/401/403/404/409/500）を含む |
 | **quality-policy.md** | 「何をもって品質を確認したと言えるか」を定義する品質ポリシー。リスクレベル定義（High/Medium/Low）、レベル別ゲートマトリクス（静的チェック、ユニットテスト、test-design、ペルソナレビュー、追加テスト = ミューテーション / E2E — test-recommendation スキルによる提案ベース・ユーザー判断で実行・非ブロック・差分スコープ = 変更行 / 変更クラス・通過判定なしのトリアージ）、テスト層選択の原則（テストトロフィー）、テストオラクル原則、反復工程のループ防護（打ち切り基準）、開発プロセスのレビュー一本化（§5.5: タスク単位レビューの廃止・文書レビューの維持・マージ前 quality-check への品質レビュー集約） |
 | **static-check-standard.md** | 静的チェック基準カタログ。決定的チェック（Lint / 静的解析）で担保すべき項目を A1〜F2 の25カテゴリ（正しさ・セキュリティ・設計/保守性・パフォーマンス・テスト品質・その他）に整理し、必須 / 推奨 / 任意の採用基準と、AI 生成コードで頻発するカテゴリ（🤖）を定義 |
+| **test-recommendation-ledger.md**（配布先: `documents/development/test-recommendation-ledger.md`） | test-recommendation スキルの永続台帳。E2E シナリオ未整備の導線一覧とミューテーション見送り履歴を保持する。copy-if-missing で配布され、`init` を再実行しても既存の台帳は上書きされない（プロダクトの蓄積データのため） |
 | **coding-rules/common-rules.md** | Git/GitHub 規約（Conventional Commits 形式）、コメント規約（TODO/FIXME にデッドライン必須）、環境変数管理、セキュリティルール（OWASP Top 10 全項目の対策指針、CSRF 対策、依存パッケージセキュリティ）、パフォーマンスルール（N+1 防止、インデックス設計、ページネーション必須）、アーキテクチャ・設計原則（レイヤー責務、DRY、仕様ベースのテスト）、言語横断の禁止パターン（ワイルドカード import、完全修飾名の直書き、未使用 import、マジックナンバー）。各項目には静的チェック基準カタログの対応カテゴリを示す `> Catalog:` 注記が付く |
 | **coding-rules/api-design-rules.md** | REST API 設計ルール。エンドポイント命名（lowercase + hyphen-case、複数形）、URL ネスト上限（2 階層まで）、HTTP メソッドと冪等性、パス vs クエリパラメータの使い分け、ページネーション仕様（page/size/sort）、エラーレスポンス統一形式、後方互換性ポリシー |
 
