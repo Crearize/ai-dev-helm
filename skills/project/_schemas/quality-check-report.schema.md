@@ -33,7 +33,7 @@
 | `cycle_number` | `number` | 必須 | サイクル番号（1始まり） |
 | `findings` | `Finding[]` | 必須 | このサイクルで検出された指摘事項 |
 | `review_mode` | `"full" \| "staged" \| "reduced" \| "verification"` | 任意 | 適用ペルソナセットの種別。`full`: 6ペルソナ / `staged`: 差分規模200行未満による3ペルソナ段階化 / `reduced`: docs/infraのみの変更による縮退 / `verification`: サイクル2以降、前サイクルで高/中指摘を出したペルソナのみによる検証レビュー（`quality-check` SKILL.md 4-3「検証レビュー縮退」）。省略時は `full` 扱い |
-| `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `staged` / `reduced` / `verification` の場合は必須）。`review_mode` が `verification` で前サイクルの残存指摘が非ペルソナ由来のみ（ペルソナの高/中指摘が0件）の場合、Step 4 自体をスキップし検証対象なしとして `personas: []`（空配列）を記録する |
+| `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `staged` / `reduced` / `verification` の場合は必須）。`review_mode` が `verification` で前サイクルの残存指摘が非ペルソナ由来のみ（ペルソナの高/中指摘が0件）**かつ前サイクルの修正差分がテスト・設定・フォーマットのみ（production コード非該当）**の場合に Step 4 をスキップし、検証対象なしとして `personas: []`（空配列）を記録する（ゲート制御面ファイルに触れる修正差分はこの条件でもスキップ不可）。修正差分が production コードに及ぶ場合はスキップせず、セキュリティエンジニアと QA エンジニアの2ペルソナで検証レビューを行う（`quality-check` SKILL.md 4-3 を正とする） |
 | `diff_line_count` | `number` | 任意 | 段階化判定に使った差分行数（追加+削除、生成ファイル除外後。`review_mode` が `staged` または `full` でコード変更を含む場合に記録） |
 
 ### Finding オブジェクト

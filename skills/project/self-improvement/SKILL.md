@@ -17,7 +17,7 @@ description: 作業完了前にセッション内の改善ポイントを抽出�
 
 `quality-check` の最終段階、`.quality-check-passed` を作成する前に必ず実行する。
 
-フラグはコミット紐付け型（作成時の HEAD を記録した JSON）であり、hook に消費されない。承認された改善の反映先が**ハーネスファイル**（`CLAUDE.md` / `AGENTS.md` / `.cursorrules` / `.claude/**` / `.codex/**` / `.cursor/**` / `skills/project/**` / `skills/superpowers/**` / `.github/review-*.md` / `documents/development/coding-rules/**`）のみであれば、フラグ作成後・マージ前に追加コミットしてもフラグは無効化されず、再レビューサイクルは不要。**例外**: 上記グロブに含まれていても**ゲート制御面ファイル**（`skills/project/quality-check/**`・`skills/project/_schemas/**`・`skills/project/test-recommendation/**`・`.github/review-*.md`・hook 実体/登録ファイル等 — 正確な集合は quality-check SKILL.md「ハーネスのみ変更の免除」のカーブアウトを正とする）への追加コミットはフラグを無効化し、hook が `Gate control-plane changed:` でブロックする。この場合は quality-check の再実行が必要。
+フラグはコミット紐付け型（作成時の HEAD を記録した JSON）であり、hook に消費されない。承認された改善の反映先が**ハーネスファイル**（`CLAUDE.md` / `AGENTS.md` / `.cursorrules` / `.claude/**` / `.codex/**` / `.cursor/**` / `skills/project/**` / `skills/superpowers/**` / `.github/review-*.md` / `documents/development/coding-rules/**`）のみであれば、フラグ作成後・マージ前に追加コミットしてもフラグは無効化されず、再レビューサイクルは不要。**例外**: 上記グロブに含まれていても**ゲート制御面ファイル**（`skills/project/quality-check/**`・`skills/project/_schemas/**`・`skills/project/test-recommendation/**`・`.github/review-*.md`・hook 実体/登録ファイル等 — 正確な集合は quality-check SKILL.md「ハーネスのみ変更の免除」のカーブアウトを正とする）への追加コミットはフラグを無効化し、hook が `Gate control-plane changed:` でブロックする。この場合は quality-check の再実行が必要。なお `skills/project/test-recommendation/**` は現時点では hook のパターンに未追加である（次期 hook 改修 — Issue #90 — で追随する。それまで同パスのカーブアウトは文書規範として拘束する）。
 
 以下のタイミングでも必要に応じて実行する:
 
