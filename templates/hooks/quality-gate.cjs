@@ -12,6 +12,9 @@
 // `permissions.deny` layer and convention.
 //
 // Evaluation order (fixed):
+//   0. Refuse what the classification budget will not read - a command line
+//      over 64 KB, or one holding more than 256 git/gh invocations - before
+//      anything is analyzed (see "The classification budget" below).
 //   1. Detect rule-1 candidates from the command line alone. No git is run at
 //      this stage. No candidate -> allow immediately.
 //   2. With a candidate, evaluate the ctx-independent part of rule 2 (items
@@ -26,7 +29,8 @@
 //      because they need no diff at all.)
 //
 // Rule 1 (gated candidates): `gh pr merge` (any args); `gh api` with a
-//   `pulls/<n>/merge` word (a `?query` or `#fragment` after it still merges);
+//   `pulls/<n>/merge` word, case insensitive (a `?query` or `#fragment` after
+//   it still merges);
 //   `git merge` / `git pull` / `git rebase` (any args,
 //   except --abort/--continue/--quit/--skip) - gated only once ctx says the
 //   current branch is main/master; `git push` whose refspec DESTINATION is
@@ -38,16 +42,22 @@
 //   refspec carrying a shell expansion is a candidate because its
 //   destination cannot be read.
 // Rule 2 (blocked with no exemption): force/delete/`+refspec`/`--mirror`/
-//   `--all` pushes; another git command on the same line (checkout, switch,
-//   commit, reset, rebase, fetch, branch -f, update-ref, cherry-pick, stash
-//   pop) other than the gated call itself; `-C`/`--git-dir`/`--work-tree`/
-//   `--namespace`/`-c`/`--config-env`, a `GIT_*=` assignment or a `cd`/`pushd`
-//   on the line; shell expansion (`$`, backtick, `{`, `%`, `$'`) in a word;
-//   more than one gated operation on the line; a `<x>:main` refspec whose
-//   `<x>` is neither HEAD/`@` nor the current branch.
-//   The movers that move HEAD (commit, reset, checkout, switch, cherry-pick,
-//   rebase, update-ref, stash pop/apply) are judged over the WHOLE command,
-//   newlines included; `fetch` and `branch -f` are judged per line.
+//   `--all`/`--branches` pushes; a git command from the mover set on the same
+//   line (commit, reset, checkout, switch, cherry-pick, rebase, revert, am,
+//   bisect, update-ref, stash pop|apply, fetch, branch -f|-d|-D|--force) other
+//   than the gated call itself - that set is CLOSED, so every other git
+//   operation (status, add, log, diff, tag, remote, restore, ...) may share the
+//   line without blocking; `-C`/`--git-dir`/`--work-tree`/`--namespace`/`-c`/
+//   `--config-env`, a `GIT_*=` assignment or a `cd`/`pushd` on the line; shell
+//   expansion (`$`, backtick, `{`, `%`, `$'`) in a word, except the value of
+//   gh's six free-text options (`-t`/`--subject`, `-b`/`--body`,
+//   `-F`/`--body-file`), which is prose and not a ref; more than one gated
+//   operation on the line; a `<x>:main` refspec whose `<x>` is neither
+//   HEAD/`@` nor the current branch.
+//   The movers that move HEAD or make a commit (commit, reset, checkout,
+//   switch, cherry-pick, rebase, revert, am, bisect, update-ref,
+//   stash pop|apply) are judged over the WHOLE command, newlines included;
+//   `fetch` and `branch -f|-d|-D|--force` are judged per line.
 // Rule 3 (pass): `.quality-check-passed` at the repo root with `commit` an
 //   abbreviated prefix of (or equal to) HEAD (`branch` is diagnostic only), or
 //   `commit` an ancestor of HEAD whose `commit..HEAD` diff is harness files
@@ -71,14 +81,25 @@
 //   that has stopped gating is visible rather than silent.
 // Rule 6 (output): `{"decision":"block","reason":...}` only; allow is silent.
 //
-// Two size limits, neither of them a fail-open. A command line over 64 KB is
-// not classified: it is judged on its gate words alone (`merge`, `pull`,
-// `push`, `rebase`, `pr`, `pulls/<n>/merge`) - block when one is present, allow
-// when none is - and a classifier exception is judged the same way. A hook
-// PAYLOAD over 1 MB is not parsed at all, so there is no command line to judge:
-// it blocks unconditionally, with its reason on stderr. Reading only a prefix
-// of the payload would be worse than either, because the gated call can sit
-// behind any amount of padding.
+// The classification budget, and no part of it is a fail-open.
+//   - A command line over 64 KB is not classified: it is judged on its gate
+//     words alone (`merge`, `pull`, `push`, `rebase`, `pr`, `pulls/<n>/merge`),
+//     looked for in the raw text AND in the text with `"`, `'` and `\` removed,
+//     because the shell reads `p""ush` and `pu\sh` as `push`. Block when one is
+//     found; block as well when the stripped text carries an expansion
+//     character (`$` or a backtick), since `$'\x70'ush` cannot be read
+//     statically; allow when there is neither. A classifier exception is judged
+//     by the same function.
+//   - A command holding more than 256 git/gh invocations is not classified
+//     either: it blocks unconditionally. This is what bounds the quadratic term
+//     in the candidate scans, which are O(invocations x words); no real command
+//     comes near the cap.
+//   - A hook PAYLOAD over 1 MB is not parsed at all, so there is no command
+//     line to judge: it blocks unconditionally, with its reason on stderr. The
+//     payload cap and the command-line cap are different limits, and gate words
+//     play no part in the payload one. Reading only a prefix of the payload
+//     would be worse than any of these, because the gated call can sit behind
+//     any amount of padding.
 //
 // Deliberate over-detection, all in the fail-closed direction: rule 2 items
 // 1-5 are evaluated before the branch is known, so they also block on a
@@ -272,7 +293,9 @@ const UPSTREAM_REFS = new Set(['head', '@']);
 // The endpoint word, with whatever a URL may carry after it: `?draft=false` and
 // `#frag` still merge the PR, so the boundary is "not another path-word
 // character" rather than "end of word" (`pulls/1/merged` is a different call).
-const PULLS_MERGE_RE = /(^|\/)pulls\/\d+\/merge(?![A-Za-z0-9_-])/;
+// Case-insensitive: the API answers `PULLS/1/MERGE` exactly as it answers the
+// lower-case spelling, so reading only one of them was a hole.
+const PULLS_MERGE_RE = /(^|\/)pulls\/\d+\/merge(?![A-Za-z0-9_-])/i;
 const GIT_ENV_RE = /^GIT_[A-Za-z0-9_]*=/;
 // Last-resort screen for a command line the classifier will not read (over the
 // byte budget, or a classifier exception): does it mention a gated word at all?
@@ -406,15 +429,21 @@ function ghCandidates(seg, facts) {
 }
 
 // Rule 1 for one push invocation, in a single pass that allocates nothing per
-// word: only main-bound refspecs are kept, and the rest of the answer is
-// booleans. The first positional is the remote unless --repo named it
-// (`git push --repo=origin main` used to misread `main` as the remote and fail
-// open), and --repo may come after it, so that word is held back and folded in
-// at the end. Returns the rule-1 candidate, or null when there is none.
+// word: main-bound refspecs are recorded as WORD INDICES (rule 2 item 6 reads
+// `src`/`dst` back out of the segment facts), deduplicated by source, and the
+// rest of the answer is booleans - `git push origin main main main ...` used to
+// grow one object per word. The first positional is the remote unless --repo
+// named it (`git push --repo=origin main` used to misread `main` as the remote
+// and fail open), and --repo may come after it, so that word is held back and
+// folded in at the end; the indices are re-sorted in that case so the reason
+// still names the first offending refspec in ARGUMENT order. Returns the
+// rule-1 candidate, or null when there is none.
 function pushCandidate(inv) {
   const facts = inv.facts.words;
   const { words, expand } = inv.seg;
-  const mainSpecs = [];
+  const mainSpecs = []; // Word indices, argument order.
+  const seenSrc = new Set();
+  let mainCount = 0;
   let hard = false;
   let repoOpt = false;
   let remote = -1; // The first positional, until --repo says otherwise.
@@ -432,8 +461,14 @@ function pushCandidate(inv) {
       // this is a candidate exactly on main/master (`mainOnly`).
       upstream = true;
     } else if (f.main) {
-      mainSpecs.push({ src: f.src, dst: f.dst });
+      mainCount++;
       if (f.src === '') neverExempt = true; // `:main` is the delete form.
+      // Rule 2 item 6 returns on the first offending source, so a source
+      // already recorded can answer for every later copy of itself.
+      if (f.src !== null && !seenSrc.has(f.src)) {
+        seenSrc.add(f.src);
+        mainSpecs.push(i);
+      }
     } else if (expand[i]) {
       unreadable = true; // Unreadable destination: assume the worst.
     }
@@ -450,13 +485,16 @@ function pushCandidate(inv) {
     if (remote === -1) remote = i;
     else refspec(i);
   }
-  if (repoOpt && remote !== -1) refspec(remote);
+  if (repoOpt && remote !== -1) {
+    refspec(remote);
+    mainSpecs.sort((a, b) => a - b); // The held-back word is the FIRST argument.
+  }
   if (specs === 0) upstream = true;
 
-  if (mainSpecs.length === 0 && !upstream && !unreadable) return null;
+  if (mainCount === 0 && !upstream && !unreadable) return null;
   return {
     kind: 'push',
-    mainOnly: mainSpecs.length === 0 && !unreadable,
+    mainOnly: mainCount === 0 && !unreadable,
     inv,
     hard,
     mainSpecs,
@@ -506,14 +544,22 @@ function analyzeLine(line) {
   return { line, cands, invocations, expansion, relocation };
 }
 
-// git subcommands that move HEAD or the working tree. They must be split out
+// git subcommands that move HEAD or make a commit. They must be split out
 // from a gated operation ("run them as separate commands"), and the split has
 // to be into separate COMMANDS: a newline is not a barrier, because the whole
 // multi-line command still runs as one tool call, so
 // `git commit -am wip\ngit push origin main` has the same window as the `&&`
 // form. The gated call itself never counts: `git pull --rebase` is not a
 // rebase mover, and `git rebase origin/main` does not match itself.
-const HEAD_MOVERS = ['checkout', 'switch', 'commit', 'reset', 'update-ref', 'cherry-pick', 'rebase'];
+// `revert` and `am` make a commit; `bisect` checks one out. All three move
+// HEAD after the flag was written, so they belong with `commit` and `checkout`.
+// This list plus `stash pop|apply`, `fetch` and `branch -f|-d|-D|--force` is
+// the CLOSED set: `status`, `add`, `log`, `diff`, `tag`, `remote`, `restore`
+// and every other git operation may share the line without blocking.
+const HEAD_MOVERS = [
+  'checkout', 'switch', 'commit', 'reset', 'update-ref', 'cherry-pick', 'rebase',
+  'revert', 'am', 'bisect',
+];
 
 // `fetch` and `branch -f` do not move HEAD, so they only matter next to a
 // gated operation on the SAME line.
@@ -641,7 +687,7 @@ function staticRules(a, commandMover) {
   for (const c of a.cands) {
     if (c.kind !== 'push') continue;
     if (c.neverExempt || c.hard) {
-      return deny('2', 'Force, delete, --all and --mirror pushes are never allowed here. Push a plain refspec after a quality check.');
+      return deny('2', 'Force, delete, --all, --branches and --mirror pushes are never allowed here. Push a plain refspec after a quality check.');
     }
   }
   const mover = moverOf(a.invocations, 'line') || commandMover;
@@ -660,14 +706,18 @@ function staticRules(a, commandMover) {
   return null;
 }
 
-// Rule 2 item 6: `<x>:main` from something that is not this branch.
+// Rule 2 item 6: `<x>:main` from something that is not this branch. The
+// candidate carries word indices, so the words themselves are read back from
+// the segment facts here.
 function reverseRefspec(gated, branch) {
   for (const c of gated) {
-    for (const spec of c.mainSpecs || []) {
-      if (spec.src === null) continue;
+    if (!c.mainSpecs) continue;
+    const facts = c.inv.facts.words;
+    for (const i of c.mainSpecs) {
+      const { src, dst } = facts[i];
       // `HEAD` and `@` both name the current branch, in any case spelling.
-      if (UPSTREAM_REFS.has(spec.src.toLowerCase()) || spec.src === branch) continue;
-      return deny('2', `Push from the branch itself: ${spec.src}:${spec.dst} refspecs are not allowed.`);
+      if (UPSTREAM_REFS.has(src.toLowerCase()) || src === branch) continue;
+      return deny('2', `Push from the branch itself: ${src}:${dst} refspecs are not allowed.`);
     }
   }
   return null;
@@ -737,15 +787,51 @@ function contextRules(a, ctx) {
 
 // A command line the classifier will not read: judged on its gate words alone,
 // so an unreadable line can still not smuggle a merge through.
-function gateWordFallback(text, reason) {
-  return GATE_WORD_RE.test(text) ? deny('2', reason) : allow();
-}
+//
+// The words are looked for twice - in the raw text, and in the text with `"`,
+// `'` and `\` removed - because the shell reads `p""ush`, `pu\sh` and
+// `me""rge` as the gate words they spell, and screening the raw text alone let
+// 70 KB of padding carry `git p""ush origin main` through in silence. Stripping
+// cannot undo an EXPANSION (`$'\x70'ush` is `push`, `${x}ush` may be anything),
+// so a stripped text still holding `$` or a backtick blocks whether or not a
+// gate word is left visible. Over-detection here is the point: this path only
+// ever sees a line no one can classify.
 const TOO_LONG = 'Command line too long to classify. Split the gated git/gh call into its own command.';
 const UNCLASSIFIABLE = 'This command line could not be classified. Run the git/gh call as a single plain command.';
+const EXPANDED = 'A shell expansion ($ or backtick) in a command line that cannot be classified could spell anything. Run the git/gh call as a single plain command without expansions.';
+const TOO_MANY_INVOCATIONS = 'Too many git/gh invocations in one command to classify. Split it into smaller commands.';
 const HUGE_PAYLOAD = 'The hook payload is too large to read, so this command cannot be checked. Run the git/gh call as a single plain command.';
 
-// Pure classifier. `ctx` is read through lazy getters; nothing on it is
-// mutated, and a command with no rule-1 candidate never touches it.
+const QUOTE_CHARS_RE = /["'\\]/g;
+const EXPAND_CHARS_RE = /[$`]/;
+function gateWordFallback(text, reason) {
+  const stripped = text.replace(QUOTE_CHARS_RE, '');
+  if (GATE_WORD_RE.test(text) || GATE_WORD_RE.test(stripped)) return deny('2', reason);
+  if (EXPAND_CHARS_RE.test(stripped)) return deny('2', EXPANDED);
+  return allow();
+}
+
+// The second half of the classification budget: the candidate scans are
+// O(invocations x words) - the push tail walk, the `-c`/`-R` option scans that
+// step over the next word - so an unbounded count of git/gh words made a 64 KB
+// line cost hundreds of megabytes, and an OOM prints nothing, which reads as
+// ALLOW. A command over the cap is not classified at all; no real command comes
+// near 256 invocations.
+const MAX_INVOCATIONS = 256;
+function countInvocations(lines) {
+  let n = 0;
+  for (const line of lines) {
+    for (const seg of line.segments) {
+      for (const w of seg.words) {
+        if (isCmdWord(w, 'git') || isCmdWord(w, 'gh')) n++;
+      }
+    }
+  }
+  return n;
+}
+
+// Pure classifier: it only READS `ctx`, through lazy getters, and a command
+// with no rule-1 candidate never touches it at all.
 //
 // ctx contract - every getter answers for the repository the session is in:
 //   branch        current branch name, or null/'' when there is none (detached
@@ -761,15 +847,18 @@ const HUGE_PAYLOAD = 'The hook payload is too large to read, so this command can
 //                 null on failure. An absent base ref is an EMPTY diff (no
 //                 exemption), not null.
 // Only `flag` uses null to mean "nothing there"; for every other getter null
-// means the repository state could not be resolved, and rule 5 blocks. Which
-// git call failed is recorded on `ctx.state` and read only by `main()`, which
-// turns the single "not inside a git repository" case into a fail-open.
+// means the repository state could not be resolved, and rule 5 blocks. WHICH
+// git call failed is recorded on `ctx.state` by the getters themselves, never
+// by classify, and is read only by `main()`, which turns the single "not inside
+// a git repository" case into a fail-open.
 function classify(command, ctx) {
   const text = String(command || '');
   if (Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) {
     return gateWordFallback(text, TOO_LONG);
   }
-  const analyzed = tokenizeLines(text).map(analyzeLine);
+  const lines = tokenizeLines(text);
+  if (countInvocations(lines) > MAX_INVOCATIONS) return deny('2', TOO_MANY_INVOCATIONS);
+  const analyzed = lines.map(analyzeLine);
   const all = [];
   for (const a of analyzed) for (const inv of a.invocations) all.push(inv);
   // The HEAD movers are judged over the whole command, so this answer is the
