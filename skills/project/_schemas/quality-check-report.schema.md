@@ -43,7 +43,7 @@
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
-| `source` | `string` | 必須 | 指摘元。ペルソナ名（例: "セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合の持ち越し不足分）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの提案ベース工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
+| `source` | `string` | 必須 | 指摘元。ペルソナ名（例: "セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合の持ち越し不足分）。ペルソナ名は `quality-check` SKILL.md Step 4「ペルソナ定義」表の名称と完全一致させる（`persona` と同じ）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの提案ベース工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
 | `severity` | `"高" \| "中" \| "低"` | 必須 | 優先度 |
 | `description` | `string` | 必須 | 指摘内容の概要 |
 | `action` | `"対応済" \| "未対応" \| "対象外"` | 必須 | 対応状況 |
@@ -280,7 +280,7 @@ High リスクの backend 変更で、`test-recommendation` スキル（Step 5�
       ],
       "findings": [
         {
-          "source": "QAエンジニア",
+          "source": "QAエンジニア（ファルシフィケーション型）",
           "severity": "中",
           "description": "失効済みトークンでの更新拒否を証明する入力が未検証",
           "action": "対応済",

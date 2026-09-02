@@ -7,7 +7,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ## 最重要ルール
 
-**hook（quality-gate.cjs）は main 相当への直接 push / merge を止める静的分類器であり、`gh pr merge` / main 上での `git merge` / main への直接 `git push` の前に必ずこのスキルを実行することを強制する。同期 3 形（引数なし `git pull` / 現在トランクへの `git pull origin <trunk>` / `git merge origin/<trunk>`。`master` トランクなら `master` 形）以外は（ゲート対象となる行では）要フラグ。フラグは `commit` のみで判定する（`branch` は診断用）。全チェック通過後のみマージ可能。hook の無条件ブロック・fail-open・worktree 手順の完全な定義は次節を単一ソースとする — 他ドキュメントはここを参照し、転記しない。**
+**hook（quality-gate.cjs）は main 相当への直接 push / merge を止める静的分類器であり、`gh pr merge` / main 上での `git merge` / main への直接 `git push` の前に必ずこのスキルを実行することを強制する。同期 3 形（引数なし `git pull` / 現在トランクへの `git pull origin <trunk>` / `git merge origin/<trunk>`。`master` トランクなら `master` 形）以外は（ゲート対象となる行では）要フラグ。フラグは `commit` のみで判定する（`branch` は診断用）。全チェック通過後のみマージ可能。hook の無条件ブロック・fail-open・worktree 手順の完全な定義は次節を単一ソースとする — 他ドキュメントはここを参照し、転記しない。例外: `README.md` は利用者向けに同内容を再掲する — 本節を変更したら README の当該箇所も同時に更新する。**
 
 - **feature ブランチへの `git push` にフラグは不要**（ゲート対象外）。レビュー前の push・バックアップ push は自由に行える
 - CIはビルド確認のみ。静的チェック・テスト・レビューは全てローカルで実施する
@@ -15,29 +15,30 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ### hook の完全な契約（無条件ブロック・通過条件・fail-open・worktree）
 
-**対象**: `gh pr merge`、`gh api ...pulls/<n>/merge`、main / master 上の `git merge` / `git pull` / `git rebase`、宛先が `main` / `master` に完全一致する `git push`、および main 上で refspec を省略または `HEAD` / `@`（大小無視）のみを指定した `git push`。feature ブランチへの push はこれらの形に一致しない限りゲート対象外。
+**対象**: `gh pr merge`、`gh api ...pulls/<n>/merge`、main / master 上の `git merge` / `git pull` / `git rebase`、宛先が `main` / `master` に完全一致する `git push`、および main / master 上で refspec を省略または `HEAD` / `@`（大小無視）のみを指定した `git push`。feature ブランチへの push はこれらの形に一致しない限りゲート対象外。`git merge` / `git pull` / `git rebase` の `--abort` / `--continue` / `--quit` / `--skip` はゲート対象外（進行中の操作の中断・再開であり新規の同期・merge ではないため）。
 
 **無条件ブロック**（フラグの有無・ブランチを問わず、以下のいずれかに該当すれば必ずブロックする）:
 
-- force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`
-- ゲート対象と同一行にある別の git 操作。特に HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `update-ref` / `stash pop`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定する
+- force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`、`--branches`
+- ゲート対象と同一行にある別の git 操作。この判定対象は**閉じた集合**である: HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `update-ref` / `stash pop` / `stash apply`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定し、`fetch` および `branch -f` / `-d` / `-D` / `--force` は**同一行**で判定する。それ以外の git 操作（`status` / `add` / `log` / `diff` / `tag` / `remote` 等）は同居してもブロックしない
 - `-C` / `--git-dir` / `--work-tree` / `--namespace` / `-c` / `--config-env` / `GIT_*=` 代入 / 同一行の `cd` / `pushd`
-- 行内のシェル展開文字（`$` `` ` `` `{` `%`）。**行内の全語**が対象で、`gh` の `--subject` / `--body` の自由テキスト値のみ例外
+- 行内のシェル展開文字（`$` `` ` `` `{` `%`。`$'…'` / `$"…"` の ANSI-C / ロケールクォートも展開扱い）。**行内の全語**が対象で、`gh` の自由テキスト値オプション（`-t` / `--subject`、`-b` / `--body`、`-F` / `--body-file` の3組6形）のみ例外
 - 複数のゲート対象操作の同居
 - `<x>:main` 形の refspec（`<x>` が現在のブランチ名でも `HEAD` でもない逆形）
-- 64 KB を超えるコマンド行
 
 リダイレクト（`>` `>>` `<` `2>` 等）はゲート判定上は特別扱いしない — 通常どおり解釈され、リダイレクトの前後にあるゲート対象語も普通に検出される。
 
+**コマンド長 / ペイロード上限**（無条件ブロックの閉じた集合には含まれない別枠の規則）: 64 KB を超えるコマンド行は分類せず、ゲート語（`merge` / `pull` / `push` / `rebase` / `pr`、`pulls/<n>/merge`）を**コマンド全体**に含めば block、含まなければ allow とする（同一行の別 git 操作や展開文字の判定は行わない）。1 MB を超える hook ペイロード（stdin 全体）は stderr に理由を出して無条件 block する（読み切れない入力を allow にしない）。fail-open は下記の2つのままであり、この上限超過は fail-open に含めない。
+
 **通す条件**: フラグ（`.quality-check-passed`）の `commit` が `HEAD` と一致する（短縮 SHA の前方一致可）、または `HEAD` の祖先でありその間の差分が全てハーネスファイル（ゲート制御面ファイルを除く）である場合。加えて、**現在のトランクの**同期 3 形 — 引数なしの `git pull`、`git pull origin <trunk>`、`git merge origin/<trunk>`（トランクが `master` のチェックアウトでは `master` 形）— はフラグ不要。
 
-**制御面**は `.claude` / `.codex` / `.cursor` の `agents/` `commands/` ディレクトリを含む（サブエージェントの system prompt やセッションに読み込まれるプロンプトのため）。`.claude/settings.json` / `.claude/settings.local.json` は**ファイル全体**が制御面であり、hook はキー単位の解析をしない — `permissions.allow` のみの変更もブロックする。
+**制御面**は `.claude` / `.codex` / `.cursor` の `agents/` `commands/` `prompts/` `rules/` ディレクトリを含む（サブエージェントの system prompt やセッションに読み込まれるプロンプトに加え、`.cursor/rules/*.mdc` は init が生成し全セッションに自動読込されるルール、`.codex/prompts/` も同様にセッションへ読み込まれるプロンプトのため）。`.claude/settings.json` / `.claude/settings.local.json` は**ファイル全体**が制御面であり、hook はキー単位の解析をしない — `permissions.allow` のみの変更もブロックする。
 
 **fail-open**（無条件で allow）は、入力ペイロードが不正な場合（理由を stderr に出力する）と、git リポジトリの外で実行された場合の2つに限る。それ以外の git 呼び出し失敗はゲート対象候補があればブロックする。
 
-**worktree 上の main**（#116）: hook はセッションの作業ディレクトリのリポジトリを基準に判定し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読む。正規の手順は「その worktree を作業ディレクトリとするセッションで quality-check を完走し、フラグをその worktree に作成してからそこで merge する」の1つのみ。統括側の別ディレクトリで先にフラグを作ってから merge する手順は誤りであり、成立しない。
+**worktree 上の main**（#116）: セッションの作業ディレクトリが worktree でない場合、その worktree 内の main へのマージはこの hook からは見えない（`-C` / `cd` を使う形は無条件ブロックされる）。セッションの作業ディレクトリが worktree なら、その main は通常どおりゲートされる。hook はセッションの作業ディレクトリのリポジトリを基準に判定し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読む。正規の手順は「その worktree を作業ディレクトリとするセッションで quality-check を完走し、フラグをその worktree に作成してからそこで merge する」の1つのみ。統括側の別ディレクトリで先にフラグを作ってから merge する手順は誤りであり、成立しない。
 
-**feature ブランチ上の意図的な過検出**: フラグ不要な feature ブランチへの push であっても、候補語（`merge` / `pull` / `rebase` / refspec 省略の `push`）を含む行は、同一行の別 git 操作・`-C` / `cd`・展開文字・hard flag の各条件でブロックされうる（意図的な設計。`git fetch && git rebase origin/main` のような行は分けて実行する）。
+**feature ブランチ上の意図的な過検出**: フラグ不要な feature ブランチへの push であっても、候補語（`merge` / `pull` / `rebase` / refspec 省略の `push`）を含む行は、同一行の別 git 操作・`-C` / `cd`・展開文字・hard flag の各条件でブロックされうる（意図的な設計。`git fetch && git rebase origin/main` のような行は分けて実行する）。改行で分けても、`git commit` と refspec 省略の `git push` は1回の tool 呼び出しであるためブロックされる（refspec を明示するか、別の tool 呼び出しに分ける）。
 
 ### ハーネスのみ変更の免除
 
@@ -52,7 +53,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ただしハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）の差分がゲートパラメータ（quality-check の実行時間バジェット。キー名は `documents/development/quality-policy.md` §2「上書きの契約」の `Quality Gate Overrides` 記法）の変更を含む場合、この免除は適用しない。この場合は本スキルを実行し（適用判定表に従うレビュー）、フラグを作成する。hook 側もこのカーブアウトを免除判定に反映するため、フラグなしでのマージはブロックされうる。
 
-同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`skills/project/test-recommendation/**`（Step 5 は完了条件の構成要素であり、判定・提示・実行・記録の規定は同スキルを単一ソースとするため）・`.claude/skills` と `.claude/hooks` のツリー（`.claude/skills` はリンクノード自体を含む — `init` はこれをシンボリックリンクとして作成するため、1 パスの張り替えで quality-check ツリー全体が差し替わる）とその `.codex/**`・`.cursor/**` コピー・`.claude` / `.codex` / `.cursor` の **`agents/` `commands/` ディレクトリ**（`.claude/agents/*.md` はサブエージェントの system prompt / モデル定義、`commands/*.md` はセッションに読み込まれるプロンプトのため）・`.github/review-*.md`・hook 登録ファイル（`.codex/hooks.json` と `.claude` / `.cursor` の同等物）・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json` — MCP サーバー定義は command/args 実行の登録であり hooks.json と同クラス）**および hook 登録を担う `.claude/settings.json` と `.claude/settings.local.json`（Claude Code は両方を読み、後者が高優先度）**。これら2ファイルは**ファイル全体**が制御面である — hook はキー単位の解析をしないため、`hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` の hook 無効化キー・`permissions.deny` ルールリスト（破壊的コマンドガードを支える deny 層）に限らず、**`permissions.allow` のみの変更もブロックする**（登録を外す・無効化する・deny 層を弱めれば実体を守っても同じため）。パスのマッチは大文字小文字を区別しない（Windows/macOS では `.claude/Hooks/...` は `.claude/hooks/...` と同一ファイル）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（適用判定表に従うレビューを実施しフラグを作成する。本カーブアウトは hook が強制する — 該当差分はフラグなしでのマージ・push が `Gate control-plane changed:` でブロックされる）。
+同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`skills/project/test-recommendation/**`（Step 5 は完了条件の構成要素であり、判定・提示・実行・記録の規定は同スキルを単一ソースとするため）・`.claude/skills` と `.claude/hooks` のツリー（`.claude/skills` はリンクノード自体を含む — `init` はこれをシンボリックリンクとして作成するため、1 パスの張り替えで quality-check ツリー全体が差し替わる）とその `.codex/**`・`.cursor/**` コピー・`.claude` / `.codex` / `.cursor` の **`agents/` `commands/` `prompts/` `rules/` ディレクトリ**（`.claude/agents/*.md` はサブエージェントの system prompt / モデル定義、`commands/*.md` はセッションに読み込まれるプロンプト、`.cursor/rules/*.mdc` は init が生成し全セッションに自動読込されるルール、`.codex/prompts/` も同様にセッションへ読み込まれるプロンプトのため）・`.github/review-*.md`・hook 登録ファイル（`.codex/hooks.json` と `.claude` / `.cursor` の同等物）・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json` — MCP サーバー定義は command/args 実行の登録であり hooks.json と同クラス）**および hook 登録を担う `.claude/settings.json` と `.claude/settings.local.json`（Claude Code は両方を読み、後者が高優先度）**。これら2ファイルは**ファイル全体**が制御面である — hook はキー単位の解析をしないため、`hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` の hook 無効化キー・`permissions.deny` ルールリスト（破壊的コマンドガードを支える deny 層）に限らず、**`permissions.allow` のみの変更もブロックする**（登録を外す・無効化する・deny 層を弱めれば実体を守っても同じため）。パスのマッチは大文字小文字を区別しない（Windows/macOS では `.claude/Hooks/...` は `.claude/hooks/...` と同一ファイル）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（適用判定表に従うレビューを実施しフラグを作成する。本カーブアウトは hook が強制する — 該当差分はフラグなしでのマージ・push が `Gate control-plane changed:` でブロックされる）。
 
 README や `documents/` 配下の利用者向けドキュメントはハーネスファイルに**含まれない**（要件 + セキュリティ（機密限定）ペルソナの対象）。
 

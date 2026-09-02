@@ -54,7 +54,7 @@ High の判定は、該当領域の**実装コード**に直接差分がある�
 >
 > 上書きキーは `mutation_budget_minutes` の1つのみとする（上の例の値は本書の既定値そのもの）。ブロックを置かない場合、および記載のないキーは、本書の既定値が適用される。加えて、上書きの解釈と運用は次に従う。
 >
-> - ゲートパラメータ（実行時間バジェット）を変更するハーネス設定ファイルの差分は「ハーネスのみ変更の免除」の対象外とし、必ず quality-check（適用判定表に従うレビュー）を通す（hook の免除判定にも同カーブアウトが実装されており、ゲートパラメータ変更を含む差分はフラグなしでのマージがブロックされる）。ゲート制御面ファイル（quality-check スキル・スキーマ・`skills/project/test-recommendation/**`（Step 5 は完了条件の構成要素であり、判定・提示・実行・記録の規定は同スキルを単一ソースとするため）・レビューガイド・hook 実体（`init` がリンクとして作成する `.claude/skills` リンクノードと `.claude/hooks` ツリーおよびそれらの `.codex/**`・`.cursor/**` コピーを含む）・hook 登録ファイル・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json`）・`.claude` / `.codex` / `.cursor` の `agents/` `commands/` ディレクトリ・`.claude/settings.json` と `.claude/settings.local.json`（**ファイル全体**が制御面。hook はキー単位の解析をせず、`hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` 無効化キー・`permissions.deny` ルールリストに限らず、`permissions.allow` のみの変更もブロックする） — パスは大文字小文字を区別せず判定する）の差分も同様に hook が免除対象外として扱い、`Gate control-plane changed:` でブロックする（対象パス集合は `quality-check` SKILL.md「ハーネスのみ変更の免除」を正とする）。
+> - ゲートパラメータ（実行時間バジェット）を変更するハーネス設定ファイルの差分は「ハーネスのみ変更の免除」の対象外とし、必ず quality-check（適用判定表に従うレビュー）を通す（hook の免除判定にも同カーブアウトが実装されており、ゲートパラメータ変更を含む差分はフラグなしでのマージがブロックされる）。ゲート制御面ファイル（quality-check スキル・スキーマ・`skills/project/test-recommendation/**`（Step 5 は完了条件の構成要素であり、判定・提示・実行・記録の規定は同スキルを単一ソースとするため）・レビューガイド・hook 実体（`init` がリンクとして作成する `.claude/skills` リンクノードと `.claude/hooks` ツリーおよびそれらの `.codex/**`・`.cursor/**` コピーを含む）・hook 登録ファイル・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json`）・`.claude` / `.codex` / `.cursor` の `agents/` `commands/` `prompts/` `rules/` ディレクトリ・`.claude/settings.json` と `.claude/settings.local.json`（**ファイル全体**が制御面。hook はキー単位の解析をせず、`hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` 無効化キー・`permissions.deny` ルールリストに限らず、`permissions.allow` のみの変更もブロックする） — パスは大文字小文字を区別せず判定する）の差分も同様に hook が免除対象外として扱い、`Gate control-plane changed:` でブロックする（対象パス集合は `quality-check` SKILL.md「ハーネスのみ変更の免除」を正とする）。
 > - 既定値から乖離した上書きを適用した場合は、その事実と理由を `.quality-check-report.json` の `gate_parameter_overrides` に記録する（キー定義は `quality-check-report.schema.md` を参照）。
 > - HTML コメント（`<!-- -->`）の内側、および markdown コードスパン・コードフェンス内に置かれた `### Quality Gate Overrides` ブロックとキー記載は**宣言とみなさない**（無効。既定値が適用される）。テンプレートはこの形（コメントアウト）で雛形を配布する。有効化はコメント解除によって行い、その編集自体がマージゲートの対象になる。quality-check 実行体も hook もこの解釈に従う。
 > - キーの照合は**大文字小文字を区別せず、区切り文字（`_` / `-` / 空白）も区別しない**（`Mutation-Budget-Minutes` は `mutation_budget_minutes` と同一の宣言とみなす）。正規表記は snake_case とし、それ以外の表記を見つけた場合は宣言として扱ったうえで、正規表記への是正をユーザーに求める。quality-check 実行体も hook もこの規則に従う。
@@ -98,7 +98,7 @@ memo-linked とは、テスト設計メモ（§4）の「保証すべき状態�
 
 **担保範囲の注記**: ミューテーションの実行結果は行網羅・配線検証の証明ではない（詳細は `test-recommendation` スキルの担保範囲注記を参照）。
 
-**ペルソナレビュー行についての注記**: 適用ペルソナセットの具体的な条件（適用ペルソナは変更内容による適用判定表で決まる）は `quality-check` SKILL.md Step 4 を正とする（§5 参照）。
+**ペルソナレビュー行についての注記**: 適用ペルソナセットの具体的な条件（適用ペルソナは変更内容による適用判定表で決まる）は `quality-check` SKILL.md Step 1 の適用判定表を正とする（サイクルルールは同 Step 4。§5 参照）。
 
 ---
 
@@ -153,7 +153,7 @@ High / Medium リスクの変更では、実装**前**に `test-design` スキ�
 | 構造的停滞 | 1 サイクルで同一クラスの高指摘（同一ファイル群ではなく、同一の機構・同一の設計判断に起因すると統合時に判定できる指摘）が **3 件以上** 出た場合。修正を続けず構造的問題として報告する |
 | 上限到達・停滞時の挙動 | 高指摘を記録してユーザーに判断を仰ぐ。選択肢は ①残存指摘を受容して通す（`gate_override` に記録）②方針を変えて追加サイクル（上限は同数）を実施（変更する方針を明示させ、`cycle_extensions` に記録）③中断。②で方針の変更がない再実行は認めない。構造的停滞では選択肢は ①設計に戻す ②受容して通す（`gate_override`）③中断（方針変更による追加サイクルは選択肢に含めない） |
 
-ペルソナレビューの適用ペルソナ（適用判定表）と 4-3 サイクルルールは `quality-check` SKILL.md の **Step 4 全体**を正とし、本ドキュメントからは参照のみとする（二重管理を避けるため、詳細の追記・改変は SKILL.md 側で行う）。ペルソナセットの選択が変更内容で決まる点は §2 のペルソナレビュー行注記を参照。
+ペルソナレビューの適用ペルソナ（適用判定表）は `quality-check` SKILL.md **Step 1**を正とし、4-3 サイクルルールは同 **Step 4**を正とする。本ドキュメントからは参照のみとする（二重管理を避けるため、詳細の追記・改変は SKILL.md 側で行う）。ペルソナセットの選択が変更内容で決まる点は §2 のペルソナレビュー行注記を参照。
 
 **検証レビュー（サイクル2以降）**: サイクル2以降の Step 4 は、前サイクルで高・中指摘を出したペルソナのみによる検証レビュー（修正差分と対応内容）とする。検証で新規の高指摘が出た場合は修正して同じペルソナで再検証する（フルセットへの復帰はしない）。前サイクルのペルソナ指摘が0件でも、修正差分が production コードに及ぶ場合は Step 4 をスキップせず、セキュリティエンジニアと QA エンジニアの2ペルソナで検証レビューを行う（スキップできるのは修正差分がテスト・設定・フォーマットのみの場合に限る）。詳細は `quality-check` SKILL.md Step 4 を正とする。
 
