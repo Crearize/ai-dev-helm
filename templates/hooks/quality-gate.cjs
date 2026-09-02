@@ -21,10 +21,13 @@
 //      (rule 5). If ctx proves the candidates are not gated (e.g. `git merge`
 //      on a feature branch) -> allow. Then evaluate rule 2 item 6
 //      (`<x>:main`), still ahead of rules 3 and 4.
-//   4. Rule 4 exemption -> allow; rule 3 pass conditions -> allow; else block.
+//   4. Rule 3's sync forms -> allow; the rule 4 exemption -> allow; rule 3's
+//      flag conditions -> allow; else block. (The sync forms are checked first
+//      because they need no diff at all.)
 //
 // Rule 1 (gated candidates): `gh pr merge` (any args); `gh api` with a
-//   `pulls/<n>/merge` word; `git merge` / `git pull` / `git rebase` (any args,
+//   `pulls/<n>/merge` word (a `?query` or `#fragment` after it still merges);
+//   `git merge` / `git pull` / `git rebase` (any args,
 //   except --abort/--continue/--quit/--skip) - gated only once ctx says the
 //   current branch is main/master; `git push` whose refspec DESTINATION is
 //   exactly `main`/`master` (after stripping `+` and `refs/heads/`, case
@@ -41,7 +44,7 @@
 //   `--namespace`/`-c`/`--config-env`, a `GIT_*=` assignment or a `cd`/`pushd`
 //   on the line; shell expansion (`$`, backtick, `{`, `%`, `$'`) in a word;
 //   more than one gated operation on the line; a `<x>:main` refspec whose
-//   `<x>` is neither HEAD nor the current branch; a command line over 64 KB.
+//   `<x>` is neither HEAD/`@` nor the current branch.
 //   The movers that move HEAD (commit, reset, checkout, switch, cherry-pick,
 //   rebase, update-ref, stash pop/apply) are judged over the WHOLE command,
 //   newlines included; `fetch` and `branch -f` are judged per line.
@@ -55,7 +58,11 @@
 //   of harness files. Gate control-plane paths and `Quality Gate Overrides` /
 //   `mutation_budget_minutes` string changes are carved out of both rule 3
 //   and rule 4 (no validity analysis of the declaration - over-detection is
-//   fine).
+//   fine). The control plane is the quality-check / test-recommendation skills
+//   and their schemas, the review persona docs, and - under `.claude`,
+//   `.codex` or `.cursor` - `hooks/`, `skills/`, `agents/`, `commands/`,
+//   `prompts/`, `rules/`, plus the hook's registration files (see
+//   GATE_CONTROL_PATTERNS, which is the authority).
 // Rule 5 (fail-open, exactly twice): a payload whose `tool_input.command` is
 //   not a string (malformed JSON, a missing field), and a cwd that is not
 //   inside a git work tree - decided by rev-parse's EXIT STATUS, never by its
@@ -63,6 +70,15 @@
 //   candidate blocks. Both fail-opens write their reason to stderr, so a hook
 //   that has stopped gating is visible rather than silent.
 // Rule 6 (output): `{"decision":"block","reason":...}` only; allow is silent.
+//
+// Two size limits, neither of them a fail-open. A command line over 64 KB is
+// not classified: it is judged on its gate words alone (`merge`, `pull`,
+// `push`, `rebase`, `pr`, `pulls/<n>/merge`) - block when one is present, allow
+// when none is - and a classifier exception is judged the same way. A hook
+// PAYLOAD over 1 MB is not parsed at all, so there is no command line to judge:
+// it blocks unconditionally, with its reason on stderr. Reading only a prefix
+// of the payload would be worse than either, because the gated call can sit
+// behind any amount of padding.
 //
 // Deliberate over-detection, all in the fail-closed direction: rule 2 items
 // 1-5 are evaluated before the branch is known, so they also block on a
@@ -127,6 +143,10 @@ function tokenizeLines(command) {
   let expand = false;
   let quote = null;
   let dropWord = false; // A pending redirection target, dropped from the argv.
+  // Whether a word has STARTED at this position, which is not the same as
+  // having characters in it: `""` and `''` start a word without adding any, and
+  // bash reads `""#` as the one-character word `#`, not as a comment.
+  let started = false;
 
   const endWord = () => {
     if (word !== '') {
@@ -138,6 +158,7 @@ function tokenizeLines(command) {
     }
     word = '';
     expand = false;
+    started = false;
   };
   const endSegment = () => {
     endWord();
@@ -167,20 +188,25 @@ function tokenizeLines(command) {
       }
     } else if (ch === '$' && (command[i + 1] === "'" || command[i + 1] === '"')) {
       expand = true; // $'...' / $"..." — ANSI-C / locale quoting.
+      started = true;
     } else if (ch === "'" || ch === '"') {
       quote = ch;
+      started = true;
     } else if (ch === '\\') {
       if (command[i + 1] !== undefined && command[i + 1] !== '\n') {
         word += command[i + 1];
+        started = true;
       }
       i++;
     } else if (ch === '\n') {
       endLine();
     } else if (ch === ' ' || ch === '\t' || ch === '\r') {
       endWord();
-    } else if (ch === '#' && word === '') {
-      // An unquoted `#` at the start of a word comments out the rest of the
+    } else if (ch === '#' && !started) {
+      // An unquoted `#` where no word has started comments out the rest of the
       // line: `git push origin main # git checkout foo` has no checkout in it.
+      // `""#` and `x#` are words, so they comment out nothing - treating them
+      // as comments hid `echo ""# ; git push origin main` from the gate.
       while (i + 1 < command.length && command[i + 1] !== '\n') i++;
     } else if (ch === '`') {
       line.backtick = true;
@@ -198,6 +224,7 @@ function tokenizeLines(command) {
     } else {
       if (ch === '$' || ch === '{' || ch === '}' || ch === '%') expand = true;
       word += ch;
+      started = true;
     }
   }
   endLine();
@@ -242,12 +269,18 @@ const SYNC_SUBS = new Set(['merge', 'pull', 'rebase']);
 // A bare `HEAD` / `@` source is the refspec-less push written out: it lands on
 // whatever the current branch tracks.
 const UPSTREAM_REFS = new Set(['head', '@']);
-const PULLS_MERGE_RE = /(^|\/)pulls\/\d+\/merge(\/|$)/;
+// The endpoint word, with whatever a URL may carry after it: `?draft=false` and
+// `#frag` still merge the PR, so the boundary is "not another path-word
+// character" rather than "end of word" (`pulls/1/merged` is a different call).
+const PULLS_MERGE_RE = /(^|\/)pulls\/\d+\/merge(?![A-Za-z0-9_-])/;
 const GIT_ENV_RE = /^GIT_[A-Za-z0-9_]*=/;
 // Last-resort screen for a command line the classifier will not read (over the
 // byte budget, or a classifier exception): does it mention a gated word at all?
 const GATE_WORD_RE = /(?:^|[^A-Za-z0-9_-])(merge|pull|push|rebase|pr)(?:[^A-Za-z0-9_-]|$)/i;
 const MAX_COMMAND_BYTES = 64 * 1024;
+// The whole hook payload, which carries the command line plus its JSON wrapper.
+// Past this there is no command line to judge at all, so it is a block.
+const MAX_PAYLOAD_BYTES = 1024 * 1024;
 
 function isMainBranch(name) {
   const b = String(name || '').toLowerCase();
@@ -264,17 +297,59 @@ function splitSpec(spec) {
   return i === -1 ? { src: null, dst: s } : { src: s.slice(0, i), dst: s.slice(i + 1) };
 }
 
-// Subcommands whose arguments are actually read. Every other `git <sub>` gets
-// the shared empty array: copying the rest of the segment for each of the
-// thousands of `git` words a pathological line can hold was quadratic, and a
-// hook that runs out of time or memory prints nothing, which reads as ALLOW.
-const NO_ARGS = [];
-const ARG_SUBS = new Set(['push', 'merge', 'pull', 'rebase', 'branch', 'stash']);
+// An invocation's arguments run to the end of its segment, so every one of the
+// thousands of `git` words a pathological line can hold used to copy - and then
+// re-walk - that whole tail: `git push ` repeated to 63 KB took 8.3 s and
+// ~800 MB, and a hook that runs out of time or memory prints nothing, which
+// reads as ALLOW. Each word is now described ONCE per segment and every
+// invocation is a view (`{ seg, facts, start }`) over that description, which
+// answers the same input in 0.14 s and ~11 MB.
+//
+// `words[i]` holds what each rule needs to know about word i; the `*From`
+// arrays are suffix flags ("is there such a word at or after i?"), which is
+// what "does this invocation's argument list contain one?" reduces to.
+const BRANCH_FORCE_FLAGS = new Set(['-f', '-D', '-d', '--force']);
+function segmentFacts(seg) {
+  const n = seg.words.length;
+  const words = new Array(n);
+  const ctlFrom = new Array(n + 1);      // --abort/--continue/--quit/--skip
+  const forceFrom = new Array(n + 1);    // `git branch -f`
+  const mergeApiFrom = new Array(n + 1); // a `pulls/<n>/merge` endpoint word
+  ctlFrom[n] = false;
+  forceFrom[n] = false;
+  mergeApiFrom[n] = false;
+  for (let i = n - 1; i >= 0; i--) {
+    const w = seg.words[i];
+    ctlFrom[i] = ctlFrom[i + 1] || MERGE_CONTROL_FLAGS.has(w);
+    forceFrom[i] = forceFrom[i + 1] || BRANCH_FORCE_FLAGS.has(w);
+    mergeApiFrom[i] = mergeApiFrom[i + 1] || PULLS_MERGE_RE.test(w);
+    if (w.startsWith('-')) {
+      words[i] = {
+        flag: true,
+        hard: isHardPushFlag(w),
+        value: PUSH_VALUE_OPTS.has(w),
+        repo: w === '--repo' || w.startsWith('--repo='),
+      };
+    } else {
+      const { src, dst } = splitSpec(w);
+      words[i] = {
+        flag: false,
+        src,
+        dst,
+        plus: w.startsWith('+'),
+        main: isMainRef(dst),
+        upstream: src === null && UPSTREAM_REFS.has(dst.toLowerCase()),
+      };
+    }
+  }
+  return { words, ctlFrom, forceFrom, mergeApiFrom };
+}
 
 // Every `git <sub>` in one segment, with the global options that preceded the
 // subcommand. `git -c push.default=simple push` is a push; `git stash push`
-// is not (the subcommand word is matched whole).
-function gitInvocations(seg) {
+// is not (the subcommand word is matched whole). `start` is the index of the
+// first argument word, and the argument list is `seg.words[start..]`.
+function gitInvocations(seg, facts) {
   const found = [];
   for (let i = 0; i < seg.words.length; i++) {
     if (!isCmdWord(seg.words[i], 'git')) continue;
@@ -285,15 +360,7 @@ function gitInvocations(seg) {
       j += GIT_VALUE_OPTS.has(seg.words[j]) ? 2 : 1;
     }
     if (j >= seg.words.length) continue;
-    const sub = seg.words[j].toLowerCase();
-    const reads = ARG_SUBS.has(sub);
-    found.push({
-      sub,
-      args: reads ? seg.words.slice(j + 1) : NO_ARGS,
-      argExpand: reads ? seg.expand.slice(j + 1) : NO_ARGS,
-      globals,
-      gated: false,
-    });
+    found.push({ sub: seg.words[j].toLowerCase(), seg, facts, start: j + 1, globals, gated: false });
   }
   return found;
 }
@@ -315,7 +382,7 @@ function freeTextIndices(words) {
 }
 
 // `gh pr merge` / `gh api .../pulls/<n>/merge` in one segment.
-function ghCandidates(seg) {
+function ghCandidates(seg, facts) {
   const found = [];
   for (let i = 0; i < seg.words.length; i++) {
     if (!isCmdWord(seg.words[i], 'gh')) continue;
@@ -325,9 +392,7 @@ function ghCandidates(seg) {
     }
     const sub = (seg.words[j] || '').toLowerCase();
     if (sub === 'api') {
-      if (seg.words.slice(j + 1).some((w) => PULLS_MERGE_RE.test(w))) {
-        found.push({ kind: 'gh', mainOnly: false });
-      }
+      if (facts.mergeApiFrom[j + 1]) found.push({ kind: 'gh', mainOnly: false });
       continue;
     }
     if (sub !== 'pr') continue;
@@ -340,24 +405,63 @@ function ghCandidates(seg) {
   return found;
 }
 
-// Refspecs of one push invocation, plus its flags. The first positional is
-// the remote unless --repo already named it (`git push --repo=origin main`
-// used to misread `main` as the remote and fail open).
-function pushParts(inv) {
-  const positionals = [];
-  const flags = [];
+// Rule 1 for one push invocation, in a single pass that allocates nothing per
+// word: only main-bound refspecs are kept, and the rest of the answer is
+// booleans. The first positional is the remote unless --repo named it
+// (`git push --repo=origin main` used to misread `main` as the remote and fail
+// open), and --repo may come after it, so that word is held back and folded in
+// at the end. Returns the rule-1 candidate, or null when there is none.
+function pushCandidate(inv) {
+  const facts = inv.facts.words;
+  const { words, expand } = inv.seg;
+  const mainSpecs = [];
+  let hard = false;
   let repoOpt = false;
-  for (let i = 0; i < inv.args.length; i++) {
-    const a = inv.args[i];
-    if (a.startsWith('-')) {
-      flags.push(a);
-      if (a === '--repo' || a.startsWith('--repo=')) repoOpt = true;
-      if (PUSH_VALUE_OPTS.has(a)) i++;
+  let remote = -1; // The first positional, until --repo says otherwise.
+  let specs = 0;
+  let upstream = false;
+  let unreadable = false;
+  let neverExempt = false;
+
+  const refspec = (i) => {
+    const f = facts[i];
+    specs++;
+    if (f.plus) neverExempt = true;
+    if (f.upstream) {
+      // No refspec, or a bare `HEAD` / `@`: whatever the branch tracks, so
+      // this is a candidate exactly on main/master (`mainOnly`).
+      upstream = true;
+    } else if (f.main) {
+      mainSpecs.push({ src: f.src, dst: f.dst });
+      if (f.src === '') neverExempt = true; // `:main` is the delete form.
+    } else if (expand[i]) {
+      unreadable = true; // Unreadable destination: assume the worst.
+    }
+  };
+
+  for (let i = inv.start; i < words.length; i++) {
+    const f = facts[i];
+    if (f.flag) {
+      if (f.hard) hard = true;
+      if (f.repo) repoOpt = true;
+      if (f.value) i++;
       continue;
     }
-    positionals.push({ text: a, expand: inv.argExpand[i] });
+    if (remote === -1) remote = i;
+    else refspec(i);
   }
-  return { refspecs: repoOpt ? positionals : positionals.slice(1), flags };
+  if (repoOpt && remote !== -1) refspec(remote);
+  if (specs === 0) upstream = true;
+
+  if (mainSpecs.length === 0 && !upstream && !unreadable) return null;
+  return {
+    kind: 'push',
+    mainOnly: mainSpecs.length === 0 && !unreadable,
+    inv,
+    hard,
+    mainSpecs,
+    neverExempt,
+  };
 }
 
 // Rule 1 candidate detection plus the raw material rule 2 needs, for one line.
@@ -368,6 +472,7 @@ function analyzeLine(line) {
   let relocation = false;
 
   for (const seg of line.segments) {
+    const facts = segmentFacts(seg);
     const freeText = freeTextIndices(seg.words);
     seg.words.forEach((w, i) => {
       const lw = w.toLowerCase();
@@ -375,43 +480,18 @@ function analyzeLine(line) {
       if (GIT_ENV_RE.test(w)) relocation = true;
       if (seg.expand[i] && !freeText.has(i)) expansion = true;
     });
-    for (const c of ghCandidates(seg)) cands.push(c);
-    for (const inv of gitInvocations(seg)) {
+    for (const c of ghCandidates(seg, facts)) cands.push(c);
+    for (const inv of gitInvocations(seg, facts)) {
       invocations.push(inv);
       if (SYNC_SUBS.has(inv.sub)) {
-        if (inv.args.some((a) => MERGE_CONTROL_FLAGS.has(a))) continue;
+        if (facts.ctlFrom[inv.start]) continue;
         inv.gated = true;
         cands.push({ kind: 'git', sub: inv.sub, mainOnly: true, inv });
       } else if (inv.sub === 'push') {
-        const { refspecs, flags } = pushParts(inv);
-        const mainSpecs = [];
-        // No refspec, or a bare `HEAD` / `@`: whatever the branch tracks, so
-        // this is a candidate exactly on main/master (`mainOnly`).
-        let upstream = refspecs.length === 0;
-        let unreadable = false;
-        let neverExempt = false;
-        for (const r of refspecs) {
-          const { src, dst } = splitSpec(r.text);
-          if (r.text.startsWith('+')) neverExempt = true;
-          if (src === null && UPSTREAM_REFS.has(dst.toLowerCase())) {
-            upstream = true;
-          } else if (isMainRef(dst)) {
-            mainSpecs.push({ src, dst });
-            if (src === '') neverExempt = true; // `:main` is the delete form.
-          } else if (r.expand) {
-            unreadable = true; // Unreadable destination: assume the worst.
-          }
-        }
-        if (mainSpecs.length === 0 && !upstream && !unreadable) continue;
+        const cand = pushCandidate(inv);
+        if (!cand) continue;
         inv.gated = true;
-        cands.push({
-          kind: 'push',
-          mainOnly: mainSpecs.length === 0 && !unreadable,
-          inv,
-          flags,
-          mainSpecs,
-          neverExempt,
-        });
+        cands.push(cand);
       }
     }
   }
@@ -441,10 +521,13 @@ function moverName(inv, scope) {
   if (inv.gated) return null;
   const s = inv.sub;
   if (HEAD_MOVERS.includes(s)) return s;
-  if (s === 'stash' && ['pop', 'apply'].includes(inv.args[0])) return `stash ${inv.args[0]}`;
+  if (s === 'stash') {
+    const first = inv.seg.words[inv.start];
+    if (first === 'pop' || first === 'apply') return `stash ${first}`;
+  }
   if (scope !== 'line') return null;
   if (s === 'fetch') return 'fetch';
-  if (s === 'branch' && inv.args.some((a) => ['-f', '-D', '-d', '--force'].includes(a))) return 'branch';
+  if (s === 'branch' && inv.facts.forceFrom[inv.start]) return 'branch';
   return null;
 }
 function moverOf(invocations, scope) {
@@ -476,10 +559,12 @@ const GATE_CONTROL_PATTERNS = [
   /(^|\/)skills\/project\/_schemas\//i,
   /^\.github\/review-[^/]*\.md$/i,
   /^\.(claude|codex|cursor)\/(hooks|skills)(\/|$)/i,
-  // Subagent definitions carry system prompts and model choices, and
-  // `commands/` files are prompts loaded straight into a session: editing
-  // either one rewrites how a review runs, so both are control plane.
-  /^\.(claude|codex|cursor)\/(agents|commands)(\/|$)/i,
+  // Subagent definitions carry system prompts and model choices; `commands/`
+  // and `prompts/` files are prompts loaded straight into a session; and
+  // `rules/` files (`.cursor/rules/*.mdc`, written by init) are read into
+  // EVERY session automatically. Editing any of them rewrites how a review
+  // runs, so all four are control plane.
+  /^\.(claude|codex|cursor)\/(agents|commands|prompts|rules)(\/|$)/i,
   // Registration is control plane too: unregistering the hook disables the
   // gate. Over-gating registration is safe, so the whole file is gated.
   /^\.(claude|codex|cursor)\/hooks\.json$/i,
@@ -549,17 +634,17 @@ function isHardPushFlag(f) {
 }
 
 // Rule 2, items 1-5: no ctx is touched, so these also block on a feature
-// branch (deliberate over-detection, see the header). `all` is every
-// invocation of the whole command, for the movers that are judged there.
-function staticRules(a, all) {
+// branch (deliberate over-detection, see the header). `commandMover` is the
+// whole command's HEAD mover, computed once by the caller.
+function staticRules(a, commandMover) {
   if (a.cands.length === 0) return null;
   for (const c of a.cands) {
     if (c.kind !== 'push') continue;
-    if (c.neverExempt || c.flags.some(isHardPushFlag)) {
+    if (c.neverExempt || c.hard) {
       return deny('2', 'Force, delete, --all and --mirror pushes are never allowed here. Push a plain refspec after a quality check.');
     }
   }
-  const mover = moverOf(a.invocations, 'line') || moverOf(all, 'command');
+  const mover = moverOf(a.invocations, 'line') || commandMover;
   if (mover) {
     return deny('2', `Split this into separate commands: git ${mover} and a gated push/merge in one call are not allowed.`);
   }
@@ -580,7 +665,8 @@ function reverseRefspec(gated, branch) {
   for (const c of gated) {
     for (const spec of c.mainSpecs || []) {
       if (spec.src === null) continue;
-      if (spec.src === 'HEAD' || spec.src === branch) continue;
+      // `HEAD` and `@` both name the current branch, in any case spelling.
+      if (UPSTREAM_REFS.has(spec.src.toLowerCase()) || spec.src === branch) continue;
       return deny('2', `Push from the branch itself: ${spec.src}:${spec.dst} refspecs are not allowed.`);
     }
   }
@@ -656,6 +742,7 @@ function gateWordFallback(text, reason) {
 }
 const TOO_LONG = 'Command line too long to classify. Split the gated git/gh call into its own command.';
 const UNCLASSIFIABLE = 'This command line could not be classified. Run the git/gh call as a single plain command.';
+const HUGE_PAYLOAD = 'The hook payload is too large to read, so this command cannot be checked. Run the git/gh call as a single plain command.';
 
 // Pure classifier. `ctx` is read through lazy getters; nothing on it is
 // mutated, and a command with no rule-1 candidate never touches it.
@@ -685,8 +772,11 @@ function classify(command, ctx) {
   const analyzed = tokenizeLines(text).map(analyzeLine);
   const all = [];
   for (const a of analyzed) for (const inv of a.invocations) all.push(inv);
+  // The HEAD movers are judged over the whole command, so this answer is the
+  // same for every line: compute it once.
+  const commandMover = moverOf(all, 'command');
   for (const a of analyzed) {
-    const verdict = staticRules(a, all);
+    const verdict = staticRules(a, commandMover);
     if (verdict) return verdict;
   }
   for (const a of analyzed) {
@@ -847,29 +937,35 @@ function emitBlock(reason) {
 }
 
 function main() {
-  let input = '';
-  let truncated = false;
-  process.stdin.setEncoding('utf8');
+  // Buffers, not a string: the cap is in BYTES, and concatenating at the end
+  // keeps a multi-byte character that straddles two chunks intact.
+  const chunks = [];
+  let size = 0;
+  let oversized = false;
   process.stdin.on('data', (chunk) => {
-    // The same budget as the classifier: past it the rest is dropped and the
-    // decision comes from the gate words, so a huge payload cannot exhaust
-    // memory (an OOM prints nothing, and nothing means ALLOW).
-    if (input.length >= MAX_COMMAND_BYTES) {
-      truncated = true;
+    // Bounded memory - an OOM prints nothing, and nothing reads as ALLOW. Past
+    // the cap the payload is DROPPED and the hook blocks: reading only the
+    // first 64 KB used to hide `echo <65 KB of padding> && git push origin
+    // main` from the classifier entirely, and it was allowed in silence.
+    if (oversized) return;
+    size += chunk.length;
+    if (size > MAX_PAYLOAD_BYTES) {
+      oversized = true;
+      chunks.length = 0;
       return;
     }
-    input += chunk;
+    chunks.push(chunk);
   });
   process.stdin.on('end', () => {
-    if (truncated) {
-      const oversized = gateWordFallback(input, TOO_LONG);
-      if (oversized.decision === 'block') emitBlock(oversized.reason);
+    if (oversized) {
+      process.stderr.write('quality-gate: hook payload over 1 MB; cannot classify, blocking.\n');
+      emitBlock(HUGE_PAYLOAD);
       return;
     }
     let command;
     let cwd = process.cwd();
     try {
-      const payload = JSON.parse(input);
+      const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const raw = payload && payload.tool_input ? payload.tool_input.command : undefined;
       if (typeof raw !== 'string') throw new Error('tool_input.command is not a string');
       command = raw;
