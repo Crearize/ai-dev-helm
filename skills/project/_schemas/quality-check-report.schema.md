@@ -38,6 +38,7 @@
 | `review_mode` | `"full" \| "verification"` | 任意 | 適用ペルソナセットの種別。`full`: Step 1 の適用判定表による選択 / `verification`: サイクル2以降、直前サイクルで Step 4 を実行し高/中指摘が出た場合の、指摘ペルソナによる修正差分レビュー（`quality-check` SKILL.md 4-3「サイクルと `review_mode`」）。直前サイクルが Step 2〜3 の残存で Step 4 を実行せず終了した場合、次サイクルも `full` として判定表から選び直す。省略時は `full` 扱い |
 | `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `verification` の場合は必須。`full` で Step 4 を実行したサイクルも必須）。`review_mode` が `verification` で前サイクルの残存指摘が非ペルソナ由来のみ（ペルソナの高/中指摘が0件）**かつ前サイクルの修正差分がテスト・設定・フォーマットのみ（production コード非該当）**の場合に Step 4 をスキップし、検証対象なしとして `personas: []`（空配列）を記録する（ゲート制御面ファイルに触れる修正差分はこの条件でもスキップ不可）。修正差分が production コードに及ぶ場合はスキップせず、セキュリティエンジニアと QA エンジニアの2ペルソナで検証レビューを行う（`quality-check` SKILL.md 4-3 を正とする）。Step 2〜3 の残存で Step 4 を実行せず終了したサイクルも `personas: []`（`review_mode: "full"` と組み合わせて「Step 4 未実行」を意味する） |
 | `persona_selection_basis` | `{ persona: string, applied: boolean, basis: string }[]` | 任意 | Step 1 の適用判定表による起動判定の根拠。判定表の6ペルソナ全件を含め、`applied: false` の行には理由を `basis` に書く（`quality-check` SKILL.md Step 1「ペルソナ起動判定」）。`review_mode: "full"` で Step 4 を実行したサイクルでは必須。`verification`、および Step 4 未実行（`personas: []`）のサイクルでは省略可。**`persona` は `quality-check` SKILL.md Step 4「ペルソナ定義」表の名称と完全一致させる**（Step 1 判定表側の表記もこれに合わせる）。`applied: true` の行の集合は同サイクルの `personas` と一致しなければならない |
+| `notes` | `string[]` | 任意 | サイクル単位の観測事実の記録先。トップレベル `_notes` と同じ `[Step N]` 接頭辞規則に従う（各要素の先頭にそのサイクル内の記録元ステップを示す `[Step N]` を付ける）。該当がなければ省略または空配列 |
 
 ### Finding オブジェクト
 
@@ -48,6 +49,7 @@
 | `description` | `string` | 必須 | 指摘内容の概要 |
 | `action` | `"対応済" \| "未対応" \| "対象外"` | 必須 | 対応状況 |
 | `detail` | `string` | 任意 | 対応の詳細説明 |
+| `id` | `string` | 任意 | 指摘の追跡 ID。検証レビュー（`review_mode: "verification"`）で前サイクルの指摘を参照する際に用いる |
 
 ### E2E オブジェクト
 
@@ -280,6 +282,7 @@ High リスクの backend 変更で、`test-recommendation` スキル（Step 5�
       ],
       "findings": [
         {
+          "id": "cycle1-qa-01",
           "source": "QAエンジニア（ファルシフィケーション型）",
           "severity": "中",
           "description": "失効済みトークンでの更新拒否を証明する入力が未検証",
