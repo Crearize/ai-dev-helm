@@ -25,7 +25,7 @@ A quick-reference checklist for AI tools when working on development tasks.
 
 ## Before Merge (Required - via /quality-check)
 
-> Feature-branch pushes are not gated. Run /quality-check before `gh pr merge`, `git merge` on main, or a direct push to main. Harness-only diffs skip the check entirely — except a harness config file (CLAUDE.md / AGENTS.md / `.cursorrules`) diff that changes Quality Gate Overrides parameters, which is never exempt. Sync of main from its own remote (`git pull`, `git pull origin main`, `git merge origin/main` with no other options) needs no flag.
+> Feature-branch pushes are not gated (though a line containing a candidate word - merge/pull/rebase/refspec-omitted push - can still trip an unconditional block; see the quality-check skill). Run /quality-check before `gh pr merge`, `git merge` on main, or a direct push to main. Harness-only diffs skip the check entirely — except a harness config file (CLAUDE.md / AGENTS.md / `.cursorrules`) diff that changes Quality Gate Overrides parameters, which is never exempt. Sync of the current trunk from its own remote (`git pull`, `git pull origin <trunk>`, `git merge origin/<trunk>` with no other options) needs no flag.
 > 適用されるゲートの**強度**（要否）はリスクレベルで決まる（`documents/development/quality-policy.md` §2）。ゲートの列挙と実行条件は quality-check SKILL.md を正とし、本チェックリストは要点の抜粋である。
 
 ### Static Checks

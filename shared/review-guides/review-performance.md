@@ -1,6 +1,6 @@
 # Performance Review Guide
 
-**Note**: Used by the Performance Engineer persona during quality-check. Applies when the change touches queries, collection loops, caching, bundles, or hot paths (quality-check Step 4 applicability table); other code changes do not dispatch this persona.
+**Note**: Used by the Performance Engineer persona during quality-check. Applies when the change touches queries, collection loops, caching, bundles, or hot paths (quality-check Step 1 applicability table); other code changes do not dispatch this persona.
 
 ## Required Reference Documents
 

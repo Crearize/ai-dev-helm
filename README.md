@@ -355,7 +355,7 @@ Step 1: 変更領域の判定（git diff でbackend/frontend/docs/infraを自動
 │   ↓
 │ Step 2〜3 に残存（解消できなかった違反・失敗テスト）があれば → Step 4 を実行せず高指摘として統合指摘に記録しサイクル終了
 │   ↓（残存なし）
-│ Step 4: マルチペルソナ・レビュー（適用判定表で変更内容から選定。docs のみは要件・仕様整合性 + セキュリティ（機密限定）。ファルシフィケーション型の観点を含む。サイクル2以降は前サイクルで高/中指摘を出したペルソナのみによる検証レビュー）
+│ Step 4: マルチペルソナ・レビュー（適用判定表で変更内容から選定。docs のみは要件・仕様整合性 + セキュリティ（機密限定）。設計文書を含む場合は+アーキテクト、規範共有箇所への差分は+統合アーキテクチャ。ファルシフィケーション型の観点を含む。サイクル2以降は前サイクルで高/中指摘を出したペルソナのみによる検証レビュー）
 │   ↓
 │ 統合指摘（Lint 残存・テスト失敗・ペルソナ指摘）の対応
 │   ├── 高/中指摘なし → Step 5 へ
@@ -381,14 +381,14 @@ Step 5 では、`test-recommendation` スキルが変更差分から追加テス
 
 ### 専門ペルソナによるレビュー
 
-Step 4 では、専門家ペルソナが並列のサブエージェントとしてレビューを実施します。起動するペルソナは差分規模ではなく変更内容で決まります（適用判定表は `quality-check` SKILL.md Step 1 を参照）。docs のみの変更では要件・仕様整合性とセキュリティ（機密情報混入確認に限定）の2ペルソナのみになります。
+Step 4 では、専門家ペルソナが並列のサブエージェントとしてレビューを実施します。起動するペルソナは差分規模ではなく変更内容で決まります（適用判定表は `quality-check` SKILL.md Step 1 を参照）。docs のみの変更では要件・仕様整合性とセキュリティ（機密情報混入確認に限定）の2ペルソナのみになります。ただし設計文書を含む場合はソフトウェアアーキテクトが、同一の規範を複数ファイルが持つ箇所に差分がある場合は統合アーキテクチャレビューが加わります。
 
 | ペルソナ | 重点観点 |
 |---------|---------|
 | **セキュリティエンジニア** | 脆弱性、認証・認可、データ漏洩、インジェクション、OWASP Top 10、サプライチェーン攻撃 |
 | **ソフトウェアアーキテクト** | SOLID/DRY、レイヤー責務、依存関係、拡張性、API 設計の後方互換性 |
 | **QA エンジニア（ファルシフィケーション型）** | この実装が間違っていることを証明する入力・シナリオ、テスト期待値の妥当性（既知のテスト値へのハードコード、実装と同一ロジックの複製による期待値生成、意味のない assertion）、エッジケース、エラーハンドリング、アクセシビリティ基本要件 |
-| **統合アーキテクチャ** | 変更全体の整合性、レイヤー依存方向、既存パターン一貫性、N+1 問題などの統合的パフォーマンス |
+| **統合アーキテクチャレビュー** | 変更全体の整合性、レイヤー依存方向、既存パターン一貫性、N+1 問題などの統合的パフォーマンス |
 | **パフォーマンスエンジニア** | アルゴリズム計算量、クエリ、バンドルサイズ、キャッシュ、スケーラビリティ |
 | **要件・仕様整合性レビュアー** | Issue/要件/設計/受け入れ条件と実装の一致、過剰実装・不足実装、ドキュメント乖離 |
 
@@ -401,7 +401,7 @@ Step 4 では、専門家ペルソナが並列のサブエージェントとし�
 | ハーネス | 計画・設計 | 設計・計画のレビュー | 探索 | 実装 | 純粋な文書レビュー | quality-check ペルソナ・コードレビュー |
 |---------|-----------|---------------------|------|------|-------------------|----------------------------------------|
 | Claude Code | `model: fable`（不可なら `opus`） | `model: fable`（不可なら `opus`） | `model: sonnet` | `model: sonnet`（判断タスクのみ `opus`） | `model: sonnet` | `model: opus` |
-| Codex | `gpt-5.6-sol` / `high` | `gpt-5.6-sol` / `high` | `gpt-5.4-mini` / `medium` | `gpt-5.6-terra` | `gpt-5.4-mini` / `medium` | `gpt-5.6-sol` / `high` |
+| Codex | `gpt-5.6-sol` / `high` | `gpt-5.6-sol` / `high` | `gpt-5.4-mini` / `medium` | `gpt-5.6-terra`（判断タスクのみ `gpt-5.6-sol` high） | `gpt-5.4-mini` / `medium` | `gpt-5.6-sol` / `high` |
 | Cursor | Fable（不可なら Claude Opus 5） | Fable（不可なら Claude Opus 5） | Claude Sonnet 5 | Claude Sonnet 5（判断タスクのみ Claude Opus 5） | Claude Sonnet 5 | Claude Opus 5 |
 
 Claude Code の Task ツールの `model` パラメータは短縮エイリアス（`fable` / `opus` / `sonnet` / `haiku`）のみを受理するため、テンプレートでは `claude-opus-5` などのフル ID ではなく短縮名で指定します。また、テンプレートのモデル表はスキル内のモデル選択ガイド（例: subagent-driven-development の Model Selection 節）より優先されます。
@@ -413,7 +413,7 @@ Claude Code / Codex はサブエージェントごとのモデルをテンプレ
 ### サイクルルール
 
 - **機械的チェックが先**: Step 2〜3 に残存（解消できなかった違反・失敗テスト）があるサイクルは Step 4 を実行せず、残存を高指摘として統合指摘に記録してサイクルを終了する
-- **ペルソナは変更内容で選ぶ**: 差分規模ではなく変更内容が適用判定表（`quality-check` SKILL.md Step 1）を通じてペルソナを決める。docs のみの変更は要件・仕様整合性 + セキュリティ（機密限定）の2ペルソナ
+- **ペルソナは変更内容で選ぶ**: 差分規模ではなく変更内容が適用判定表（`quality-check` SKILL.md Step 1）を通じてペルソナを決める。docs のみの変更は要件・仕様整合性 + セキュリティ（機密限定）の2ペルソナ（設計文書を含む場合は+アーキテクト、規範を複数ファイルが共有する箇所への差分は+統合アーキテクチャレビュー）
 - **最低 1 サイクル実行**。2 周目以降は直前サイクルで優先度 高/中 の指摘があった場合のみ、指摘を出したペルソナによる検証レビュー（修正差分のみ）として実施（フルセットへの復帰はしない）
 - **高/中指摘が残らなくなるまでサイクルを繰り返す**（上限・停滞検出は quality-policy §5。同一クラスの高指摘が閾値以上出た場合は構造的停滞としてユーザー判断を仰ぐ）
 - 上限到達・停滞時はユーザーに判断を仰ぐ（受容 / 方針変更して追加サイクル / 中断。構造的停滞では方針変更による追加サイクルは選択肢に含めない）
@@ -446,14 +446,15 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 
 #### マージ前の品質チェック強制フック
 
-`settings.json` には `PreToolUse` フックが設定されており、コマンド行を静的に分類するだけの装置として動作します（着地するコミットを解決しようとはしません）。対象は `gh pr merge` / `gh api` の `pulls/<n>/merge` / main 上での `git merge`・`git pull`・`git rebase` / 宛先が `main`・`master` に完全一致する `git push` です。**feature ブランチへの push はゲートされません**。
+`settings.json` には `PreToolUse` フックが設定されており、コマンド行を静的に分類するだけの装置として動作します（着地するコミットを解決しようとはしません）。対象は `gh pr merge` / `gh api` の `pulls/<n>/merge` / main・master 上での `git merge`・`git pull`・`git rebase` / 宛先が `main`・`master` に完全一致する `git push` / main 上で refspec を省略または `HEAD`・`@`（大小無視）のみを指定した `git push` です。**feature ブランチへの push はこれらの形に一致しない限りゲートされません**（ただし下記「意図的な過検出」も参照）。worktree 上の main へのマージは hook の対象外です（下記参照）。
 
-- **無条件ブロック**（フラグ・ブランチの状態に関わらず）: force / delete push・`+refspec`・`--mirror`・`--all`、ゲート対象と同一行に別の git 操作（checkout・commit・reset・fetch 等）、`-C`・`--git-dir`・`-c`・`GIT_*=` 代入・同一行の `cd`/`pushd`、ref への展開文字、複数ゲート対象の同居、`<x>:main` 形の refspec。別コマンドに分けて素の git を実行してください
-- **通す条件**: フラグは quality-check 通過時の `commit`（repo ルートの `.quality-check-passed`、`{branch, commit}`、消費されない）を記録した JSON で、`commit` が `HEAD` と一致する場合（`branch` は診断用）、または `HEAD` の祖先で `commit..HEAD` の差分が全てハーネスファイル（制御面 carve-out・`Quality Gate Overrides` / `mutation_budget_minutes` の文字列変更 carve-out を除く。有効・コメントアウトの解析はせず、含まれていれば免除しません）である場合に通ります。main 自身のリモートからの同期は、引数なしの `git pull` / `git pull origin main` / `git merge origin/main` の3形に完全一致する場合に限りフラグ不要です
-- 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます（ただしゲートパラメータ（`Quality Gate Overrides` のキー）の変更、またはゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.codex/config.toml`・`mcp.json`・settings の `hooks` / `permissions.deny` 等）への変更を含む差分はこのカーブアウトにより免除されず、フラグが必要です。ゲート制御面ファイルに触れる追加コミットはハーネスファイルであってもフラグを無効化し、hook が `Gate control-plane changed:` でブロックします）
-- **fail-open**（無条件で allow）は入力ペイロード不正・git リポジトリ外の2つのみです。それ以外の git 呼び出し失敗はブロックされます
+- **無条件ブロック**（フラグ・ブランチの状態に関わらず）: force / delete push（`-f`/`-d` の短縮オプション束ね形を含む）・`+refspec`・`--mirror`・`--all`、ゲート対象と同一行に別の git 操作（checkout・switch・commit・reset・rebase・fetch・branch -f・update-ref・cherry-pick・stash pop 等。HEAD を動かす操作は改行区切りの複数行にまたがってもコマンド全体で判定）、`-C`・`--git-dir`・`--work-tree`・`--namespace`・`-c`・`--config-env`・`GIT_*=` 代入・同一行の `cd`/`pushd`、行内の展開文字（`$` `` ` `` `{` `%`。`gh` の `--subject`/`--body` の自由テキスト値を除く行内の全語が対象）、複数ゲート対象の同居、`<x>:main` 形の refspec（`<x>` が現在のブランチ名でも `HEAD` でもない逆形）、64 KB を超えるコマンド行。リダイレクト（`>` 等）はゲート判定上は特別扱いされず通常どおり解釈されます。別コマンドに分けて素の git を実行してください
+- **通す条件**: フラグは quality-check 通過時の `commit`（repo ルートの `.quality-check-passed`、`{branch, commit}`、消費されない）を記録した JSON で、`commit` が `HEAD` と一致する場合（短縮 SHA の前方一致可。`branch` は診断用）、または `HEAD` の祖先で `commit..HEAD` の差分が全てハーネスファイル（制御面 carve-out・`Quality Gate Overrides` / `mutation_budget_minutes` の文字列変更 carve-out を除く。有効・コメントアウトの解析はせず、含まれていれば免除しません）である場合に通ります。**現在のトランク**自身のリモートからの同期は、引数なしの `git pull` / `git pull origin <trunk>` / `git merge origin/<trunk>` の3形（トランクが `master` のチェックアウトでは `master` 形）に完全一致する場合に限りフラグ不要です
+- 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます（ただしゲートパラメータ（`Quality Gate Overrides` のキー）の変更、またはゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.claude`/`.codex`/`.cursor` の `agents/`/`commands/` ディレクトリ・`.codex/config.toml`・`mcp.json`・`.claude/settings.json`/`.claude/settings.local.json` 等）への変更を含む差分はこのカーブアウトにより免除されず、フラグが必要です。ゲート制御面ファイルに触れる追加コミットはハーネスファイルであってもフラグを無効化し、hook が `Gate control-plane changed:` でブロックします。`.claude/settings.json` / `.claude/settings.local.json` は**ファイル全体**が制御面です — hook はキー単位の解析をしないため、`permissions.allow` のみの変更もブロックします
+- **fail-open**（無条件で allow）は入力ペイロード不正（理由は stderr に出力されます）・git リポジトリ外の2つのみです。それ以外の git 呼び出し失敗はブロックされます
 - **トランク名は `main` / `master` 固定**です。他のトランク名を使うプロダクトは hook のゲート対象外で、`permissions.deny` 層と規約で担保します
-- hook はセッションの作業ディレクトリで評価します。git worktree で checkout した main へのマージは、その worktree を作業ディレクトリとするセッションで実行するか、統括側で quality-check を完走させフラグを作成してから行ってください
+- **worktree 上の main**（#116）: hook はセッションの作業ディレクトリのリポジトリを基準に評価し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読みます。正規の手順は「その worktree を作業ディレクトリとするセッションで quality-check を完走し、フラグをその worktree に作成してからそこで merge する」の1つだけです。統括側の別ディレクトリで先にフラグを作ってからマージする手順は成立しません
+- **意図的な過検出**: フラグ不要な feature ブランチへの push であっても、候補語（`merge`/`pull`/`rebase`/refspec 省略の `push`）を含む行は、同一行の別 git 操作・`-C`/`cd`・展開文字・hard flag の各条件でブロックされることがあります。`git fetch && git rebase origin/main` のような行は分けて実行してください
 
 つまり、main に取り込むたびに品質チェックを通す必要がありますが、レビュー後のハーネス微修正で再チェックは発生しません。main が独立して進んでいた場合、マージ後の main は未検証（マージ自体は成功しても main への push はブロックされる）になるため、マージ後の main で再度 quality-check を実行してから push してください。
 
@@ -915,7 +916,7 @@ GitHub の Actions タブから `Sync Superpowers Skills` ワークフローを�
 
 ### Q: Codex でもマージ前の品質チェックは強制されますか？
 
-されます。`.codex/hooks.json` の `PreToolUse` フックが `gh pr merge` / main 上での `git merge`・`git pull`・`git rebase` / main への直接 push を検査し、有効な `.quality-check-passed` フラグ（commit 紐付け JSON）がなければブロックします。feature ブランチへの push はゲートされません。main 自身のリモートからの同期（引数なしの `git pull` / `git pull origin main` / `git merge origin/main` の3形）はフラグ不要です。トランク名は `main` / `master` 固定です。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
+されます。`.codex/hooks.json` の `PreToolUse` フックが `gh pr merge` / main 上での `git merge`・`git pull`・`git rebase` / main への直接 push を検査し、有効な `.quality-check-passed` フラグ（commit 紐付け JSON）がなければブロックします。feature ブランチへの push はゲートされません。現在のトランク自身のリモートからの同期（引数なしの `git pull` / `git pull origin <trunk>` / `git merge origin/<trunk>` の3形。`master` トランクなら `master` 形）はフラグ不要です。トランク名は `main` / `master` 固定です。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
 
 ### Q: セットアップ後に ai-dev-helm リポジトリは必要ですか？
 

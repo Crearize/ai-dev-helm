@@ -21,11 +21,13 @@
 | `gate_parameter_overrides` | `GateParameterOverrides \| null` | 必須（発生時） [^lifecycle] | ミューテーションテストの実行時間バジェットを既定値から上書きした場合の記録（quality-policy.md §2「上書きの契約」）。上書きがなければ `null`。**打ち切り承認を記録する `gate_override` とは別物**（詳細は § GateParameterOverrides オブジェクト を参照） |
 | `gate_override` | `GateOverride \| null` | 必須（発生時） [^lifecycle] | サイクル上限到達・停滞でサイクルを打ち切ったにもかかわらずユーザーの明示承認のもとで完了扱いとした場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6）。**ゲートパラメータの上書きを記録する `gate_parameter_overrides` とは別物** |
 | `risk_level_downgrade` | `RiskLevelDowngrade \| null` | 必須（発生時） [^lifecycle] | `test-design` メモの自己判定より低いリスクレベルを Step 1 で採用した場合の記録。該当がなければ `null`（記録なしの引き下げは不可 — `quality-check` SKILL.md Step 1） |
-| `_notes` | `string[]` | 任意 | 運用上の観測事実の記録先（ポート占有確認の結果 — #119、サブエージェント中断の時刻と影響 — #120 など）。該当がなければ省略または空配列 |
+| `_notes` | `string[]` | 任意 | 運用上の観測事実の記録先（ポート占有確認の結果 — #119、サブエージェント中断の時刻と影響 — #120 など）。各要素は記録元のステップを示す `[Step N]` を先頭に付ける（例: `"[Step 1] E2E 用ポート 3000 を他プロジェクトが占有中。Step 5 で停止予定"`）。該当がなければ省略または空配列 |
 
 [^lifecycle]: 「フェーズ2必須」「必須（発生時）」は必須／任意と同じ軸ではなく、**いつから必須になるか**（フィールドのライフサイクル）を併記したもの。「フェーズ2必須」の SKILL.md 側の出力配線はフェーズ2で完了しており、以降に生成されるレポートでは必須。「必須（発生時）」は承認・上書きが発生した場合に必ず記録する（発生しなければ `null`）。
 
 > **移行注記**: フェーズ2の配線完了以前に生成されたレポートに `risk_level` / `lint_cycles` / `lint_abort_reason` / `mutation` / `test_design` が存在しないことは、レポート不正ではなく未配線を意味する。ただし `gate_override` の記録義務は quality-policy.md §5「打ち切り時のゲート挙動」により配線に先行して有効だったため、承認が発生したレポートでは配線前でも記録されている。
+
+> **移行注記（`review_mode` の旧値）**: 旧レポートに残る `review_mode: "staged"` / `"reduced"` は、いずれも現行の `"full"` として読み替える。旧レポートに付随する `diff_line_count`（差分行数による段階化の名残）は無視する。いずれも新規レポートには出力しない。
 
 ### Cycle オブジェクト
 
@@ -35,7 +37,7 @@
 | `findings` | `Finding[]` | 必須 | このサイクルで検出された指摘事項 |
 | `review_mode` | `"full" \| "verification"` | 任意 | 適用ペルソナセットの種別。`full`: Step 1 の適用判定表による選択 / `verification`: サイクル2以降、直前サイクルで Step 4 を実行し高/中指摘が出た場合の、指摘ペルソナによる修正差分レビュー（`quality-check` SKILL.md 4-3「サイクルと `review_mode`」）。直前サイクルが Step 2〜3 の残存で Step 4 を実行せず終了した場合、次サイクルも `full` として判定表から選び直す。省略時は `full` 扱い |
 | `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `verification` の場合は必須。`full` で Step 4 を実行したサイクルも必須）。`review_mode` が `verification` で前サイクルの残存指摘が非ペルソナ由来のみ（ペルソナの高/中指摘が0件）**かつ前サイクルの修正差分がテスト・設定・フォーマットのみ（production コード非該当）**の場合に Step 4 をスキップし、検証対象なしとして `personas: []`（空配列）を記録する（ゲート制御面ファイルに触れる修正差分はこの条件でもスキップ不可）。修正差分が production コードに及ぶ場合はスキップせず、セキュリティエンジニアと QA エンジニアの2ペルソナで検証レビューを行う（`quality-check` SKILL.md 4-3 を正とする）。Step 2〜3 の残存で Step 4 を実行せず終了したサイクルも `personas: []`（`review_mode: "full"` と組み合わせて「Step 4 未実行」を意味する） |
-| `persona_selection_basis` | `{ persona: string, applied: boolean, basis: string }[]` | 任意 | Step 1 の適用判定表による起動判定の根拠。判定表の6ペルソナ全件を含め、`applied: false` の行には理由を `basis` に書く（`quality-check` SKILL.md Step 1「ペルソナ起動判定」）。`review_mode: "full"` で Step 4 を実行したサイクルでは必須。`verification`、および Step 4 未実行（`personas: []`）のサイクルでは省略可 |
+| `persona_selection_basis` | `{ persona: string, applied: boolean, basis: string }[]` | 任意 | Step 1 の適用判定表による起動判定の根拠。判定表の6ペルソナ全件を含め、`applied: false` の行には理由を `basis` に書く（`quality-check` SKILL.md Step 1「ペルソナ起動判定」）。`review_mode: "full"` で Step 4 を実行したサイクルでは必須。`verification`、および Step 4 未実行（`personas: []`）のサイクルでは省略可。**`persona` は `quality-check` SKILL.md Step 4「ペルソナ定義」表の名称と完全一致させる**（Step 1 判定表側の表記もこれに合わせる）。`applied: true` の行の集合は同サイクルの `personas` と一致しなければならない |
 
 ### Finding オブジェクト
 
@@ -267,14 +269,14 @@ High リスクの backend 変更で、`test-recommendation` スキル（Step 5�
     {
       "cycle_number": 1,
       "review_mode": "full",
-      "personas": ["QAエンジニア", "要件・仕様整合性レビュアー", "セキュリティエンジニア", "統合アーキテクチャレビュー"],
+      "personas": ["QAエンジニア（ファルシフィケーション型）", "要件・仕様整合性レビュアー", "セキュリティエンジニア", "統合アーキテクチャレビュー"],
       "persona_selection_basis": [
-        { "persona": "QAエンジニア（反証型）", "applied": true, "basis": "コード変更（backend）を含む" },
-        { "persona": "要件・仕様整合性", "applied": true, "basis": "常に起動" },
-        { "persona": "セキュリティ", "applied": true, "basis": "認証・認可・入力処理の変更を含む" },
+        { "persona": "QAエンジニア（ファルシフィケーション型）", "applied": true, "basis": "コード変更（backend）を含む" },
+        { "persona": "要件・仕様整合性レビュアー", "applied": true, "basis": "常に起動" },
+        { "persona": "セキュリティエンジニア", "applied": true, "basis": "認証・認可・入力処理の変更を含む" },
         { "persona": "ソフトウェアアーキテクト", "applied": false, "basis": "新規モジュール・公開インターフェース・構造変更を含まない" },
-        { "persona": "統合アーキテクチャ", "applied": true, "basis": "複数モジュールにまたがる変更" },
-        { "persona": "パフォーマンス", "applied": false, "basis": "クエリ・ループ・キャッシュ・バンドル・高頻度経路の変更を含まない" }
+        { "persona": "統合アーキテクチャレビュー", "applied": true, "basis": "複数モジュールにまたがる変更" },
+        { "persona": "パフォーマンスエンジニア", "applied": false, "basis": "クエリ・ループ・キャッシュ・バンドル・高頻度経路の変更を含まない" }
       ],
       "findings": [
         {

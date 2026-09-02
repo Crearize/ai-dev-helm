@@ -7,11 +7,37 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ## 最重要ルール
 
-**hook（quality-gate.cjs）は main 相当への直接 push / merge を止める静的分類器であり、`gh pr merge` / main 上での `git merge` / main への直接 `git push` の前に必ずこのスキルを実行することを強制する。同期 3 形（引数なし `git pull` / `git pull origin main` / `git merge origin/main`）以外は要フラグ。フラグは `commit` のみで判定する（`branch` は診断用）。全チェック通過後のみマージ可能。**
+**hook（quality-gate.cjs）は main 相当への直接 push / merge を止める静的分類器であり、`gh pr merge` / main 上での `git merge` / main への直接 `git push` の前に必ずこのスキルを実行することを強制する。同期 3 形（引数なし `git pull` / 現在トランクへの `git pull origin <trunk>` / `git merge origin/<trunk>`。`master` トランクなら `master` 形）以外は（ゲート対象となる行では）要フラグ。フラグは `commit` のみで判定する（`branch` は診断用）。全チェック通過後のみマージ可能。hook の無条件ブロック・fail-open・worktree 手順の完全な定義は次節を単一ソースとする — 他ドキュメントはここを参照し、転記しない。**
 
 - **feature ブランチへの `git push` にフラグは不要**（ゲート対象外）。レビュー前の push・バックアップ push は自由に行える
 - CIはビルド確認のみ。静的チェック・テスト・レビューは全てローカルで実施する
 - 実行開始時（Step 0 冒頭）に既存の `.quality-check-passed` と `.quality-check-report.json` を削除する（古い許可証・レポートの残留防止）
+
+### hook の完全な契約（無条件ブロック・通過条件・fail-open・worktree）
+
+**対象**: `gh pr merge`、`gh api ...pulls/<n>/merge`、main / master 上の `git merge` / `git pull` / `git rebase`、宛先が `main` / `master` に完全一致する `git push`、および main 上で refspec を省略または `HEAD` / `@`（大小無視）のみを指定した `git push`。feature ブランチへの push はこれらの形に一致しない限りゲート対象外。
+
+**無条件ブロック**（フラグの有無・ブランチを問わず、以下のいずれかに該当すれば必ずブロックする）:
+
+- force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`
+- ゲート対象と同一行にある別の git 操作。特に HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `update-ref` / `stash pop`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定する
+- `-C` / `--git-dir` / `--work-tree` / `--namespace` / `-c` / `--config-env` / `GIT_*=` 代入 / 同一行の `cd` / `pushd`
+- 行内のシェル展開文字（`$` `` ` `` `{` `%`）。**行内の全語**が対象で、`gh` の `--subject` / `--body` の自由テキスト値のみ例外
+- 複数のゲート対象操作の同居
+- `<x>:main` 形の refspec（`<x>` が現在のブランチ名でも `HEAD` でもない逆形）
+- 64 KB を超えるコマンド行
+
+リダイレクト（`>` `>>` `<` `2>` 等）はゲート判定上は特別扱いしない — 通常どおり解釈され、リダイレクトの前後にあるゲート対象語も普通に検出される。
+
+**通す条件**: フラグ（`.quality-check-passed`）の `commit` が `HEAD` と一致する（短縮 SHA の前方一致可）、または `HEAD` の祖先でありその間の差分が全てハーネスファイル（ゲート制御面ファイルを除く）である場合。加えて、**現在のトランクの**同期 3 形 — 引数なしの `git pull`、`git pull origin <trunk>`、`git merge origin/<trunk>`（トランクが `master` のチェックアウトでは `master` 形）— はフラグ不要。
+
+**制御面**は `.claude` / `.codex` / `.cursor` の `agents/` `commands/` ディレクトリを含む（サブエージェントの system prompt やセッションに読み込まれるプロンプトのため）。`.claude/settings.json` / `.claude/settings.local.json` は**ファイル全体**が制御面であり、hook はキー単位の解析をしない — `permissions.allow` のみの変更もブロックする。
+
+**fail-open**（無条件で allow）は、入力ペイロードが不正な場合（理由を stderr に出力する）と、git リポジトリの外で実行された場合の2つに限る。それ以外の git 呼び出し失敗はゲート対象候補があればブロックする。
+
+**worktree 上の main**（#116）: hook はセッションの作業ディレクトリのリポジトリを基準に判定し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読む。正規の手順は「その worktree を作業ディレクトリとするセッションで quality-check を完走し、フラグをその worktree に作成してからそこで merge する」の1つのみ。統括側の別ディレクトリで先にフラグを作ってから merge する手順は誤りであり、成立しない。
+
+**feature ブランチ上の意図的な過検出**: フラグ不要な feature ブランチへの push であっても、候補語（`merge` / `pull` / `rebase` / refspec 省略の `push`）を含む行は、同一行の別 git 操作・`-C` / `cd`・展開文字・hard flag の各条件でブロックされうる（意図的な設計。`git fetch && git rebase origin/main` のような行は分けて実行する）。
 
 ### ハーネスのみ変更の免除
 
@@ -26,7 +52,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ただしハーネス設定ファイル（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）の差分がゲートパラメータ（quality-check の実行時間バジェット。キー名は `documents/development/quality-policy.md` §2「上書きの契約」の `Quality Gate Overrides` 記法）の変更を含む場合、この免除は適用しない。この場合は本スキルを実行し（適用判定表に従うレビュー）、フラグを作成する。hook 側もこのカーブアウトを免除判定に反映するため、フラグなしでのマージはブロックされうる。
 
-同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`skills/project/test-recommendation/**`（Step 5 は完了条件の構成要素であり、判定・提示・実行・記録の規定は同スキルを単一ソースとするため）・`.claude/skills` と `.claude/hooks` のツリー（`.claude/skills` はリンクノード自体を含む — `init` はこれをシンボリックリンクとして作成するため、1 パスの張り替えで quality-check ツリー全体が差し替わる）とその `.codex/**`・`.cursor/**` コピー・`.github/review-*.md`・hook 登録ファイル（`.codex/hooks.json` と `.claude` / `.cursor` の同等物）・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json` — MCP サーバー定義は command/args 実行の登録であり hooks.json と同クラス）**および hook 登録を担う `.claude/settings.json` と `.claude/settings.local.json`（Claude Code は両方を読み、後者が高優先度）の `hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` の hook 無効化キー・`permissions.deny` ルールリスト（破壊的コマンドガードを支える deny 層。`permissions.allow` の変更は免除のまま） — 登録を外す・無効化する・deny 層を弱めれば実体を守っても同じため）**。パスのマッチは大文字小文字を区別しない（Windows/macOS では `.claude/Hooks/...` は `.claude/hooks/...` と同一ファイル）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（適用判定表に従うレビューを実施しフラグを作成する。本カーブアウトは hook が強制する — 該当差分はフラグなしでのマージ・push が `Gate control-plane changed:` でブロックされる）。
+同様に、**ゲート制御面**に触れる差分もこの免除の対象外とする: `skills/project/quality-check/**`・`skills/project/_schemas/**`・`skills/project/test-recommendation/**`（Step 5 は完了条件の構成要素であり、判定・提示・実行・記録の規定は同スキルを単一ソースとするため）・`.claude/skills` と `.claude/hooks` のツリー（`.claude/skills` はリンクノード自体を含む — `init` はこれをシンボリックリンクとして作成するため、1 パスの張り替えで quality-check ツリー全体が差し替わる）とその `.codex/**`・`.cursor/**` コピー・`.claude` / `.codex` / `.cursor` の **`agents/` `commands/` ディレクトリ**（`.claude/agents/*.md` はサブエージェントの system prompt / モデル定義、`commands/*.md` はセッションに読み込まれるプロンプトのため）・`.github/review-*.md`・hook 登録ファイル（`.codex/hooks.json` と `.claude` / `.cursor` の同等物）・`.codex/config.toml`（ファイル全体 — inline `[hooks]` テーブル・`[features]` の hook 無効化・`[[rules]]` の deny 判定を持ち得る）・MCP 登録ファイル（`.claude/mcp.json` / `.codex/mcp.json` / `.cursor/mcp.json` — MCP サーバー定義は command/args 実行の登録であり hooks.json と同クラス）**および hook 登録を担う `.claude/settings.json` と `.claude/settings.local.json`（Claude Code は両方を読み、後者が高優先度）**。これら2ファイルは**ファイル全体**が制御面である — hook はキー単位の解析をしないため、`hooks` ブロック・`disableAllHooks` / `allowManagedHooksOnly` の hook 無効化キー・`permissions.deny` ルールリスト（破壊的コマンドガードを支える deny 層）に限らず、**`permissions.allow` のみの変更もブロックする**（登録を外す・無効化する・deny 層を弱めれば実体を守っても同じため）。パスのマッチは大文字小文字を区別しない（Windows/macOS では `.claude/Hooks/...` は `.claude/hooks/...` と同一ファイル）。これらはゲートそのものを構成するファイルであり、開発中レビューの廃止（quality-policy §5.5）後は本スキルが唯一のレビュー地点となるため、レビュー0回での変更を許さない（適用判定表に従うレビューを実施しフラグを作成する。本カーブアウトは hook が強制する — 該当差分はフラグなしでのマージ・push が `Gate control-plane changed:` でブロックされる）。
 
 README や `documents/` 配下の利用者向けドキュメントはハーネスファイルに**含まれない**（要件 + セキュリティ（機密限定）ペルソナの対象）。
 
@@ -128,24 +154,24 @@ Step 0 で取得済みの変更ファイル一覧を再利用してよい（同�
 | infra | 該当ビルドコマンド | - | review-infra.md + 統合レビュー | test-recommendation スキルで判定 |
 | 複合 | 各領域の静的チェックを全て実行 | 各領域のテストを全て実行 | 各領域のレビューガイド + 統合レビュー | test-recommendation スキルで判定 |
 
-> docs のみの変更では Step 2, 3 がスキップされ、適用判定表で選ばれたペルソナ（Step 4「適用ペルソナ（Step 1 の判定表を正とする）」参照。docs のみなら要件 + セキュリティ（機密限定）の2ペルソナ）によるレビューと Step 5（追加テスト提案）・Step 5.75（self-improvement）が実行される。infra のみの変更では **Step 2（該当ビルドコマンド）を実行し**、Step 3 をスキップして同じく判定表で選ばれたペルソナ以降を実行する。docs / infra のみの変更では、Step 5 のミューテーションは領域による対象外（`reason: "out_of_scope"` を直接記録する — test-recommendation の「未実行理由の優先順位」表を正とする）、E2E はヒューリスティクスで「提案しない」（`recommendation: "none"` / `user_decision: "not_proposed"`）となる。スキルの全文参照実行は不要で、判定結果の記録のみ行う。
+> docs のみの変更では Step 2, 3 がスキップされ、適用判定表で選ばれたペルソナ（Step 4「適用ペルソナ（Step 1 の判定表を正とする）」参照。docs のみなら要件・仕様整合性レビュアー + セキュリティエンジニア（機密限定）の2ペルソナ。ただし設計文書を含む場合は+ソフトウェアアーキテクト、同一の規範を複数ファイルが持つ箇所に差分がある場合は+統合アーキテクチャレビューが加わる）によるレビューと Step 5（追加テスト提案）・Step 5.75（self-improvement）が実行される。infra のみの変更では **Step 2（該当ビルドコマンド）を実行し**、Step 3 をスキップして同じく判定表で選ばれたペルソナ以降を実行する。docs / infra のみの変更では、Step 5 のミューテーションは領域による対象外（`reason: "out_of_scope"` を直接記録する — test-recommendation の「未実行理由の優先順位」表を正とする）、E2E はヒューリスティクスで「提案しない」（`recommendation: "none"` / `user_decision: "not_proposed"`）となる。スキルの全文参照実行は不要で、判定結果の記録のみ行う。
 >
 > Step 3 欄が `-` の領域ではテスト設計メモの照合も実行しない（`documents/development/quality-policy.md` §2「マトリクス優先順位原則」）。
 
 ### ペルソナ起動判定
 
-適用ペルソナは変更**内容**で決まる（変更領域や差分行数の段階化・縮退ではない）。判定は本 Step 1 で行う。
+適用ペルソナは変更**内容**で決まる（変更領域や差分行数の段階化・縮退ではない）。初回判定は本 Step 1 で行う（サイクル2以降の再判定は Step 4「適用ペルソナ」を参照）。
 
-| ペルソナ | 起動条件 |
+| ペルソナ（Step 4「ペルソナ定義」表の名称と一致させる） | 起動条件 |
 |---|---|
-| QA エンジニア（反証型） | コード変更（テスト・設定を含む）がある場合は常に |
-| 要件・仕様整合性 | 常に（docs のみでも） |
-| セキュリティ | 認証・認可・入力処理・秘密情報・設定ファイル・hook / ゲート制御面・依存関係の変更を含む場合。docs のみの変更では機密情報（資格情報・内部 URL・個人情報）の混入確認に限定して起動 |
+| QAエンジニア（ファルシフィケーション型） | コード変更（テスト・設定を含む）がある場合は常に |
+| 要件・仕様整合性レビュアー | 常に（docs のみでも） |
+| セキュリティエンジニア | 認証・認可・入力処理・秘密情報・設定ファイル・hook / ゲート制御面・依存関係の変更を含む場合。docs のみの変更では機密情報（資格情報・内部 URL・個人情報）の混入確認に限定して起動 |
 | ソフトウェアアーキテクト | 新規モジュール・公開インターフェース・構造変更・設計文書の変更を含む場合 |
-| 統合アーキテクチャ | 複数モジュール / 層 / 配布物にまたがる変更、または同一の規範を複数ファイルが持つ箇所（テンプレート 3 種の同節、ポリシー文書とスキル、スキーマとスキル）に差分がある場合 |
-| パフォーマンス | クエリ・コレクションのループ・キャッシュ・バンドル・実行頻度の高い経路（hook 等）の変更を含む場合 |
+| 統合アーキテクチャレビュー | 複数モジュール / 層 / 配布物にまたがる変更、または同一の規範を複数ファイルが持つ箇所（テンプレート 3 種の同節、ポリシー文書とスキル、スキーマとスキル）に差分がある場合 |
+| パフォーマンスエンジニア | クエリ・コレクションのループ・キャッシュ・バンドル・実行頻度の高い経路（hook 等）の変更を含む場合 |
 
-docs のみの変更（設計文書を含まない README 修正等）は要件 + セキュリティ（機密限定）の 2 ペルソナになる。これは意図的（無駄なペルソナを動かさない）。
+docs のみの変更（設計文書を含まない README 修正等）は要件・仕様整合性レビュアー + セキュリティエンジニア（機密限定）の 2 ペルソナになる。設計文書を含む場合は+ソフトウェアアーキテクト、同一の規範を複数ファイルが持つ箇所（テンプレート3種の同節、ポリシー文書とスキル、スキーマとスキル等）に差分がある場合は+統合アーキテクチャレビューが加わる。いずれにも該当しない場合の2ペルソナは意図的（無駄なペルソナを動かさない）。
 
 `personas` の意味は現行どおり「起動したペルソナ名一覧」（`personas: []` = Step 4 スキップの意味論も維持）。起動判定の根拠は `.quality-check-report.json` の `persona_selection_basis`（型 `{ persona: string, applied: boolean, basis: string }[]`。判定表の 6 ペルソナ全件を含め、`applied: false` の行は理由を `basis` に書く。`cycles[]` 配下、`review_mode: "verification"` のサイクルでは省略可）に記録する。
 
@@ -286,9 +312,9 @@ Low リスクの変更、および領域テーブルの Step 3 欄が `-` の領
 
 ### 適用ペルソナ（Step 1 の判定表を正とする）
 
-起動するペルソナは Step 1「ペルソナ起動判定」の適用判定表で既に決まっている（本節では再判定しない）。docs のみの変更は要件・仕様整合性レビュアーとセキュリティエンジニア（機密情報の混入検出に限定）の2ペルソナになる。
+起動するペルソナは Step 1「ペルソナ起動判定」の適用判定表で既に決まっている（サイクル1は Step 1 の判定結果をそのまま使う。サイクル2以降で `review_mode: "full"` となる場合は、そのサイクルの Step 4 冒頭で同じ判定表を最新差分に再適用し、`persona_selection_basis` を当該サイクルに記録する）。docs のみの変更は要件・仕様整合性レビュアーとセキュリティエンジニア（機密情報の混入検出に限定）の2ペルソナになる。ただし設計文書を含む場合は+ソフトウェアアーキテクト、同一の規範を複数ファイルが持つ箇所に差分がある場合は+統合アーキテクチャレビューが加わる。
 
-- 適用ペルソナが1つでもコード変更を含む場合と同様、並列サブエージェントとして実行し、指示テンプレート・出力形式・統合手順は共通
+- 適用ペルソナが1つの場合も並列サブエージェントとして実行し、指示テンプレート・出力形式・統合手順は共通とする（ペルソナ数によって手順を変えない）
 - サイクルの終了判定は本スキルの「完了条件」節に従う（適用ペルソナの構成で完了条件は変わらない）
 - 起動した全ペルソナ名を `.quality-check-report.json` の各サイクルの `personas` に記録する（起動判定の根拠は Step 1 で記録した `persona_selection_basis` を参照）
 
@@ -424,14 +450,14 @@ JSONフォーマット例：
     {
       "cycle_number": 1,
       "review_mode": "full",
-      "personas": ["QAエンジニア", "要件・仕様整合性レビュアー", "セキュリティエンジニア", "統合アーキテクチャレビュー"],
+      "personas": ["QAエンジニア（ファルシフィケーション型）", "要件・仕様整合性レビュアー", "セキュリティエンジニア", "統合アーキテクチャレビュー"],
       "persona_selection_basis": [
-        { "persona": "QAエンジニア（反証型）", "applied": true, "basis": "コード変更（backend）を含む" },
-        { "persona": "要件・仕様整合性", "applied": true, "basis": "常に起動" },
-        { "persona": "セキュリティ", "applied": true, "basis": "認証・認可に関わる変更を含む" },
+        { "persona": "QAエンジニア（ファルシフィケーション型）", "applied": true, "basis": "コード変更（backend）を含む" },
+        { "persona": "要件・仕様整合性レビュアー", "applied": true, "basis": "常に起動" },
+        { "persona": "セキュリティエンジニア", "applied": true, "basis": "認証・認可に関わる変更を含む" },
         { "persona": "ソフトウェアアーキテクト", "applied": false, "basis": "新規モジュール・公開インターフェース・構造変更を含まない" },
-        { "persona": "統合アーキテクチャ", "applied": true, "basis": "複数モジュールにまたがる変更" },
-        { "persona": "パフォーマンス", "applied": false, "basis": "クエリ・ループ・キャッシュ・バンドル・高頻度経路の変更を含まない" }
+        { "persona": "統合アーキテクチャレビュー", "applied": true, "basis": "複数モジュールにまたがる変更" },
+        { "persona": "パフォーマンスエンジニア", "applied": false, "basis": "クエリ・ループ・キャッシュ・バンドル・高頻度経路の変更を含まない" }
       ],
       "findings": [
         {
@@ -566,7 +592,7 @@ node -e "const c=require('child_process'),f=require('fs');const g=a=>c.execSync(
 - [ ] Step 2〜3 に残存があるサイクルでは Step 4 を実行せず終了した
 - [ ] 適用した全ペルソナのレビュー完了
 - [ ] 前段工程の結果（Lint 残存・テスト失敗・test-design 照合）をペルソナのプロンプトに含めた
-- [ ] サイクル2以降は検証レビュー（`review_mode: "verification"`）を適用した（前サイクルで高/中指摘を出したペルソナのみ / 検証で新規の高指摘が出たら修正して同じペルソナで再検証 — フルセット復帰はしない / ペルソナ指摘0件は修正差分が production コード非該当の場合のみ Step 4 スキップを `personas: []` で記録 — production コードに及ぶ場合はセキュリティ + QA の2ペルソナで検証レビュー）
+- [ ] サイクル2以降は検証レビュー（`review_mode: "verification"`）を適用した（直前サイクルが Step 2〜3 の残存で Step 4 未実行の場合を除く — その場合は `full` で判定表から選び直す / それ以外は前サイクルで高/中指摘を出したペルソナのみ / 検証で新規の高指摘が出たら修正して同じペルソナで再検証 — フルセット復帰はしない / ペルソナ指摘0件は修正差分が production コード非該当の場合のみ Step 4 スキップを `personas: []` で記録 — production コードに及ぶ場合はセキュリティ + QA の2ペルソナで検証レビュー）
 - [ ] 統合指摘に高/中指摘なし（最低1サイクル完了。上限到達・停滞・構造的停滞時はユーザー判断 + `cycle_abort_reason` / `gate_override` 記録）
 - [ ] レポートデータ保存完了
 
