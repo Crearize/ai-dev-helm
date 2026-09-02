@@ -35,9 +35,26 @@ public class Violation {
     public void bareModuleNameWithSuffix() {
     }
 
-    // Violation 7: "all" in upper case is still the blanket value
+    // Violation 7: "all" in upper case is not honored by Checkstyle itself
+    // (the comparison is case-sensitive on the literal "all"), but the intent
+    // is unambiguously blanket suppression, so this rule still flags it as a
+    // fail-closed guard rather than waiting for someone to notice the
+    // annotation silently does nothing.
     @SuppressWarnings("ALL")
     public void suppressAllUpper() {
+    }
+
+    // Violation 8: fully-qualified class name with the Check suffix - Checkstyle
+    // resolves the module by the short name at the end of the FQN, so this is
+    // honored exactly like the bare module name form
+    @SuppressWarnings("com.puppycrawl.tools.checkstyle.checks.coding.MagicNumberCheck")
+    public void fqnModuleNameWithSuffix() {
+    }
+
+    // Violation 9: fully-qualified class name without the Check suffix - same
+    // resolution, still honored
+    @SuppressWarnings("com.puppycrawl.tools.checkstyle.checks.coding.MagicNumber")
+    public void fqnModuleNameWithoutSuffix() {
     }
 
     // Near miss: a correctly-formed reference must not be flagged here (the
