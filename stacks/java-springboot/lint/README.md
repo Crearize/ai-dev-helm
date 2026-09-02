@@ -57,6 +57,27 @@ Notes verified by execution:
 - `EmptyCatchBlock` and the ast-grep rule `no-empty-catch-java` are deliberately kept in agreement: Checkstyle flags an empty catch that has no comment; the ast-grep rule is stricter (a comment-only body is still empty) and is the enforced rule when a product ships both. Do not re-add `exceptionVariableName` to `EmptyCatchBlock` - naming the variable `ignored` must not wave an empty catch through.
 - The `security` group's `RegexpSinglelineJava` is a second instance of that module (the first, in `correctness`, bans `System.out`/`System.err`); both surface in output as `[RegexpSinglelineJava]`, distinguished by their messages.
 
+### Line-level suppression (#117)
+
+`checkstyle.xml` wires `SuppressWarningsFilter` (directly under `Checker`) and `SuppressWarningsHolder` (first module inside `TreeWalker`) so a declaration can silence one module by name - `@SuppressWarnings("checkstyle:IllegalCatch")` - instead of freezing an entire file via `suppressions-*.xml`. `SuppressWarningsFilter`/`SuppressWarningsHolder` are structural wiring, not a concern group: they never themselves produce a finding (a filter removes findings; a holder only records annotation state), so they are not part of the module-group table above and are excluded from the execution coverage check the same way `Checker`/`TreeWalker` are.
+
+**Operating convention (MUST):**
+
+- Put the annotation on the smallest declaration that contains the catch - a method, a constructor, or a lambda-holding local variable. Never on a class, interface, enum, record, `@interface`, or field: at that scope the annotation covers everything inside it, which quietly revives file-wide suppression through one line.
+- The comment immediately above the annotation must start with `// 境界宣言: <なぜ型を絞れないか>` (why the catch type cannot be narrowed) - a boundary declaration, not a shrug.
+- Never add `IllegalCatch` to a product's `suppressions-*.xml`. File-level suppression and this line-level mechanism are not meant to coexist for the same module.
+
+**What the suppression mechanism will accept (verified against Checkstyle 14.0.0) - and why that is dangerous unchecked:**
+
+1. `@SuppressWarnings("all")` (case-insensitive) suppresses **every** Checkstyle check on the annotated declaration, not just `IllegalCatch`.
+2. The `checkstyle:` prefix is optional - a bare check name (case-insensitive, with or without a trailing `Check`) also suppresses that check, so a typo'd or unrelated module name silently goes dark instead of failing loudly.
+3. The value is honored from a text-block literal (`"""all"""`) exactly as from a normal string literal.
+4. A constant reference or a concatenation (`SOME_CONST`, `"al" + "l"`) is honored as identifier text, not resolved as a value - so grep-based review of "what does this suppress" cannot see it.
+5. Declaring the annotation on a class (or interface/enum/record/`@interface`) scopes it to everything inside, which is file-level suppression back from the dead via one annotation.
+6. Checkstyle's own `SuppressWarnings` check (the one that would normally flag `@SuppressWarnings("all")` as too broad) is itself subject to `SuppressWarningsFilter` - so wiring it in does not close the hole; a declaration that suppresses `all` suppresses the check that would have caught it, too.
+
+**The guard**: detection for all six points above lives outside the Checkstyle suppression mechanism entirely, in three ast-grep rules under `shared/lint/ast-grep/error-handling/` - `no-blanket-suppress-warnings-java`, `no-type-scope-illegal-catch-suppression-java`, `no-non-literal-suppress-warnings-java` (see that directory's README). Adopt all three at `error` severity in `lint:all` alongside the Checkstyle preset; each is execution-verified the same way this preset is (`lib/lint-assets.test.js`, fixtures under `test/fixtures/ast-grep/<rule-id>/`).
+
 ## Wiring ArchUnit (Gradle)
 
 1. Add the test dependency (JUnit 5 engine is already provided by `spring-boot-starter-test`):
@@ -84,6 +105,7 @@ Layout tolerance is built in: `consideringOnlyDependenciesInLayers()` ignores de
 ## How these assets were verified
 
 - Checkstyle (auto-verified): `java -jar checkstyle-14.0.0-all.jar -c checkstyle.xml` over `test/fixtures/checkstyle/` in this repo - `Violation.java` fires every module of every group (correctness, error-handling, security, dead-code, complexity, hardcode), `Ok.java` yields zero findings. `lib/checkstyle-assets.test.js` repeats that run when `CHECKSTYLE_JAR` points at the all-in-one JAR (static XML shape checks, group-label/module mapping, and the ArchUnit template shape checks always run).
+- Suppression wiring (#117) is verified by the boundary-declared method in `Ok.java` staying clean: it has a real `IllegalCatch` violation (`catch (RuntimeException e)`) guarded only by `@SuppressWarnings("checkstyle:IllegalCatch")`, so `Ok.java` reaching zero findings under `CHECKSTYLE_JAR` execution is proof the filter/holder pair actually suppresses it, not just that the config parses.
 - ArchUnit (manually verified): the template (with `__BASE_PACKAGE__` instantiated) was compiled and executed via `gradlew test` inside a real Spring Boot 3.2 / Java 21 / jOOQ project with controller, service, repository plus non-layer packages; all three rules evaluated its production classes and passed. **This was a one-time manual run (ArchUnit 1.4.1, JUnit 5, Gradle 8.5), not repeated per test run** - the repo has a no-CI policy, so there is no automated ArchUnit execution. `lib/checkstyle-assets.test.js` guards the template's structure (placeholder, imports, `@ArchTest` count) so edits cannot silently break its shape.
 
 ### ArchUnit cost

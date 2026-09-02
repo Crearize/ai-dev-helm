@@ -1,0 +1,51 @@
+# Detects a `@SuppressWarnings` value that is not a plain string literal: a
+# constant reference (`BAD`), a field access (`Constants.BAD`), or a
+# concatenation/other binary expression (`"al" + "l"`). Checkstyle's
+# SuppressWarningsHolder resolves these the same way it resolves a literal
+# (#117), so a non-literal value defeats grep-based review of what is being
+# suppressed without changing what gets suppressed. The value's actual content
+# is never resolved here (no type resolution needed) - anything other than a
+# bare string literal is flagged. The `key` identifier of a `value = "..."`
+# form, and identifiers that are themselves part of a flagged field-access
+# expression, are excluded so each violation is reported once. Catalog: A3.
+id: no-non-literal-suppress-warnings-java
+language: Java
+severity: error
+message: "SuppressWarnings value must be a plain string literal. A constant reference, field access, or concatenation defeats grep-based review of what is being suppressed. (Catalog: A3, #117)"
+rule:
+  any:
+    - kind: identifier
+      inside:
+        kind: annotation_argument_list
+        stopBy: end
+        inside:
+          kind: annotation
+          has:
+            field: name
+            regex: ^SuppressWarnings$
+      not:
+        any:
+          - inside:
+              kind: element_value_pair
+              field: key
+          - inside:
+              kind: field_access
+              stopBy: end
+    - kind: binary_expression
+      inside:
+        kind: annotation_argument_list
+        stopBy: end
+        inside:
+          kind: annotation
+          has:
+            field: name
+            regex: ^SuppressWarnings$
+    - kind: field_access
+      inside:
+        kind: annotation_argument_list
+        stopBy: end
+        inside:
+          kind: annotation
+          has:
+            field: name
+            regex: ^SuppressWarnings$

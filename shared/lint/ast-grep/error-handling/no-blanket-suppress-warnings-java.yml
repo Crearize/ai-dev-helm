@@ -1,0 +1,30 @@
+# Detects a `@SuppressWarnings` string value on a Checkstyle-suppressible
+# declaration that is not an exact `checkstyle:<ModuleName>` reference to a
+# module this preset declares (stacks/java-springboot/lint/checkstyle/checkstyle.xml).
+# Checkstyle's SuppressWarningsHolder (#117) accepts `all` (case-insensitive),
+# an optional `checkstyle:` prefix, and any bare check name (case-insensitive,
+# trailing `Check` optional) - so a value that is not the fixed
+# `checkstyle:<ModuleName>` form can blanket-suppress every check or silence an
+# unrelated one. The rule inverts the allow-list: any string literal inside a
+# SuppressWarnings argument list that does not match the fixed form is flagged,
+# whether it is a plain literal or a text-block literal (`"""..."""`).
+#
+# If a module is added to or removed from the checkstyle.xml preset, update the
+# module-name alternation below to match (checkstyle.xml carries the mirror
+# note). Catalog: A3.
+id: no-blanket-suppress-warnings-java
+language: Java
+severity: error
+message: "SuppressWarnings string value must be an exact checkstyle:<ModuleName> reference to a module declared in the preset. `all`, bare check names, and any other value blanket-suppress or misdirect Checkstyle. (Catalog: A3, #117)"
+rule:
+  kind: string_literal
+  inside:
+    kind: annotation_argument_list
+    stopBy: end
+    inside:
+      kind: annotation
+      has:
+        field: name
+        regex: ^SuppressWarnings$
+  not:
+    regex: '^"{1,3}\s*checkstyle:(AvoidStarImport|RegexpSinglelineJava|EqualsHashCode|EmptyCatchBlock|IllegalCatch|IllegalImport|UnusedImports|RedundantImport|UnusedLocalVariable|MethodLength|CyclomaticComplexity|ParameterNumber|NestedIfDepth|MagicNumber)\s*"{1,3}$'
