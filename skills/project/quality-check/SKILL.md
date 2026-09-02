@@ -20,15 +20,15 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 **無条件ブロック**（フラグの有無・ブランチを問わず、以下のいずれかに該当すれば必ずブロックする）:
 
 - force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`、`--branches`
-- ゲート対象と同一行にある別の git 操作。この判定対象は**閉じた集合**である: HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `update-ref` / `stash pop` / `stash apply`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定し、`fetch` および `branch -f` / `-d` / `-D` / `--force` は**同一行**で判定する。それ以外の git 操作（`status` / `add` / `log` / `diff` / `tag` / `remote` 等）は同居してもブロックしない
+- ゲート対象と同一行にある別の git 操作。この判定対象は**閉じた集合**である: HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `revert` / `am` / `bisect` / `update-ref` / `stash pop` / `stash apply`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定し、`fetch` および `branch -f` / `-d` / `-D` / `--force` は**同一行**で判定する。それ以外の git 操作（`status` / `add` / `log` / `diff` / `tag` / `remote` 等）は同居してもブロックしない
 - `-C` / `--git-dir` / `--work-tree` / `--namespace` / `-c` / `--config-env` / `GIT_*=` 代入 / 同一行の `cd` / `pushd`
 - 行内のシェル展開文字（`$` `` ` `` `{` `%`。`$'…'` / `$"…"` の ANSI-C / ロケールクォートも展開扱い）。**行内の全語**が対象で、`gh` の自由テキスト値オプション（`-t` / `--subject`、`-b` / `--body`、`-F` / `--body-file` の3組6形）のみ例外
 - 複数のゲート対象操作の同居
-- `<x>:main` 形の refspec（`<x>` が現在のブランチ名でも `HEAD` でもない逆形）
+- `<x>:main` 形の refspec（`<x>` が現在のブランチ名 / `HEAD` / `@`（大小無視）のいずれでもない逆形）
 
 リダイレクト（`>` `>>` `<` `2>` 等）はゲート判定上は特別扱いしない — 通常どおり解釈され、リダイレクトの前後にあるゲート対象語も普通に検出される。
 
-**コマンド長 / ペイロード上限**（無条件ブロックの閉じた集合には含まれない別枠の規則）: 64 KB を超えるコマンド行は分類せず、ゲート語（`merge` / `pull` / `push` / `rebase` / `pr`、`pulls/<n>/merge`）を**コマンド全体**に含めば block、含まなければ allow とする（同一行の別 git 操作や展開文字の判定は行わない）。1 MB を超える hook ペイロード（stdin 全体）は stderr に理由を出して無条件 block する（読み切れない入力を allow にしない）。fail-open は下記の2つのままであり、この上限超過は fail-open に含めない。
+**分類予算**（無条件ブロックの閉じた集合には含まれない別枠の規則）: 64 KB を超えるコマンド、または 1 コマンド内の git / gh 呼び出しが 256 を超える場合は分類しない。前者（64 KB 超）はゲート語（`merge` / `pull` / `push` / `rebase` / `pr`、`pulls/<n>/merge`）を含めば block とする。判定はコマンド全体の生文字列に加え、クォート（`"` `'`）とバックスラッシュ（`\`）を除去した後の語でも行う（bash は `p""ush` / `pu\sh` を `push` と読むため）。除去後の文字列に展開文字（`$` または `` ` ``）を含む場合は、ゲート語の有無を問わず block とする（`$'\x70'ush` 等を静的に読み切れないための fail-closed。`classify` 例外時の fallback も同じ判定関数を使う）。いずれにも該当しなければ allow とする（同一行の別 git 操作の判定は行わない）。後者（256 超の git / gh 呼び出し数）と 1 MB を超える hook ペイロード（stdin 全体）は分類せず無条件 block する（読み切れない入力を allow にしない）。fail-open は下記の2つのままであり、この上限超過は fail-open に含めない。
 
 **通す条件**: フラグ（`.quality-check-passed`）の `commit` が `HEAD` と一致する（短縮 SHA の前方一致可）、または `HEAD` の祖先でありその間の差分が全てハーネスファイル（ゲート制御面ファイルを除く）である場合。加えて、**現在のトランクの**同期 3 形 — 引数なしの `git pull`、`git pull origin <trunk>`、`git merge origin/<trunk>`（トランクが `master` のチェックアウトでは `master` 形）— はフラグ不要。
 
