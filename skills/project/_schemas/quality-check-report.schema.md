@@ -8,7 +8,7 @@
 |-----------|-----|------|------|
 | `cycles` | `Cycle[]` | 必須 | quality-check サイクル（Step 2 → 3 → 4 → 統合指摘の対応 を1周とする。quality-policy.md §5）の配列 |
 | `total_cycles` | `number` | 必須 | 完了したサイクル総数（`cycle_extensions` による追加サイクルを含む） |
-| `cycle_abort_reason` | `"cycle_limit" \| "stagnation" \| null` | フェーズ2必須 [^lifecycle] | サイクルの打ち切り事由。`cycle_limit`: サイクル上限到達 / `stagnation`: 直前サイクルと同一の高指摘が再度残った（停滞検出）。高/中指摘が解消して終了した場合は `null`。ユーザー承認で追加サイクルを実施し最終的に解消した場合も `null`（打ち切りの経緯は `cycle_extensions` に残る） |
+| `cycle_abort_reason` | `"cycle_limit" \| "stagnation" \| "structural" \| null` | フェーズ2必須 [^lifecycle] | サイクルの打ち切り事由。`cycle_limit`: サイクル上限到達 / `stagnation`: 直前サイクルと同一の高指摘が再度残った（停滞検出）/ `structural`: 1サイクルで同一クラスの高指摘が閾値以上出た（構造的停滞 — quality-policy §5）。高/中指摘が解消して終了した場合は `null`。ユーザー承認で追加サイクルを実施し最終的に解消した場合も `null`（打ち切りの経緯は `cycle_extensions` に残る） |
 | `cycle_extensions` | `CycleExtension[]` | フェーズ2必須 [^lifecycle] | 上限到達・停滞後にユーザー承認で追加サイクルを実施した記録。なければ空配列（§ CycleExtension オブジェクト 参照） |
 | `e2e` | `E2E` | 必須 | Step 5（`test-recommendation` スキル）による E2E テストの提案・実行結果（quality-policy.md §2）。旧トップレベル `e2e_result` / `e2e_issues` を置き換える（§ E2E オブジェクト 参照） |
 | `documentation` | `Documentation` | 必須 | `feature-documentation` スキルの実行状況（Step 0） |
@@ -21,6 +21,7 @@
 | `gate_parameter_overrides` | `GateParameterOverrides \| null` | 必須（発生時） [^lifecycle] | ミューテーションテストの実行時間バジェットを既定値から上書きした場合の記録（quality-policy.md §2「上書きの契約」）。上書きがなければ `null`。**打ち切り承認を記録する `gate_override` とは別物**（詳細は § GateParameterOverrides オブジェクト を参照） |
 | `gate_override` | `GateOverride \| null` | 必須（発生時） [^lifecycle] | サイクル上限到達・停滞でサイクルを打ち切ったにもかかわらずユーザーの明示承認のもとで完了扱いとした場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6）。**ゲートパラメータの上書きを記録する `gate_parameter_overrides` とは別物** |
 | `risk_level_downgrade` | `RiskLevelDowngrade \| null` | 必須（発生時） [^lifecycle] | `test-design` メモの自己判定より低いリスクレベルを Step 1 で採用した場合の記録。該当がなければ `null`（記録なしの引き下げは不可 — `quality-check` SKILL.md Step 1） |
+| `_notes` | `string[]` | 任意 | 運用上の観測事実の記録先（ポート占有確認の結果 — #119、サブエージェント中断の時刻と影響 — #120 など）。該当がなければ省略または空配列 |
 
 [^lifecycle]: 「フェーズ2必須」「必須（発生時）」は必須／任意と同じ軸ではなく、**いつから必須になるか**（フィールドのライフサイクル）を併記したもの。「フェーズ2必須」の SKILL.md 側の出力配線はフェーズ2で完了しており、以降に生成されるレポートでは必須。「必須（発生時）」は承認・上書きが発生した場合に必ず記録する（発生しなければ `null`）。
 
@@ -32,9 +33,9 @@
 |-----------|-----|------|------|
 | `cycle_number` | `number` | 必須 | サイクル番号（1始まり） |
 | `findings` | `Finding[]` | 必須 | このサイクルで検出された指摘事項 |
-| `review_mode` | `"full" \| "staged" \| "reduced" \| "verification"` | 任意 | 適用ペルソナセットの種別。`full`: 6ペルソナ / `staged`: 差分規模200行未満による3ペルソナ段階化 / `reduced`: docs/infraのみの変更による縮退 / `verification`: サイクル2以降、前サイクルで高/中指摘を出したペルソナのみによる検証レビュー（`quality-check` SKILL.md 4-3「検証レビュー縮退」）。省略時は `full` 扱い |
-| `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `staged` / `reduced` / `verification` の場合は必須）。`review_mode` が `verification` で前サイクルの残存指摘が非ペルソナ由来のみ（ペルソナの高/中指摘が0件）**かつ前サイクルの修正差分がテスト・設定・フォーマットのみ（production コード非該当）**の場合に Step 4 をスキップし、検証対象なしとして `personas: []`（空配列）を記録する（ゲート制御面ファイルに触れる修正差分はこの条件でもスキップ不可）。修正差分が production コードに及ぶ場合はスキップせず、セキュリティエンジニアと QA エンジニアの2ペルソナで検証レビューを行う（`quality-check` SKILL.md 4-3 を正とする） |
-| `diff_line_count` | `number` | 任意 | 段階化判定に使った差分行数（追加+削除、生成ファイル除外後。`review_mode` が `staged` または `full` でコード変更を含む場合に記録） |
+| `review_mode` | `"full" \| "verification"` | 任意 | 適用ペルソナセットの種別。`full`: Step 1 の適用判定表による選択 / `verification`: サイクル2以降、直前サイクルで Step 4 を実行し高/中指摘が出た場合の、指摘ペルソナによる修正差分レビュー（`quality-check` SKILL.md 4-3「サイクルと `review_mode`」）。直前サイクルが Step 2〜3 の残存で Step 4 を実行せず終了した場合、次サイクルも `full` として判定表から選び直す。省略時は `full` 扱い |
+| `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `verification` の場合は必須。`full` で Step 4 を実行したサイクルも必須）。`review_mode` が `verification` で前サイクルの残存指摘が非ペルソナ由来のみ（ペルソナの高/中指摘が0件）**かつ前サイクルの修正差分がテスト・設定・フォーマットのみ（production コード非該当）**の場合に Step 4 をスキップし、検証対象なしとして `personas: []`（空配列）を記録する（ゲート制御面ファイルに触れる修正差分はこの条件でもスキップ不可）。修正差分が production コードに及ぶ場合はスキップせず、セキュリティエンジニアと QA エンジニアの2ペルソナで検証レビューを行う（`quality-check` SKILL.md 4-3 を正とする）。Step 2〜3 の残存で Step 4 を実行せず終了したサイクルも `personas: []`（`review_mode: "full"` と組み合わせて「Step 4 未実行」を意味する） |
+| `persona_selection_basis` | `{ persona: string, applied: boolean, basis: string }[]` | 任意 | Step 1 の適用判定表による起動判定の根拠。判定表の6ペルソナ全件を含め、`applied: false` の行には理由を `basis` に書く（`quality-check` SKILL.md Step 1「ペルソナ起動判定」）。`review_mode: "full"` で Step 4 を実行したサイクルでは必須。`verification`、および Step 4 未実行（`personas: []`）のサイクルでは省略可 |
 
 ### Finding オブジェクト
 
@@ -194,7 +195,7 @@ quality-policy.md §2「上書きの契約」に基づき、プロダクトの�
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
-| `abort_reasons` | `("cycle_limit" \| "stagnation")[]` | 必須 | 承認対象となったサイクル打ち切りの事由（`cycle_abort_reason` と同一の事由を記録する。通常は要素数1） |
+| `abort_reasons` | `("cycle_limit" \| "stagnation" \| "structural")[]` | 必須 | 承認対象となったサイクル打ち切りの事由（`cycle_abort_reason` と同一の事由を記録する。通常は要素数1） |
 | `reason` | `string` | 必須 | 承認の理由（ユーザーが示した判断根拠をそのまま記録する） |
 
 ```json
@@ -265,9 +266,16 @@ High リスクの backend 変更で、`test-recommendation` スキル（Step 5�
   "cycles": [
     {
       "cycle_number": 1,
-      "review_mode": "staged",
-      "personas": ["セキュリティエンジニア", "QAエンジニア", "統合アーキテクチャレビュー"],
-      "diff_line_count": 164,
+      "review_mode": "full",
+      "personas": ["QAエンジニア", "要件・仕様整合性レビュアー", "セキュリティエンジニア", "統合アーキテクチャレビュー"],
+      "persona_selection_basis": [
+        { "persona": "QAエンジニア（反証型）", "applied": true, "basis": "コード変更（backend）を含む" },
+        { "persona": "要件・仕様整合性", "applied": true, "basis": "常に起動" },
+        { "persona": "セキュリティ", "applied": true, "basis": "認証・認可・入力処理の変更を含む" },
+        { "persona": "ソフトウェアアーキテクト", "applied": false, "basis": "新規モジュール・公開インターフェース・構造変更を含まない" },
+        { "persona": "統合アーキテクチャ", "applied": true, "basis": "複数モジュールにまたがる変更" },
+        { "persona": "パフォーマンス", "applied": false, "basis": "クエリ・ループ・キャッシュ・バンドル・高頻度経路の変更を含まない" }
+      ],
       "findings": [
         {
           "source": "QAエンジニア",
