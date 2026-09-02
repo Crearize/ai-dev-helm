@@ -4,6 +4,31 @@ Development policies, standards, and processes for this project.
 
 ## 1. AI-Driven Development
 
+### 1.0 設計思想（必読）
+
+本節はハーネスを利用する全プロダクトの前提であり、テンプレート（CLAUDE.md / AGENTS.md / .cursorrules）の Development Philosophy 節はこの要約である。矛盾する場合は本節が正。
+
+- 前提: 各種 AI モデル・AI ツール上で動作し、単一モデルに依存しない。品質は構造で担保する。テストは根拠を添えれば信用してよい（ミューテーションはそのための道具で必須ではない）。
+- 1 Issue とブランチ。
+- 2 設計（brainstorming）: レビューは基本 1 回。よほどの問題や大規模のときだけ複数回。ここのレビューがタスク単位レビューを不要にする。
+- 3 計画（writing-plans）: 設計済みが前提。計画のレビューはしてよいが、その後のユーザー確認は不要。
+- 4〜6 実装: 設計と計画があれば下位モデルでよい。適切なモデルを都度指定する。開発中のレビューはしない（設計意図との合致は 7 で見る）。
+- 7 quality-check: まず機械的チェック（ビルド、テスト、Lint / CheckStyle 等の静的チェック）。通ってからマルチペルソナレビュー。実装内容に応じて不要なペルソナは動かさない。
+- 8 hook: main（相当ブランチ）への直接 push / merge を禁止するだけの装置。加えて 7 の状態・実装状態に応じてミューテーション / E2E の実施を提案する（test-recommendation）[^8]。
+- 通過判定: レビュー結果・品質チェックの結果。AI の申告でもよいが必ず根拠を添える[^report]。
+- これらをハーネスを利用する全プロダクトで必ず守らせる。
+
+[^8]: 後半（ミューテーション / E2E の提案）は hook ではなく quality-check Step 5 → `test-recommendation` スキルが担う。hook はコマンド行の静的分類のみで、提案機能を持たない。
+[^report]: quality-check SKILL.md の「実装 Agent の自己申告を Quality Gate にしない」は、「実装に合わせて期待値を修正した」型の申告を根拠と認めない規定であり、本項と両立する。
+
+#### 充足済み項目（既存配布物で対応済み・変更なし）
+
+| 項目 | 充足箇所 |
+|---|---|
+| 1 Issue とブランチ | `CLAUDE.md.template` Critical Rules Level 0 / 1、quick-checklist |
+| テストは根拠を添えれば信用 / ミューテーションは必須でない | quality-policy §2（提案ベース・非ブロック） |
+| 通過判定は根拠を添える | quality-check SKILL.md「実装 Agent の自己申告を Quality Gate にしない」（脚注参照） |
+
 ### 1.1 Basic Principles
 - **AI as primary developer**: Code development and review driven by AI tools
 - **Human role**: Requirements definition, design decisions, final review
