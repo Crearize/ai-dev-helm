@@ -33,3 +33,6 @@ rule:
             - kind: annotation_type_declaration
             - kind: field_declaration
             - kind: constant_declaration
+            # An enum constant with a body can hold any number of methods, so
+            # an annotation on the constant is type-scope suppression too.
+            - kind: enum_constant

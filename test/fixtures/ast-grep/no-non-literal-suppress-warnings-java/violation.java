@@ -39,6 +39,27 @@ public class Violation {
         }
     }
 
+    // Violation 4: constant reference through the explicit value= form
+    @SuppressWarnings(value = ILLEGAL_CATCH)
+    public void namedValueConstant() {
+        try {
+            risky();
+        } catch (RuntimeException e) {
+            // handled
+        }
+    }
+
+    // Violation 5: constant reference hidden inside an array initializer next
+    // to a literal - the literal is fine, the identifier is not
+    @SuppressWarnings({ILLEGAL_CATCH, "checkstyle:MagicNumber"})
+    public void arrayWithConstant() {
+        try {
+            risky();
+        } catch (RuntimeException e) {
+            // handled
+        }
+    }
+
     private void risky() {
     }
 }

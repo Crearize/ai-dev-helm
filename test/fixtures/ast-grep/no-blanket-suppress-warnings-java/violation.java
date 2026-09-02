@@ -24,6 +24,22 @@ public class Violation {
     public void unknownModule() {
     }
 
+    // Violation 5: checkstyle: prefix with the wrong case - SuppressWarningsHolder
+    // still honours it, so it is a misdirected reference, not the fixed form
+    @SuppressWarnings("checkstyle:illegalcatch")
+    public void wrongCasePrefixed() {
+    }
+
+    // Violation 6: bare module name with the optional Check suffix
+    @SuppressWarnings("IllegalCatchCheck")
+    public void bareModuleNameWithSuffix() {
+    }
+
+    // Violation 7: "all" in upper case is still the blanket value
+    @SuppressWarnings("ALL")
+    public void suppressAllUpper() {
+    }
+
     // Near miss: a correctly-formed reference must not be flagged here (the
     // ok fixture is the false-positive guard; this is a sanity check that the
     // rule does not over-fire within the same file as real violations)

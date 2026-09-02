@@ -19,6 +19,24 @@ public class Ok {
         report(budget);
     }
 
+    // OK: javac's own suppression values are not Checkstyle suppression syntax
+    // (negative controls for the false-positive the first cut of this rule had)
+    @SuppressWarnings("unchecked")
+    public void javacUnchecked() {
+        java.util.List raw = new java.util.ArrayList();
+        raw.add("x");
+    }
+
+    @SuppressWarnings({"rawtypes", "deprecation"})
+    public void javacArrayValues() {
+        java.util.List raw = new java.util.ArrayList();
+        raw.size();
+    }
+
+    @SuppressWarnings("serial")
+    public static class JavacSerial extends java.util.ArrayList<String> {
+    }
+
     private void risky() {
     }
 

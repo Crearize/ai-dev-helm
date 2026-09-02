@@ -1,21 +1,31 @@
-# Detects a `@SuppressWarnings` string value on a Checkstyle-suppressible
-# declaration that is not an exact `checkstyle:<ModuleName>` reference to a
-# module this preset declares (stacks/java-springboot/lint/checkstyle/checkstyle.xml).
-# Checkstyle's SuppressWarningsHolder (#117) accepts `all` (case-insensitive),
-# an optional `checkstyle:` prefix, and any bare check name (case-insensitive,
-# trailing `Check` optional) - so a value that is not the fixed
-# `checkstyle:<ModuleName>` form can blanket-suppress every check or silence an
-# unrelated one. The rule inverts the allow-list: any string literal inside a
-# SuppressWarnings argument list that does not match the fixed form is flagged,
-# whether it is a plain literal or a text-block literal (`"""..."""`).
+# Detects a `@SuppressWarnings` string value that falls into one of the three
+# categories Checkstyle's SuppressWarningsHolder (#117) actually treats as
+# suppression syntax, verified against Checkstyle 14.0.0:
+#   (a) `all` (case-insensitive) - suppresses every Checkstyle check on the
+#       annotated declaration
+#   (b) a `checkstyle:` prefix that IS present but is NOT the exact
+#       `checkstyle:<ModuleName>` reference (CamelCase, case-sensitive) to a
+#       module this preset declares - a typo'd, unrelated, or wrong-case
+#       module name after the prefix
+#   (c) no `checkstyle:` prefix at all, where the bare text (case-insensitive,
+#       trailing `Check` optional) names a module this preset declares
+# Each of (a)-(c) matches a plain string literal or a text-block literal
+# (`"""..."""`) the same way.
 #
-# If a module is added to or removed from the checkstyle.xml preset, update the
-# module-name alternation below to match (checkstyle.xml carries the mirror
-# note). Catalog: A3.
+# A value outside these three shapes is deliberately left alone: javac's own
+# SuppressWarnings values (`unchecked`, `rawtypes`, `deprecation`, `serial`,
+# etc.) are not Checkstyle suppression syntax at all, and the exact
+# `checkstyle:<ModuleName>` fixed form is the sanctioned way to suppress one
+# module. Flagging either would make this rule fire on ordinary javac
+# annotations, not just on Checkstyle's suppression hole.
+#
+# If a module is added to or removed from the checkstyle.xml preset, update
+# the module-name alternation in both the (b) and (c) branches below to match
+# (checkstyle.xml carries the mirror note). Catalog: A3.
 id: no-blanket-suppress-warnings-java
 language: Java
 severity: error
-message: "SuppressWarnings string value must be an exact checkstyle:<ModuleName> reference to a module declared in the preset. `all`, bare check names, and any other value blanket-suppress or misdirect Checkstyle. (Catalog: A3, #117)"
+message: "SuppressWarnings string value blanket-suppresses every check (`all`), misdirects a check (checkstyle:<module not in this preset, or wrong case>), or silences a preset check by its bare name. Use the exact checkstyle:<ModuleName> form for a module this preset declares, or a plain javac value. (Catalog: A3, #117)"
 rule:
   kind: string_literal
   inside:
@@ -26,5 +36,13 @@ rule:
       has:
         field: name
         regex: ^SuppressWarnings$
-  not:
-    regex: '^"{1,3}\s*checkstyle:(AvoidStarImport|RegexpSinglelineJava|EqualsHashCode|EmptyCatchBlock|IllegalCatch|IllegalImport|UnusedImports|RedundantImport|UnusedLocalVariable|MethodLength|CyclomaticComplexity|ParameterNumber|NestedIfDepth|MagicNumber)\s*"{1,3}$'
+  any:
+    # (a) blanket "all", any case, plain or text-block literal.
+    - regex: '(?i)^"{1,3}\s*all\s*"{1,3}$'
+    # (b) checkstyle: prefix present but not the exact fixed form.
+    - all:
+        - regex: '^"{1,3}\s*checkstyle:'
+        - not:
+            regex: '^"{1,3}\s*checkstyle:(AvoidStarImport|RegexpSinglelineJava|EqualsHashCode|EmptyCatchBlock|IllegalCatch|IllegalImport|UnusedImports|RedundantImport|UnusedLocalVariable|MethodLength|CyclomaticComplexity|ParameterNumber|NestedIfDepth|MagicNumber)\s*"{1,3}$'
+    # (c) no prefix, bare preset module name (case-insensitive, Check optional).
+    - regex: '(?i)^"{1,3}\s*(AvoidStarImport|RegexpSinglelineJava|EqualsHashCode|EmptyCatchBlock|IllegalCatch|IllegalImport|UnusedImports|RedundantImport|UnusedLocalVariable|MethodLength|CyclomaticComplexity|ParameterNumber|NestedIfDepth|MagicNumber)(Check)?\s*"{1,3}$'

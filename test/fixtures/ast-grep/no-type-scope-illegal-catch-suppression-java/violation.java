@@ -47,6 +47,21 @@ public class Violation {
     @interface BadAnno {
     }
 
+    // Violation 7: enum constant with a body - the body can hold any number of
+    // methods, so the annotation revives type-wide suppression through one line
+    enum BadConstant {
+        @SuppressWarnings("checkstyle:IllegalCatch")
+        WITH_BODY {
+            void go() {
+                try {
+                    risky();
+                } catch (RuntimeException e) {
+                    // swallowed under the constant-scope annotation
+                }
+            }
+        };
+    }
+
     // Near miss: method scope is allowed and must not be flagged in this file
     @SuppressWarnings("checkstyle:IllegalCatch")
     public void allowedAtMethodScope() {
