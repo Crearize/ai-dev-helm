@@ -60,8 +60,8 @@ Files are merged with closer paths overriding earlier ones (combined size limit:
 The registered `PreToolUse` hook:
 
 1. Runs before every Bash tool invocation
-2. If the command is `gh pr merge`, `git merge` on main/master, or a push targeting main/master, validates `.quality-check-passed` (commit-bound JSON written by the quality-check skill)
-3. Blocks with a reason if the flag is missing, invalid, or non-harness code changed after the recorded commit
+2. If the command is `gh pr merge`, `git merge` / `git pull` / `git rebase` on main/master, or a push targeting main/master, validates `.quality-check-passed` (commit-bound JSON written by the quality-check skill) (the three sync forms on main - `git pull`, `git pull origin main`, `git merge origin/main` with no other options - are the only exemption)
+3. Blocks with a reason if the flag is missing, invalid, or non-harness code changed after the recorded commit. Unconditional blocks (no exemption): force/delete pushes, another git command on the same line, `-C` / `--git-dir` / `cd`, shell expansion in refs, multiple gated operations. Trunk names are fixed to `main` / `master`.
 4. The flag is not consumed; harness-only follow-up commits keep it valid — except commits touching gate control-plane files (the quality-check skill and its schemas, review guides, the hook body and its registration files including `.codex/config.toml` and `mcp.json`, and the settings `hooks` / `permissions.deny` keys), which invalidate the flag and block with `Gate control-plane changed:`. Pushes to feature branches are never gated, and harness-only diffs skip the gate entirely (same control-plane carve-out applies)
 
 Project-local hooks only load when Codex marks the project as trusted.
