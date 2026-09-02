@@ -13,8 +13,8 @@
 //
 // Evaluation order (fixed):
 //   0. Refuse what the classification budget will not read - a command line
-//      over 64 KB, or one holding more than 256 git/gh invocations - before
-//      anything is analyzed (see "The classification budget" below).
+//      over 64 KB, or one whose `git` / `gh` words number more than 256 -
+//      before anything is analyzed (see "The classification budget" below).
 //   1. Detect rule-1 candidates from the command line alone. No git is run at
 //      this stage. No candidate -> allow immediately.
 //   2. With a candidate, evaluate the ctx-independent part of rule 2 (items
@@ -49,11 +49,24 @@
 //   operation (status, add, log, diff, tag, remote, restore, ...) may share the
 //   line without blocking; `-C`/`--git-dir`/`--work-tree`/`--namespace`/`-c`/
 //   `--config-env`, a `GIT_*=` assignment or a `cd`/`pushd` on the line; shell
-//   expansion (`$`, backtick, `{`, `%`, `$'`) in a word, except the value of
-//   gh's six free-text options (`-t`/`--subject`, `-b`/`--body`,
+//   expansion (`$`, backtick, `{`, `}`, `%`, `$'`) in a word, except the value
+//   of gh's six free-text options (`-t`/`--subject`, `-b`/`--body`,
 //   `-F`/`--body-file`), which is prose and not a ref; more than one gated
 //   operation on the line; a `<x>:main` refspec whose `<x>` is neither
 //   HEAD/`@` nor the current branch.
+//   The expansion item has a POSITION half that needs no candidate at all,
+//   because an expansion in the word that NAMES the operation is what stops a
+//   candidate from being found: a segment's command word (its first word), the
+//   subcommand word of a `git` / `gh` call (the first non-option word after the
+//   global options), or ANY argument word of a `gh api` call blocks on sight.
+//   That closes `gi{t..t} push origin main`, `git pus{h..h} origin main`,
+//   `git $(echo push) origin main`, `gh a{p..p}i -X PUT .../merge` and
+//   `gh api -X PUT .../pulls/1/%6Derge`. Deliberate over-detection:
+//   `$HOME/bin/tool --flag` is a command-word expansion and blocks too, and the
+//   reason says to write the program name out. Everywhere else an expansion
+//   still only blocks a line that already holds a candidate, so
+//   `echo $HOME`, `npm run $TASK`, `git commit -m "$MSG"` and
+//   `git log --format=%H` stay allowed.
 //   The movers that move HEAD or make a commit (commit, reset, checkout,
 //   switch, cherry-pick, rebase, revert, am, bisect, update-ref,
 //   stash pop|apply) are judged over the WHOLE command, newlines included;
@@ -84,16 +97,18 @@
 // The classification budget, and no part of it is a fail-open.
 //   - A command line over 64 KB is not classified: it is judged on its gate
 //     words alone (`merge`, `pull`, `push`, `rebase`, `pr`, `pulls/<n>/merge`),
-//     looked for in the raw text AND in the text with `"`, `'` and `\` removed,
-//     because the shell reads `p""ush` and `pu\sh` as `push`. Block when one is
-//     found; block as well when the stripped text carries an expansion
-//     character (`$` or a backtick), since `$'\x70'ush` cannot be read
-//     statically; allow when there is neither. A classifier exception is judged
-//     by the same function.
-//   - A command holding more than 256 git/gh invocations is not classified
-//     either: it blocks unconditionally. This is what bounds the quadratic term
-//     in the candidate scans, which are O(invocations x words); no real command
-//     comes near the cap.
+//     looked for in the raw text AND in the text with `\`+newline folded away
+//     and then `"`, `'` and `\` removed, because the shell reads `p""ush`,
+//     `pu\sh` and `pu\<newline>sh` as `push`. Block when one is found; block as
+//     well when the stripped text carries an expansion character (`$`,
+//     backtick, `{`, `}` or `%` - the tokenizer's set), since `$'\x70'ush` and
+//     `pus{h..h}` cannot be read statically; allow when there is neither. A
+//     classifier exception is judged by the same function.
+//   - A command whose `git` / `gh` WORDS number more than 256 is not classified
+//     either: it blocks unconditionally. Words, not resolved calls - a `git` in
+//     an argument position counts, and over-counting is fail-closed. This is
+//     what bounds the quadratic term in the candidate scans, which are
+//     O(git/gh words x words); no real command comes near the cap.
 //   - A hook PAYLOAD over 1 MB is not parsed at all, so there is no command
 //     line to judge: it blocks unconditionally, with its reason on stderr. The
 //     payload cap and the command-line cap are different limits, and gate words
@@ -111,8 +126,12 @@
 // can see through:
 //   - a shell that re-reads the string: `sh -c "git push origin main"`, a git
 //     alias, or a wrapper script;
-//   - an expanded command WORD: `$GIT push origin main`, `` `which git` push ``
-//     (the expansion rule only looks at lines that already hold a candidate);
+//   - a command word the SHELL builds out of a separate segment:
+//     `` `which git` push `` puts the substitution in its own segment, so the
+//     word left in front of `push` carries no expansion character and the
+//     position rule has nothing to see. (`$GIT push origin main` and
+//     `git $(echo push) …` DO block - the expansion stays in the command or
+//     subcommand word.)
 //   - arguments supplied by another process: `xargs git push`, `env -S`;
 //   - a refspec that lives in configuration: `remote.<name>.push`,
 //     `push.default = matching`, `branch.<n>.merge`;
@@ -304,6 +323,13 @@ const MAX_COMMAND_BYTES = 64 * 1024;
 // The whole hook payload, which carries the command line plus its JSON wrapper.
 // Past this there is no command line to judge at all, so it is a block.
 const MAX_PAYLOAD_BYTES = 1024 * 1024;
+// The second half of the classification budget: the candidate scans are
+// O(git/gh words x words) - the push tail walk, the `-c`/`-R` option scans that
+// step over the next word - so an unbounded count of git/gh words made a 64 KB
+// line cost hundreds of megabytes, and an OOM prints nothing, which reads as
+// ALLOW. A command over the cap is not classified at all; no real command comes
+// near 256 git/gh words.
+const MAX_INVOCATIONS = 256;
 
 function isMainBranch(name) {
   const b = String(name || '').toLowerCase();
@@ -338,14 +364,17 @@ function segmentFacts(seg) {
   const ctlFrom = new Array(n + 1);      // --abort/--continue/--quit/--skip
   const forceFrom = new Array(n + 1);    // `git branch -f`
   const mergeApiFrom = new Array(n + 1); // a `pulls/<n>/merge` endpoint word
+  const expandFrom = new Array(n + 1);   // a word whose source carried `$`/`` ` ``/`{`/`}`/`%`
   ctlFrom[n] = false;
   forceFrom[n] = false;
   mergeApiFrom[n] = false;
+  expandFrom[n] = false;
   for (let i = n - 1; i >= 0; i--) {
     const w = seg.words[i];
     ctlFrom[i] = ctlFrom[i + 1] || MERGE_CONTROL_FLAGS.has(w);
     forceFrom[i] = forceFrom[i + 1] || BRANCH_FORCE_FLAGS.has(w);
     mergeApiFrom[i] = mergeApiFrom[i + 1] || PULLS_MERGE_RE.test(w);
+    expandFrom[i] = expandFrom[i + 1] || seg.expand[i];
     if (w.startsWith('-')) {
       words[i] = {
         flag: true,
@@ -365,7 +394,44 @@ function segmentFacts(seg) {
       };
     }
   }
-  return { words, ctlFrom, forceFrom, mergeApiFrom };
+  return { words, ctlFrom, forceFrom, mergeApiFrom, expandFrom };
+}
+
+// Rule 2, the POSITION half of the expansion item: an expansion in a word that
+// NAMES the operation is not "an unreadable argument on a gated line", it is an
+// unreadable line - there is no candidate to find, because the candidate scan
+// is looking for the very word the shell has not written yet. `bash` expands
+// braces, variables and command substitutions in the command word too, so
+// `gi{t..t} push origin main`, `git pus{h..h} origin main`,
+// `git $(echo push) origin main` and `gh a{p..p}i -X PUT .../merge` all run the
+// gated call while the classifier sees no `git push` / `gh api` at all. Three
+// positions are therefore judged with no candidate required:
+//   (a) the segment's COMMAND word (its first word, whatever it names);
+//   (b) the SUBCOMMAND word of a `git` / `gh` call - the first non-option word
+//       after the global options;
+//   (c) every argument word of a `gh api` call, because the endpoint word is
+//       what makes it a merge (`.../pul{l..l}s/1/merge`, `.../1/%6Derge`).
+// Anywhere else an expansion still only blocks a line that already holds a
+// candidate. Over-detection is deliberate: `$HOME/bin/tool --flag` is a command
+// word expansion and blocks, and the reason says to write the name out.
+function positionalExpansion(seg, facts) {
+  const { words, expand } = seg;
+  if (words.length === 0) return false;
+  if (expand[0]) return true; // (a)
+  for (let i = 0; i < words.length; i++) {
+    const git = isCmdWord(words[i], 'git');
+    const gh = !git && isCmdWord(words[i], 'gh');
+    if (!git && !gh) continue;
+    const valueOpts = git ? GIT_VALUE_OPTS : GH_VALUE_OPTS;
+    let j = i + 1;
+    while (j < words.length && words[j].startsWith('-')) {
+      j += valueOpts.has(words[j]) ? 2 : 1;
+    }
+    if (j >= words.length) continue;
+    if (expand[j]) return true; // (b)
+    if (gh && words[j].toLowerCase() === 'api' && facts.expandFrom[j + 1]) return true; // (c)
+  }
+  return false;
 }
 
 // Every `git <sub>` in one segment, with the global options that preceded the
@@ -508,9 +574,11 @@ function analyzeLine(line) {
   const invocations = [];
   let expansion = line.backtick;
   let relocation = false;
+  let posExpansion = false;
 
   for (const seg of line.segments) {
     const facts = segmentFacts(seg);
+    if (positionalExpansion(seg, facts)) posExpansion = true;
     const freeText = freeTextIndices(seg.words);
     seg.words.forEach((w, i) => {
       const lw = w.toLowerCase();
@@ -541,7 +609,7 @@ function analyzeLine(line) {
       }
     }
   }
-  return { line, cands, invocations, expansion, relocation };
+  return { line, cands, invocations, expansion, relocation, posExpansion };
 }
 
 // git subcommands that move HEAD or make a commit. They must be split out
@@ -653,6 +721,7 @@ function controlReason(files) {
   return `Gate control-plane changed: ${shown}${more}. Run the quality-check skill before merging into main.`;
 }
 
+const POSITIONAL_EXPANSION = 'A command or subcommand word carries a shell expansion, which cannot be classified. Write the program name and subcommand literally, without $, backtick, brace or %.';
 const NEED_FLAG = 'Quality check not passed. Run the quality-check skill before merging into main.';
 const STALE = 'Code changed after the last quality check. Re-run the quality-check skill before merging into main.';
 
@@ -683,6 +752,11 @@ function isHardPushFlag(f) {
 // branch (deliberate over-detection, see the header). `commandMover` is the
 // whole command's HEAD mover, computed once by the caller.
 function staticRules(a, commandMover) {
+  // The position rule comes FIRST, ahead of the candidate check: an expansion
+  // in a command or subcommand word is exactly the case where the candidate
+  // scan finds nothing, so gating it on "there is a candidate" gated it on the
+  // condition it defeats.
+  if (a.posExpansion) return deny('2', POSITIONAL_EXPANSION);
   if (a.cands.length === 0) return null;
   for (const c of a.cands) {
     if (c.kind !== 'push') continue;
@@ -798,26 +872,33 @@ function contextRules(a, ctx) {
 // ever sees a line no one can classify.
 const TOO_LONG = 'Command line too long to classify. Split the gated git/gh call into its own command.';
 const UNCLASSIFIABLE = 'This command line could not be classified. Run the git/gh call as a single plain command.';
-const EXPANDED = 'A shell expansion ($ or backtick) in a command line that cannot be classified could spell anything. Run the git/gh call as a single plain command without expansions.';
+const EXPANDED = 'A shell expansion ($, backtick, brace or %) in a command line that cannot be classified could spell anything. Run the git/gh call as a single plain command without expansions.';
 const TOO_MANY_INVOCATIONS = 'Too many git/gh invocations in one command to classify. Split it into smaller commands.';
 const HUGE_PAYLOAD = 'The hook payload is too large to read, so this command cannot be checked. Run the git/gh call as a single plain command.';
 
+// A `\` immediately before a newline is a LINE CONTINUATION: the shell folds
+// both characters away before it reads a word, inside double quotes as well as
+// outside them, so `git pu\<LF>sh` and `git "pu\<LF>sh"` both run `git push`.
+// It has to be folded BEFORE the quotes come out, or removing the `\` on its
+// own leaves a newline in the middle of the gate word and hides it.
+const LINE_CONTINUATION_RE = /\\\r?\n/g;
 const QUOTE_CHARS_RE = /["'\\]/g;
-const EXPAND_CHARS_RE = /[$`]/;
+// The same expansion characters the tokenizer records, not just `$` and a
+// backtick: `pus{h..h}` and `%6Derge` are spelled by brace expansion and by a
+// URL escape the endpoint reads back, and neither survives quote stripping as
+// a gate word.
+const EXPAND_CHARS_RE = /[$`{}%]/;
 function gateWordFallback(text, reason) {
-  const stripped = text.replace(QUOTE_CHARS_RE, '');
+  const folded = text.replace(LINE_CONTINUATION_RE, '');
+  const stripped = folded.replace(QUOTE_CHARS_RE, '');
   if (GATE_WORD_RE.test(text) || GATE_WORD_RE.test(stripped)) return deny('2', reason);
   if (EXPAND_CHARS_RE.test(stripped)) return deny('2', EXPANDED);
   return allow();
 }
 
-// The second half of the classification budget: the candidate scans are
-// O(invocations x words) - the push tail walk, the `-c`/`-R` option scans that
-// step over the next word - so an unbounded count of git/gh words made a 64 KB
-// line cost hundreds of megabytes, and an OOM prints nothing, which reads as
-// ALLOW. A command over the cap is not classified at all; no real command comes
-// near 256 invocations.
-const MAX_INVOCATIONS = 256;
+// Counts `git` / `gh` WORDS, not resolved calls: a `git` in an argument
+// position counts too. Over-counting is fail-closed, and the cap it feeds is
+// MAX_INVOCATIONS (see the constant).
 function countInvocations(lines) {
   let n = 0;
   for (const line of lines) {
