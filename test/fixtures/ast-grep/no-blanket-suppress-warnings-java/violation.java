@@ -57,6 +57,14 @@ public class Violation {
     public void fqnModuleNameWithoutSuffix() {
     }
 
+    // Violation 10: fully-qualified name with a leading empty package segment
+    // (a stray leading dot) - Checkstyle resolves the module by the short name
+    // at the end of the FQN regardless of an empty segment, so this is honored
+    // exactly like the bare module name form
+    @SuppressWarnings(".MagicNumber")
+    public void fqnLeadingEmptySegment() {
+    }
+
     // Near miss: a correctly-formed reference must not be flagged here (the
     // ok fixture is the false-positive guard; this is a sanity check that the
     // rule does not over-fire within the same file as real violations)
