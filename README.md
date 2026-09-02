@@ -205,7 +205,7 @@ init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成さ
 
 1.12.x 以前を取り込んでいるプロジェクトは、次の 3 点で最新版に追随します。
 
-1. **`npx ai-dev-helm init` を再実行する** — 新スキル（`test-recommendation`）・台帳雛形・改訂済みドキュメントが配置されます。台帳（`documents/development/test-recommendation-ledger.md`）は copy-if-missing のため、既存の台帳は上書きされません
+1. **`npx ai-dev-helm init` を再実行する** — 新スキル（`test-recommendation`）・台帳雛形・改訂済みドキュメントが配置されます。台帳（`documents/development/test-recommendation-ledger.md`）は copy-if-missing のため、既存の台帳は上書きされません。あわせて quality-gate フックの登録も修復されます: `.claude/settings.json` は `hooks.PreToolUse` の quality-gate エントリの `timeout` が 30 未満（または未指定）なら 30 に引き上げられ、登録自体が無ければテンプレートのエントリが追記されます（既存のユーザー hook・その他のキーは温存）。`.codex/hooks.json` も同様に timeout が引き上げられ、イベント名がトップレベルにある旧形式は `hooks` キー配下へ移行されます。手動で直す場合は、両ファイルの quality-gate エントリの `timeout` が 30 未満なら 30 にしてください（フック本体の内部デッドラインは 20 秒で、それより短い登録だと途中で kill され、出力が無いまま「許可」と解釈されます）
 2. **ハーネス設定ファイル（CLAUDE.md / AGENTS.md / `.cursorrules`）の `### Quality Gate Overrides` から `mutation_threshold_high` / `mutation_threshold_medium` / `mutation_mode_medium` の宣言を削除する** — quality-check はこれらのキーを認識しなくなりました（認識するのは `mutation_budget_minutes` のみ）。hook は次期改修（Issue #90）まで旧キーの変更を過剰に検知しますが、フェイルセーフ方向（余分にゲートに掛かるだけ）であり実害はありません
 3. **`.quality-check-report.json` を読む自作ツールがある場合は追随する** — 旧トップレベルの `e2e_result` / `e2e_issues` は `e2e` オブジェクトに置き換わり、`mutation.mode` / `mutation.score` / `mutation.threshold` は廃止されました（スキーマは `skills/project/_schemas/quality-check-report.schema.md`）
 
