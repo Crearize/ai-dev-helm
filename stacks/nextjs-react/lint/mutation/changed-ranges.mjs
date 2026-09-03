@@ -155,7 +155,8 @@ export function resolveBaseRef({ cwd = process.cwd(), baseRef = process.env.MUTA
       : 'exists in this clone. ';
   throw new Error(
     `[mutation:diff] no base ref found: none of ${DEFAULT_BASE_REFS.join(', ')} ${why}` +
-      'Fetch the base branch (e.g. `git fetch origin main`) or set MUTATION_BASE_REF.'
+      'Fetch the base branch (e.g. `git fetch origin main`) or set MUTATION_BASE_REF ' +
+      '(MUTATION_BASE_REF=HEAD measures only the uncommitted working-tree changes).'
   );
 }
 
@@ -348,14 +349,18 @@ function parseScope(entries) {
     list.push([Number(start), Number(end)]);
     files.set(file, list);
   }
+  // Sorted by start once here, so rangesCover can sweep without re-sorting.
+  for (const ranges of files.values()) {
+    if (ranges !== null) ranges.sort((a, b) => a[0] - b[0]);
+  }
   return files;
 }
 
 // Every line of [start, end] lies inside the union of `ranges` (a sweep over
-// the ranges sorted by start; reversed ranges cover nothing).
+// ranges already sorted by start; reversed ranges cover nothing).
 function rangesCover(ranges, [start, end]) {
   let line = start;
-  for (const [s, e] of [...ranges].sort((a, b) => a[0] - b[0])) {
+  for (const [s, e] of ranges) {
     if (s > e || e < line) continue;
     if (s > line) return false;
     line = e + 1;
@@ -377,11 +382,8 @@ export function scopeCovers(current, previous) {
   for (const [file, ranges] of parseScope(previous)) {
     if (!cur.has(file)) return false;
     const curRanges = cur.get(file);
-    if (ranges === null && curRanges === null) continue;
-    if (ranges === null || curRanges === null) {
-      if (curRanges === null) continue;
-      return false;
-    }
+    if (curRanges === null) continue; // current is whole-file: covers everything
+    if (ranges === null) return false; // previous is whole-file, current is ranges only
     for (const range of ranges) {
       if (range[0] > range[1]) return false;
       if (!rangesCover(curRanges, range)) return false;
@@ -393,11 +395,12 @@ export function scopeCovers(current, previous) {
 // Best-effort removal that REPORTS its outcome: a locked file must not turn
 // a clean-up into a crash, but the caller has to know the file is still
 // there (an empty-scope exit with a stale report left behind would be read
-// as a genuine result). Recursive, so a directory squatting on the path goes
-// too; a symlink is removed as the link, never followed.
-function rmBestEffort(absPath) {
+// as a genuine result). `recursive` is opted into only for the two paths
+// this file OWNS (the diff cache and its sidecar), so a directory squatting
+// on them goes too; a symlink is removed as the link, never followed.
+function rmBestEffort(absPath, { recursive = false } = {}) {
   try {
-    fs.rmSync(absPath, { force: true, recursive: true });
+    fs.rmSync(absPath, { force: true, recursive });
     return true;
   } catch (err) {
     fs.writeSync(2, `[mutation:diff] warning: could not remove ${absPath}: ${err.message}\n`);
@@ -406,16 +409,47 @@ function rmBestEffort(absPath) {
 }
 
 // A stale json report from a previous run must not survive an empty-scope
-// exit - quality-check would read yesterday's mutants as today's.
+// exit - quality-check would read yesterday's mutants as today's. The path
+// is PRODUCT-owned config (jsonReporter.fileName), unlike the cache
+// constants: it is never removed recursively, never when it is a directory
+// (a mis-set 'reports' must not take the tree with it - the same hazard
+// pitest.gradle refuses for reportDir), and never outside the directory the
+// run started from. Each refusal returns false so the empty-scope path
+// exits 1 instead of claiming an empty scope.
 function removeStaleReport(baseConfig, cwd) {
   const fileName = baseConfig.jsonReporter?.fileName;
   if (!fileName) return true;
-  return rmBestEffort(path.resolve(cwd, fileName));
+  const root = path.resolve(cwd);
+  const abs = path.resolve(root, fileName);
+  const relative = path.relative(root, abs);
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] jsonReporter.fileName (${fileName}) resolves outside the run directory ${root} - not removing it\n`
+    );
+    return false;
+  }
+  let stat = null;
+  try {
+    stat = fs.lstatSync(abs);
+  } catch {
+    // absent: nothing stale to remove
+    return true;
+  }
+  if (stat.isDirectory()) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] jsonReporter.fileName (${fileName}) is a directory, not a report file - not removing it. ` +
+        'Point it at the json report (default reports/mutation/mutation.json).\n'
+    );
+    return false;
+  }
+  return rmBestEffort(abs);
 }
 
 function resetDiffCache(cwd) {
-  const cacheGone = rmBestEffort(path.resolve(cwd, DIFF_INCREMENTAL_FILE));
-  const sidecarGone = rmBestEffort(path.resolve(cwd, DIFF_SCOPE_FILE));
+  const cacheGone = rmBestEffort(path.resolve(cwd, DIFF_INCREMENTAL_FILE), { recursive: true });
+  const sidecarGone = rmBestEffort(path.resolve(cwd, DIFF_SCOPE_FILE), { recursive: true });
   return cacheGone && sidecarGone;
 }
 
@@ -424,7 +458,10 @@ function resetDiffCache(cwd) {
 // cache (fail-closed), instead of being trusted by accident.
 const SIDECAR_VERSION = 1;
 const MERGE_BASE_RE = /^[0-9a-f]{7,64}$/;
-// Wider than any real file; only a hand-edited sidecar reaches this.
+// Detects a hand-edited sidecar; ranges are intervals, so this is not a
+// memory bound. A genuine hunk this long (a generated file added whole)
+// merely disables reuse for that change - fail-closed, visible as
+// "starting the diff cache" on every run.
 const MAX_RANGE_LINES = 1_000_000;
 
 function isScopeEntry(entry) {
@@ -459,11 +496,13 @@ function readScopeSidecar(absPath) {
 
 // Stryker rethrows anything but ENOENT when it reads the cache, so a cache
 // left truncated by an interrupted run would wedge every later run on the
-// same SyntaxError if it were reported as reusable. Unreadable = absent.
+// same SyntaxError if it were reported as reusable - and valid JSON that is
+// not a report (no `files` object) fails inside Stryker just the same.
+// Unreadable = absent.
 function cacheIsReadable(absPath) {
   try {
-    JSON.parse(fs.readFileSync(absPath, 'utf8'));
-    return true;
+    const parsed = JSON.parse(fs.readFileSync(absPath, 'utf8'));
+    return Boolean(parsed) && typeof parsed === 'object' && Boolean(parsed.files) && typeof parsed.files === 'object';
   } catch {
     return false;
   }
@@ -504,7 +543,7 @@ function prepareDiffIncremental(cwd, scope) {
   fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
   // Replace, never write through: a symlink in the sidecar's place must not
   // redirect the write.
-  rmBestEffort(sidecarPath);
+  rmBestEffort(sidecarPath, { recursive: true });
   fs.writeFileSync(
     sidecarPath,
     `${JSON.stringify(
@@ -523,9 +562,10 @@ function prepareDiffIncremental(cwd, scope) {
 // empty scope is reported on stderr via fs.writeSync (synchronous -
 // console.warn through a pipe could be truncated by process.exit) and the
 // process exits 0; quality-check records `mutation.reason: "empty_scope"`
-// for that case. If a stale report or cache could NOT be removed the run
-// exits 1 instead - a leftover report would be read as this run's result,
-// and quality-check records that as `scope_error`.
+// for that case. If the stale REPORT could not be removed the run exits 1
+// instead - a leftover report would be read as this run's result, and
+// quality-check records that as `scope_error`. A cache or sidecar that
+// could not be removed only warns: the next run's own guard discards them.
 //
 // `incremental` (default: MUTATION_INCREMENTAL, see incrementalRequested;
 // only the boolean `true` opts in when passed explicitly) enables the
@@ -550,13 +590,13 @@ export function withChangedLines(
   const scope = deriveScope({ cwd, baseRef: ref, mutate: baseConfig.mutate });
   if (scope.entries.length === 0) {
     const reportGone = removeStaleReport(baseConfig, cwd);
-    const cacheGone = resetDiffCache(cwd);
-    if (!(reportGone && cacheGone)) {
+    resetDiffCache(cwd);
+    if (!reportGone) {
       fs.writeSync(
         2,
-        `[mutation:diff] empty scope since ${ref}, but a previous report or diff cache could not be removed - ` +
+        `[mutation:diff] empty scope since ${ref}, but the previous report could not be removed - ` +
           'refusing to finish as an empty scope (the leftover would be read as this run\'s result). ' +
-          'Remove it (reports/mutation/) and re-run.\n'
+          'Fix or remove it and re-run.\n'
       );
       process.exit(1);
     }

@@ -4,7 +4,9 @@
 // TREE changed against the merge base of the base ref, using Stryker's
 // mutation-range syntax (`path:startLine-endLine`). The base ref defaults to
 // origin/main, then origin/master, then a local main / master (clones and
-// worktrees without remote-tracking refs), overridable with MUTATION_BASE_REF.
+// worktrees without remote-tracking refs; a local trunk whose merge base
+// with HEAD is HEAD itself is skipped - loud failure instead of a quiet
+// empty scope), overridable with MUTATION_BASE_REF.
 // Run it as
 //
 //   stryker run lint/mutation/stryker.diff.config.mjs
@@ -17,8 +19,8 @@
 //   paths): the stale json report and the diff cache are removed,
 //   "[mutation:diff] empty scope" is printed and the process exits 0 before
 //   Stryker starts; quality-check records `mutation.reason: "empty_scope"`.
-//   If a leftover could NOT be removed the process exits 1 instead
-//   (scope_error) - a stale report must never pass as this run's result.
+//   If the stale report could NOT be removed the process exits 1 instead
+//   (scope_error) - it must never pass as this run's result.
 // - A root-level path starting with "!" cannot be expressed (Stryker would
 //   read the entry as a negation): the run fails loudly (scope_error).
 // - A failed scope derivation (base ref not fetched, git failure) throws
