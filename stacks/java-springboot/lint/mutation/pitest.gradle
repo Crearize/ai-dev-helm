@@ -92,6 +92,15 @@ pitest {
 // - An empty changed-class list disables the pitest task entirely: PIT is not
 //   booted just to conclude nothing matched. quality-check records
 //   `mutation.reason: "empty_scope"` for both empty cases.
+// - The report directory is deleted before EVERY diff run (task
+//   mutationDiffCleanReport, wired as a dependency of pitest): a diff run
+//   that writes no XML would otherwise leave an earlier run's report in
+//   place for quality-check to read as this run's result. A dependency, not
+//   a doFirst, so it still runs on the empty scope - a disabled task skips
+//   its own actions, its dependencies do not. The task refuses a reportDir
+//   outside the module's build directory (it deletes recursively). Stryker's
+//   twin only removes its report on the EMPTY scope: Stryker always rewrites
+//   the report on a non-empty scope, PIT does not (no mutants = no XML).
 def mutationDiffRequested = gradle.startParameter.taskNames.any {
     it == 'mutationDiff' || it.endsWith(':mutationDiff')
 }
@@ -136,6 +145,26 @@ if (mutationDiffRequested) {
         [fqcn, fqcn + '$*']
     }
     pitest.failWhenNoMutations = false
+    def mutationDiffCleanReport = tasks.register('mutationDiffCleanReport', Delete) {
+        group = 'verification'
+        description = 'Removes the previous PIT report so a diff run that produces no mutants cannot pass it off as its own.'
+        // The directory is deleted recursively and a product can point
+        // reportDir anywhere, so refuse anything outside this module's build
+        // directory (the plugin default is build/reports/pitest).
+        def reportDirValue = pitest.reportDir.getOrNull()
+        if (reportDirValue == null) {
+            throw new org.gradle.api.GradleException('[mutationDiff] pitest.reportDir is not set - keep the plugin default (build/reports/pitest) or point it at a PIT-specific directory under build/')
+        }
+        def reportPath = reportDirValue.asFile.toPath().toAbsolutePath().normalize()
+        def buildPath = layout.buildDirectory.get().asFile.toPath().toAbsolutePath().normalize()
+        // Strictly below build/ and not build/reports itself: those hold
+        // other tools' output too.
+        if (!reportPath.startsWith(buildPath) || reportPath == buildPath || reportPath == buildPath.resolve('reports')) {
+            throw new org.gradle.api.GradleException("[mutationDiff] pitest.reportDir (${reportPath}) is not a PIT-specific directory under the build directory (${buildPath}) - the diff run deletes it before every run; keep it below build/ and apart from build/reports itself (plugin default: build/reports/pitest)")
+        }
+        delete pitest.reportDir
+    }
+    tasks.named('pitest').configure { dependsOn(mutationDiffCleanReport) }
     if (changedClasses.isEmpty()) {
         logger.warn("[mutationDiff] empty scope: no production classes changed since ${mutationDiffBase} - nothing to mutate")
         tasks.named('pitest').configure { enabled = false }

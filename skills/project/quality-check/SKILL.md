@@ -107,6 +107,8 @@ Step 6: レポートデータ保存 + フラグファイル作成 → マージ�
 git diff --name-only origin/main...HEAD
 ```
 
+`origin/main` が無いクローンでは、ベース ref を `documents/development/quality-policy.md` §2「差分スコープの定義」の探索順で解決する（Step 1・Step 5 のミューテーションも同じ ref を用いる）。
+
 得られた変更ファイル一覧から、以下の **いずれか** に該当するなら `feature-documentation` スキルが完了している必要がある：
 
 - 新規ファイルの追加（リネーム/移動を除く）が含まれる

@@ -159,7 +159,7 @@ Available tech stacks (enter numbers separated by spaces):
   Documents and review guides copied
   Lint assets copied to lint/
   PR template copied
-  .gitignore updated (4 entries added)
+  .gitignore updated (7 entries added)
 
 --- Setting up AI tool configuration ---
 Setting up Claude Code...

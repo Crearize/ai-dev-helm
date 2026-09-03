@@ -42,7 +42,7 @@ Step 5: 永続台帳の更新 + 記録
 git diff origin/main...HEAD
 ```
 
-ベース ref の解決は quality-check Step 1 と同一とする（既定は `origin/main`、無ければ `origin/master`。基幹が異なるプロダクトは quality-check Step 1 と同じ ref を用いる）。**単体実行時も同じ差分を判定対象とする。**
+ベース ref の解決は quality-check Step 1 と同一とする（既定は `origin/main`、無ければ `origin/master`、いずれも無ければローカルの `main` / `master`。探索順の正は quality-policy §2「差分スコープの定義」。基幹が異なるプロダクトは quality-check Step 1 と同じ ref を用いる）。**単体実行時も同じ差分を判定対象とする。**
 
 判定の前に永続台帳（Step 5 参照）を読み取り、導線の状態（`pending` / `scenario_added` / `dismissed`）を判定に反映する。台帳が読み取れない場合の扱いは Step 5「生成と保全」に従う（黙って上書きしない）。
 
@@ -119,7 +119,7 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 差分スコープ・ベース ref の規律は従来どおりとする。
 
 - 差分スコープ = **変更行**（Stryker: `mutation:diff` が、ベース ref との merge-base に対する作業ツリーの差分の hunk を行範囲として `mutate` に渡す。glob 特殊文字を含むパスはファイル単位に縮退）または**変更クラス**（PIT: `mutationDiff -PmutationDiffBase=origin/main`）。定義は quality-policy §2「差分スコープの定義」を正とする。変更ファイル全体・プロジェクト全体のフル実行は行わない
-- ベース ref は Step 1 の判定対象と同じ基幹でなければならない（基幹が異なるプロダクトは `MUTATION_BASE_REF` で Step 1 と同じ ref を指定する）。使用した ref を `mutation.base_ref` に、粒度を `mutation.scope`（`changed_lines` / `changed_classes`。旧配線のままファイル単位で実行された場合は `changed_files` — `lint-scaffolding` の再配線を案内する）に記録する
+- ベース ref は Step 1 の判定対象と同じ基幹でなければならない（基幹が異なるプロダクトは `MUTATION_BASE_REF` で Step 1 と同じ ref を指定する）。`HEAD` は Step 1 の基幹になり得ないため無効: `MUTATION_BASE_REF=HEAD` の計測、および stderr に `[mutation:diff] warning: ... resolves to HEAD itself` が出た計測（作業ツリーの未コミット行のみのスコープ）は、ゲートの計測（`executed`）として記録しない。その場合は Step 1 の基幹を `MUTATION_BASE_REF` に指定して再実行し（`runs` に数えない）、基幹を解決できないときは `scope_error` として記録する。基幹を指定しても同じ警告が出るのは Step 1 の差分（`origin/main...HEAD`）が空、すなわち変更がまだコミットされていない状態なので、コミットしてから quality-check を実行する（exit 0 の実行を `scope_error` として記録しない）。使用した ref を `mutation.base_ref` に、粒度を `mutation.scope`（`changed_lines` / `changed_classes`。旧配線のままファイル単位で実行された場合は `changed_files` — `lint-scaffolding` の再配線を案内する）に記録する
 
 ### 実行手順
 
@@ -145,7 +145,7 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 
 同一ブランチ内での再実行（撃殺テスト追加後の再計測）では **Stryker の incremental を許可する**。
 
-配布中の `stryker.diff.config.mjs` は現行リリースでは incremental を強制無効にしているため、本規定は差分実行スクリプトの次期改修（対応 Issue #92）以降に実効する。
+初回計測は `MUTATION_INCREMENTAL` を**明示的に外して**（キャッシュなしで）行い、撃殺テスト追加後の再計測を `MUTATION_INCREMENTAL=1`（Windows は `cross-env` / `$env:`。受理値・キャッシュの仕組み・その限界は stack README「Re-measurement」を正とする）で実行する。実行時に stderr へ出る `[mutation:diff] incremental:` 行（`reusing` / `starting` / `disabled for this run` — 最後は前回キャッシュを削除できずキャッシュ無しで実行した意味）を確認し、キャッシュを再利用した計測かどうかを `mutation.incremental` に記録する（`reusing` のみ `true`。スキーマ参照）。キャッシュの再利用判定は行番号ベースであり、同一ファイルの大きな編集ではキャッシュ由来のミュータントが変更行の外に現れうる（README が明記する残存制限）。**変更行以外の行に生存が報告された場合は、フラグを外して 1 回だけ再実行して確認する** — この確認実行は `mutation.runs` に数え、上限（「実行回数の上限」）を超える場合はユーザーの明示承認を得る。
 
 ### 実行回数の上限
 
@@ -175,7 +175,7 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 | 状況 | 挙動 |
 |---|---|
 | 差分スコープが空（`mutation:diff` / `mutationDiff` が**終了コード 0 + `empty scope` メッセージ**で終了。実行して初めてミュータント数 0（全て除外種別等）と判明した場合も同様。実行単位が複数に分かれる構成（PIT をモジュールごとに適用したマルチモジュール等）では各単位が自分の行を出すため、**どの単位もミュータントを 1 つも生成しなかった**（`empty scope` 行、またはスコープはあるがミュータント数 0 で完走）ときだけ空スコープとする — 1 単位の行で全体を判定しない。本行が空スコープ判定の正であり、スタック README は観測される出力の説明として参照する） | 実行しない（または実行結果を破棄する）。`reason: "empty_scope"` を記録してユーザーに提示する |
-| 差分スコープの導出に失敗（ベース ref 未取得等で**非 0 終了**。`cannot resolve the merge base` 等） | **`empty_scope` として記録してはならない。** `reason: "scope_error"` を記録し、解消手順（`git fetch origin main`、`MUTATION_BASE_REF` の設定等）を提示する。**非ブロック** — ユーザーが再試行を選べる |
+| 差分スコープの導出に失敗（ベース ref 未取得・ローカル基幹が HEAD と同一・スコープとして表現できないパス（Stryker の否定パターンと衝突する `!` 始まりのルート直下パス）・前回のレポートを削除できない（ディレクトリや実行ディレクトリ外を指す `jsonReporter.fileName` は削除しない）、等で**非 0 終了**。`cannot resolve the merge base` / `no base ref found` / `cannot scope` 等） | **`empty_scope` として記録してはならない。** `reason: "scope_error"` を記録し、エラーメッセージが示す解消手順（`git fetch origin main`、`MUTATION_BASE_REF` の設定、ファイルの改名または mutate グロブからの除外、レポートの手動削除または `jsonReporter.fileName` の修正 等）を提示する。**非ブロック** — ユーザーが再試行を選べる |
 | ツールの起動失敗 | `reason: "tool_error"` を記録し（**非ブロック**）、解消手順を提示する。ユーザーが再試行を選べる |
 
 ミューテーションテストは**ローカルで実行し、CI には組み込まない**（quality-policy §2「ミューテーションテストの実行ポリシー」）。ミュータント単位のタイムアウトは Stryker / PIT の組み込み機構をそのまま使う。
@@ -267,7 +267,7 @@ test-recommendation スキル（quality-check Step 5）が管理する永続台�
 
 | オブジェクト | 内容 |
 |---|---|
-| `mutation` | `recommendation`（`strong` / `recommended` / `none`）/ `recommendation_basis`（該当ヒューリスティクス項目。判定不能の事実を含む）/ `user_decision`（`executed` / `declined` / `not_proposed`）/ `decline_reason`。実行時は `scope` / `base_ref` / `mutants_total` / `score_raw` / `survivors` 等の実行時フィールドを併せて記録する（実行モード・スコア基準等の旧キーは廃止 — 記録しない） |
+| `mutation` | `recommendation`（`strong` / `recommended` / `none`）/ `recommendation_basis`（該当ヒューリスティクス項目。判定不能の事実を含む）/ `user_decision`（`executed` / `declined` / `not_proposed`）/ `decline_reason`。実行時は `scope` / `base_ref` / `mutants_total` / `score_raw` / `survivors` / `incremental`（最後の実行がキャッシュを再利用したか）等の実行時フィールドを併せて記録する（実行モード・スコア基準等の旧キーは廃止 — 記録しない） |
 | `e2e` | `recommendation` / `recommendation_basis` / `user_decision` / `result` / `issues` / `new_scenarios`（起草したシナリオと 3 択の判断）。旧トップレベルの `e2e_result` / `e2e_issues` を置き換える |
 
 - 推奨度 `none` の対象も判定結果を記録する（`recommendation` / `recommendation_basis`、`user_decision: "not_proposed"`）

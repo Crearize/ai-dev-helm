@@ -37,13 +37,58 @@
 //   back to whole-file scope via a character-class-escaped glob ("[" becomes
 //   "[[]"). Plain parenthesis segments ((group) route groups) are not glob
 //   magic and keep their line ranges.
+// - A path whose FIRST character is "!" cannot be expressed at all: Stryker
+//   reads a mutate entry starting with "!" as a negation pattern, so both the
+//   range form and the literal-glob form would silently drop the file from
+//   the scope (fail-open). Such a path fails the run loudly instead. A "!"
+//   deeper in the path is literal and keeps its range.
+// - Incremental is OFF by default and never shares the full run's cache.
+//   MUTATION_INCREMENTAL=1 opts in for re-measurement with a diff-only cache
+//   (DIFF_INCREMENTAL_FILE). Stryker keeps every mutant of a cache in the
+//   report - even one whose line is no longer inside `mutate` - so the cache
+//   is read only while the current scope still covers every line the cached
+//   run scoped, against the same merge base (recorded in DIFF_SCOPE_FILE);
+//   otherwise it is discarded first. The sidecar is developer-editable and
+//   gitignored, so anything this file would not have written itself counts
+//   as "no provenance" and discards the cache too.
+//
+// API boundary: `withChangedLines` (the config wrapper - a PRE-RUN HOOK with
+// side effects: it may delete the stale report and the diff cache, writes
+// the scope sidecar, and exits the process on an empty scope),
+// `deriveScope` / `changedLineRanges` (scope derivation without file-system
+// side effects - beyond the result they only warn on stderr when the merge
+// base is HEAD; use these to inspect the scope), `resolveBaseRef` and the exported
+// constants are the supported surface. Every other export exists for the
+// harness's own tests and may change without notice.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Minimatch } from 'minimatch';
 
-export const DEFAULT_BASE_REFS = ['origin/main', 'origin/master'];
+// Remote-tracking refs first (the two the quality-gate hook also probes for
+// its harness-only exemption), then the local trunk for clones and worktrees
+// that carry no remote-tracking ref at all. A stale local trunk only moves
+// the merge base further back, which WIDENS the scope and never narrows it -
+// with one exception: a local trunk that is the checked-out commit itself
+// (or ahead of it) has HEAD as its merge base, and every committed change
+// would silently drop out of the scope. resolveBaseRef skips such a candidate
+// and fails loudly instead (scope_error, never a quiet empty scope).
+export const REMOTE_BASE_REFS = ['origin/main', 'origin/master'];
+export const LOCAL_BASE_REFS = ['main', 'master'];
+export const DEFAULT_BASE_REFS = [...REMOTE_BASE_REFS, ...LOCAL_BASE_REFS];
+
+// The diff run's own incremental cache and the sidecar recording the scope
+// (base ref, merge base, mutate entries) that produced it. Both sit next to
+// the full run's cache under reports/mutation/ (gitignored by `init`).
+export const DIFF_INCREMENTAL_FILE = 'reports/mutation/stryker-incremental.diff.json';
+export const DIFF_SCOPE_FILE = 'reports/mutation/stryker-incremental.diff.scope.json';
+
+// MUTATION_INCREMENTAL: only "1" and "true" opt in. Anything else (unset,
+// "", "0", "false") keeps incremental off - the safe default.
+export function incrementalRequested(value) {
+  return value === '1' || value === 'true';
+}
 
 // git emits every added line of every changed file before our glob filter
 // runs; Node's default 1 MiB maxBuffer would crash on lockfile-sized diffs.
@@ -70,21 +115,48 @@ function assertSafeRef(ref) {
   return ref;
 }
 
-// MUTATION_BASE_REF wins; otherwise probe origin/main then origin/master -
-// the same probe order the quality-gate hook uses for its merge base.
+// The commit a ref resolves to, or null when it does not exist.
+function revParse(ref, cwd) {
+  try {
+    return git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], cwd).trim();
+  } catch {
+    return null;
+  }
+}
+
+function mergeBaseOf(ref, cwd) {
+  try {
+    return git(['merge-base', ref, 'HEAD'], cwd).trim();
+  } catch {
+    return null;
+  }
+}
+
+// MUTATION_BASE_REF wins; otherwise probe REMOTE_BASE_REFS, then the local
+// trunks whose merge base with HEAD is not HEAD itself (see the constants).
 export function resolveBaseRef({ cwd = process.cwd(), baseRef = process.env.MUTATION_BASE_REF } = {}) {
   if (baseRef) return assertSafeRef(baseRef);
-  for (const candidate of DEFAULT_BASE_REFS) {
-    try {
-      git(['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], cwd);
-      return candidate;
-    } catch {
-      // candidate absent - try the next one
-    }
+  for (const candidate of REMOTE_BASE_REFS) {
+    if (revParse(candidate, cwd) !== null) return candidate;
   }
+  const head = revParse('HEAD', cwd);
+  const rejected = [];
+  for (const candidate of LOCAL_BASE_REFS) {
+    if (revParse(candidate, cwd) === null) continue;
+    if (head !== null && mergeBaseOf(candidate, cwd) === head) {
+      rejected.push(candidate);
+      continue;
+    }
+    return candidate;
+  }
+  const why =
+    rejected.length > 0
+      ? `is usable in this clone (local ${rejected.join(' / ')} is the checked-out commit or ahead of it - ` +
+        'its merge base would be HEAD and every committed change would fall out of the scope). '
+      : 'exists in this clone. ';
   throw new Error(
-    `[mutation:diff] no base ref found: none of ${DEFAULT_BASE_REFS.join(', ')} exists in this clone. ` +
-      'Fetch the base branch (e.g. `git fetch origin main`) or set MUTATION_BASE_REF.'
+    `[mutation:diff] no base ref found: none of ${DEFAULT_BASE_REFS.join(', ')} ${why}` +
+      'Fetch the base branch (e.g. `git fetch origin main`) or set MUTATION_BASE_REF to the trunk quality-check diffs against.'
   );
 }
 
@@ -107,7 +179,7 @@ export function unquoteGitPath(raw) {
     else if (next === 'n') bytes.push(0x0a);
     else if (next === 'r') bytes.push(0x0d);
     else if (next >= '0' && next <= '7') {
-      bytes.push(parseInt(inner.slice(i, i + 3), 8));
+      bytes.push(Number.parseInt(inner.slice(i, i + 3), 8));
       i += 2;
     } else {
       for (const byte of Buffer.from(next, 'utf8')) bytes.push(byte);
@@ -193,7 +265,14 @@ export function parseUnifiedDiff(text) {
 // Paths are relative to `cwd` (`--relative`), which must be the directory
 // Stryker runs from. A failed derivation throws with a fetch hint - loud, so
 // quality-check records `scope_error` - and is never a silent empty scope.
-export function changedLineRanges({ cwd = process.cwd(), baseRef, mutate = [] } = {}) {
+export function changedLineRanges(options) {
+  return deriveScope(options).entries;
+}
+
+// The scope with its provenance: `{ baseRef, mergeBase, entries }`. The merge
+// base is what the incremental sidecar pins - a rebased branch or a moved
+// base ref changes the lines under every entry.
+export function deriveScope({ cwd = process.cwd(), baseRef, mutate = [] } = {}) {
   const ref = assertSafeRef(baseRef ?? resolveBaseRef({ cwd }));
   let mergeBase;
   try {
@@ -202,6 +281,17 @@ export function changedLineRanges({ cwd = process.cwd(), baseRef, mutate = [] } 
     throw new Error(
       `[mutation:diff] cannot resolve the merge base of ${ref} and HEAD - is the base ref fetched? ` +
         `(git fetch origin main, or set MUTATION_BASE_REF)\n${err.message}`
+    );
+  }
+  // Merge base == HEAD (MUTATION_BASE_REF=HEAD, or a ref at/ahead of HEAD)
+  // scopes the uncommitted lines only. Fine for an ad-hoc look, never a gate
+  // measurement (quality-check's Step 1 diffs against the trunk), and said so
+  // whichever way the ref was chosen.
+  if (mergeBase === revParse('HEAD', cwd)) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] warning: base ${ref} resolves to HEAD itself - only the uncommitted working-tree changes are in scope. ` +
+        'This is not a gate measurement: quality-check needs the trunk it diffs against (mutation.base_ref).\n'
     );
   }
   const diff = git(
@@ -227,6 +317,13 @@ export function changedLineRanges({ cwd = process.cwd(), baseRef, mutate = [] } 
   const fileScoped = new Set();
   for (const range of parseUnifiedDiff(diff)) {
     if (!inScope(range.file)) continue;
+    if (range.file.startsWith('!')) {
+      throw new Error(
+        `[mutation:diff] cannot scope ${JSON.stringify(range.file)}: a mutate entry starting with "!" is a ` +
+          'negation pattern to Stryker and would silently drop the file from the scope (fail-open). ' +
+          'Rename the file or exclude it from the mutate globs.'
+      );
+    }
     if (hasGlobMagic(range.file)) {
       // Range syntax is unavailable for glob-magic paths (see header):
       // degrade this one file to whole-file scope, once.
@@ -238,28 +335,273 @@ export function changedLineRanges({ cwd = process.cwd(), baseRef, mutate = [] } 
     }
     entries.push(`${range.file}:${range.start}-${range.end}`);
   }
-  return entries;
+  return { baseRef: ref, mergeBase, entries };
+}
+
+const RANGE_ENTRY_RE = /^(.+):(\d+)-(\d+)$/;
+
+// Mutate entries -> Map<file, [start, end][] | null>, null meaning the whole
+// file (a glob-magic path). The range is split off at the LAST ":" and must
+// be `start-end`; anything else is a whole-file entry. A whole-file entry
+// absorbs any range entries of the same file. Ranges stay intervals - never
+// expanded line by line, a sidecar is developer-editable input.
+function parseScope(entries) {
+  const files = new Map();
+  for (const entry of entries) {
+    const match = RANGE_ENTRY_RE.exec(entry);
+    if (!match) {
+      files.set(entry, null);
+      continue;
+    }
+    const [, file, start, end] = match;
+    const ranges = files.get(file);
+    if (ranges === null) continue;
+    const list = ranges ?? [];
+    list.push([Number(start), Number(end)]);
+    files.set(file, list);
+  }
+  // Sorted by start once here, so rangesCover can sweep without re-sorting.
+  for (const ranges of files.values()) {
+    if (ranges !== null) ranges.sort((a, b) => a[0] - b[0]);
+  }
+  return files;
+}
+
+// Every line of [start, end] lies inside the union of `ranges` (a sweep over
+// ranges already sorted by start; reversed ranges cover nothing).
+function rangesCover(ranges, [start, end]) {
+  let line = start;
+  for (const [s, e] of ranges) {
+    if (s > e || e < line) continue;
+    if (s > line) return false;
+    line = e + 1;
+    if (line > end) return true;
+  }
+  return line > end;
+}
+
+// True when every line the `previous` scope covered is still inside
+// `current`: per file, a whole-file entry covers everything, a set of ranges
+// covers only its lines and never a whole-file entry; a reversed range
+// (start > end) is malformed and is never covered. This is the reuse guard
+// for the diff cache. It compares line NUMBERS; Stryker itself relocates
+// cached mutants by matching source content, so a heavily edited file can in
+// theory carry a cached mutant to a line outside the numeric scope - a
+// residual, documented limitation, not a proof of containment.
+export function scopeCovers(current, previous) {
+  const cur = parseScope(current);
+  for (const [file, ranges] of parseScope(previous)) {
+    if (!cur.has(file)) return false;
+    const curRanges = cur.get(file);
+    if (curRanges === null) continue; // current is whole-file: covers everything
+    if (ranges === null) return false; // previous is whole-file, current is ranges only
+    for (const range of ranges) {
+      if (range[0] > range[1]) return false;
+      if (!rangesCover(curRanges, range)) return false;
+    }
+  }
+  return true;
+}
+
+// Best-effort removal that REPORTS its outcome: a locked file must not turn
+// a clean-up into a crash, but the caller has to know the file is still
+// there (an empty-scope exit with a stale report left behind would be read
+// as a genuine result). `recursive` is opted into only for the two paths
+// this file OWNS (the diff cache and its sidecar), so a directory squatting
+// on them goes too; a symlink is removed as the link, never followed.
+function rmBestEffort(absPath, { recursive = false } = {}) {
+  try {
+    fs.rmSync(absPath, { force: true, recursive });
+    return true;
+  } catch (err) {
+    fs.writeSync(2, `[mutation:diff] warning: could not remove ${absPath}: ${err.message}\n`);
+    return false;
+  }
 }
 
 // A stale json report from a previous run must not survive an empty-scope
-// exit - quality-check would read yesterday's mutants as today's.
+// exit - quality-check would read yesterday's mutants as today's. The path
+// is PRODUCT-owned config (jsonReporter.fileName), unlike the cache
+// constants: it is never removed recursively, never when it is a directory
+// (a mis-set 'reports' must not take the tree with it - the same hazard
+// pitest.gradle refuses for reportDir), and never outside the directory the
+// run started from. Each refusal returns false so the empty-scope path
+// exits 1 instead of claiming an empty scope.
 function removeStaleReport(baseConfig, cwd) {
-  const fileName = baseConfig.jsonReporter && baseConfig.jsonReporter.fileName;
-  if (!fileName) return;
-  try {
-    fs.rmSync(path.resolve(cwd, fileName), { force: true });
-  } catch {
-    // best effort - a locked file must not turn the empty scope into a crash
+  const fileName = baseConfig.jsonReporter?.fileName;
+  if (!fileName) return true;
+  const root = path.resolve(cwd);
+  const abs = path.resolve(root, fileName);
+  const relative = path.relative(root, abs);
+  if (relative === '' || relative.split(path.sep)[0] === '..' || path.isAbsolute(relative)) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] jsonReporter.fileName (${fileName}) resolves outside the run directory ${root} - not removing it\n`
+    );
+    return false;
   }
+  let stat = null;
+  try {
+    stat = fs.lstatSync(abs);
+  } catch {
+    // absent: nothing stale to remove
+    return true;
+  }
+  if (stat.isDirectory()) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] jsonReporter.fileName (${fileName}) is a directory, not a report file - not removing it. ` +
+        'Point it at the json report (default reports/mutation/mutation.json).\n'
+    );
+    return false;
+  }
+  return rmBestEffort(abs);
+}
+
+function resetDiffCache(cwd) {
+  const cacheGone = rmBestEffort(path.resolve(cwd, DIFF_INCREMENTAL_FILE), { recursive: true });
+  const sidecarGone = rmBestEffort(path.resolve(cwd, DIFF_SCOPE_FILE), { recursive: true });
+  return cacheGone && sidecarGone;
+}
+
+// Sidecar format. Bump the version whenever the meaning of a field changes:
+// a sidecar of another version has no usable provenance and discards the
+// cache (fail-closed), instead of being trusted by accident.
+const SIDECAR_VERSION = 1;
+const MERGE_BASE_RE = /^[0-9a-f]{7,64}$/;
+// Detects a hand-edited sidecar; ranges are intervals, so this is not a
+// memory bound. A genuine hunk this long (a generated file added whole)
+// merely disables reuse for that change - fail-closed, visible as
+// "starting the diff cache" on every run.
+const MAX_RANGE_LINES = 1_000_000;
+
+function isScopeEntry(entry) {
+  if (typeof entry !== 'string' || entry.length === 0) return false;
+  const match = RANGE_ENTRY_RE.exec(entry);
+  if (!match) return true;
+  const start = Number(match[2]);
+  const end = Number(match[3]);
+  return start >= 1 && end >= start && end - start < MAX_RANGE_LINES;
+}
+
+// The sidecar is gitignored and developer-editable, so it is validated like
+// untrusted input: version, a hex merge base, and a NON-EMPTY list of
+// well-formed entries. An empty `mutate` can never come from this file (an
+// empty scope exits before the sidecar is written) and would make
+// scopeCovers vacuously true - the one shape that lets any stale cache
+// through - so it discards the cache like any other corruption.
+function readScopeSidecar(absPath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(absPath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    if (parsed.version !== SIDECAR_VERSION) return null;
+    if (typeof parsed.mergeBase !== 'string' || !MERGE_BASE_RE.test(parsed.mergeBase)) return null;
+    if (!Array.isArray(parsed.mutate) || parsed.mutate.length === 0) return null;
+    if (!parsed.mutate.every(isScopeEntry)) return null;
+    return parsed;
+  } catch {
+    // missing or unreadable sidecar: the cache has no known provenance
+    return null;
+  }
+}
+
+// Stryker rethrows anything but ENOENT when it reads the cache, so a cache
+// left truncated by an interrupted run would wedge every later run on the
+// same SyntaxError if it were reported as reusable - and valid JSON that is
+// not a report (no `files` object) fails inside Stryker just the same.
+// Unreadable = absent.
+function cacheIsReadable(absPath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(absPath, 'utf8'));
+    return Boolean(parsed) && typeof parsed === 'object' && Boolean(parsed.files) && typeof parsed.files === 'object';
+  } catch {
+    return false;
+  }
+}
+
+// Decides whether this run may READ the diff cache, and records the current
+// scope for the next run. Reuse needs a readable cache plus a valid sidecar
+// naming the same merge base whose scope the current one still covers (see
+// scopeCovers); anything else - no or invalid sidecar, another merge base, a
+// shrunk or moved scope, an unreadable cache - discards the cache first,
+// because Stryker would keep the stale mutants in the report quality-check
+// triages. The decision is reported on stderr with the same synchronous
+// write as the scope line.
+//
+// Ordering invariant (why the sidecar is written BEFORE Stryker runs): on
+// disk, cache contents ⊆ the scope the sidecar records. A discard empties
+// the cache before the sidecar is written, and a reuse only advances the
+// sidecar to a scope that covers the recorded one. An interrupted run can
+// therefore leave the sidecar AHEAD of the cache but never behind it, and
+// the next decision errs on the discarding side. Keep it that way.
+// Returns whether Stryker may use the diff cache on this run. A cache that
+// has to be discarded but could not be removed stays on disk, and Stryker
+// would read it as this run's - so that case returns false (a cache-less
+// run, said so on stderr) rather than "starting the diff cache".
+function prepareDiffIncremental(cwd, scope) {
+  const cachePath = path.resolve(cwd, DIFF_INCREMENTAL_FILE);
+  const sidecarPath = path.resolve(cwd, DIFF_SCOPE_FILE);
+  const previous = cacheIsReadable(cachePath) ? readScopeSidecar(sidecarPath) : null;
+  const reusable =
+    previous !== null &&
+    previous.mergeBase === scope.mergeBase &&
+    scopeCovers(scope.entries, previous.mutate);
+  if (reusable) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] incremental: reusing the diff cache (${DIFF_INCREMENTAL_FILE}) - the scope still covers the previous run\n`
+    );
+  } else if (!resetDiffCache(cwd)) {
+    fs.writeSync(
+      2,
+      '[mutation:diff] incremental: disabled for this run - the previous diff cache or its scope sidecar could not be removed ' +
+        `(${DIFF_INCREMENTAL_FILE}); remove it and re-run with MUTATION_INCREMENTAL=1 to start a new cache\n`
+    );
+    return false;
+  } else {
+    fs.writeSync(2, `[mutation:diff] incremental: starting the diff cache (${DIFF_INCREMENTAL_FILE})\n`);
+  }
+  fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
+  // Replace, never write through: a symlink in the sidecar's place must not
+  // redirect the write.
+  rmBestEffort(sidecarPath, { recursive: true });
+  fs.writeFileSync(
+    sidecarPath,
+    `${JSON.stringify(
+      // baseRef is informational (diagnostics); only mergeBase and mutate
+      // take part in the reuse decision.
+      { version: SIDECAR_VERSION, baseRef: scope.baseRef, mergeBase: scope.mergeBase, mutate: scope.entries },
+      null,
+      2
+    )}\n`
+  );
+  return true;
 }
 
 // Returns `baseConfig` with `mutate` narrowed to the changed lines. On an
 // empty scope the run must not reach Stryker (it would abort with "No tests
-// were executed"): the stale report is removed, the empty scope is reported
-// on stderr via fs.writeSync (synchronous - console.warn through a pipe could
-// be truncated by process.exit) and the process exits 0; quality-check
-// records `mutation.reason: "empty_scope"` for that case.
-export function withChangedLines(baseConfig, { cwd = process.cwd(), baseRef } = {}) {
+// were executed"): the stale report and the diff cache are removed, the
+// empty scope is reported on stderr via fs.writeSync (synchronous -
+// console.warn through a pipe could be truncated by process.exit) and the
+// process exits 0; quality-check records `mutation.reason: "empty_scope"`
+// for that case. If the stale REPORT could not be removed the run exits 1
+// instead - a leftover report would be read as this run's result, and
+// quality-check records that as `scope_error`. A cache or sidecar that
+// could not be removed only warns: the next run's own guard discards them.
+//
+// `incremental` (default: MUTATION_INCREMENTAL, see incrementalRequested;
+// only the boolean `true` opts in when passed explicitly) enables the
+// diff-only cache; `incrementalFile` always names that cache so the full
+// run's cache is never read or written from here - a product's own
+// `incrementalFile` is deliberately ignored for the diff run.
+//
+// `cwd` must be the directory Stryker runs from: the ranges are relative to
+// it and the cache paths are resolved against it here, but against Stryker's
+// own cwd by Stryker.
+export function withChangedLines(
+  baseConfig,
+  { cwd = process.cwd(), baseRef, incremental = incrementalRequested(process.env.MUTATION_INCREMENTAL) } = {}
+) {
   if (!Array.isArray(baseConfig.mutate) || baseConfig.mutate.length === 0) {
     throw new Error(
       '[mutation:diff] the base config must define explicit `mutate` globs - ' +
@@ -267,24 +609,31 @@ export function withChangedLines(baseConfig, { cwd = process.cwd(), baseRef } = 
     );
   }
   const ref = assertSafeRef(baseRef ?? resolveBaseRef({ cwd }));
-  const mutate = changedLineRanges({ cwd, baseRef: ref, mutate: baseConfig.mutate });
-  if (mutate.length === 0) {
-    removeStaleReport(baseConfig, cwd);
+  const scope = deriveScope({ cwd, baseRef: ref, mutate: baseConfig.mutate });
+  if (scope.entries.length === 0) {
+    const reportGone = removeStaleReport(baseConfig, cwd);
+    resetDiffCache(cwd);
+    if (!reportGone) {
+      fs.writeSync(
+        2,
+        `[mutation:diff] empty scope since ${ref}, but the previous report could not be removed - ` +
+          'refusing to finish as an empty scope (the leftover would be read as this run\'s result). ' +
+          'Fix or remove it and re-run.\n'
+      );
+      process.exit(1);
+    }
     fs.writeSync(
       2,
       `[mutation:diff] empty scope: no changed lines inside the mutate set since ${ref} - nothing to mutate\n`
     );
     process.exit(0);
   }
-  fs.writeSync(2, `[mutation:diff] base ${ref}: ${mutate.length} changed range(s) in scope\n`);
+  fs.writeSync(2, `[mutation:diff] base ${ref}: ${scope.entries.length} changed range(s) in scope\n`);
+  const useCache = incremental === true && prepareDiffIncremental(cwd, scope);
   return {
     ...baseConfig,
-    mutate,
-    // The incremental cache is full-run state. Reading it would merge stale
-    // out-of-scope mutants into this run's report (the exact report
-    // quality-check triages), and writing back would clobber the full-run
-    // cache - so the diff run opts out entirely. The scope is small; fully
-    // re-running it on each correction loop is cheap.
-    incremental: false,
+    mutate: scope.entries,
+    incremental: useCache,
+    incrementalFile: DIFF_INCREMENTAL_FILE,
   };
 }
