@@ -205,8 +205,8 @@ init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成さ
 
 1.12.x 以前を取り込んでいるプロジェクトは、次の 3 点で最新版に追随します。
 
-1. **`npx ai-dev-helm init` を再実行する** — 新スキル（`test-recommendation`）・台帳雛形・改訂済みドキュメントが配置されます。台帳（`documents/development/test-recommendation-ledger.md`）は copy-if-missing のため、既存の台帳は上書きされません
-2. **ハーネス設定ファイル（CLAUDE.md / AGENTS.md / `.cursorrules`）の `### Quality Gate Overrides` から `mutation_threshold_high` / `mutation_threshold_medium` / `mutation_mode_medium` の宣言を削除する** — quality-check はこれらのキーを認識しなくなりました（認識するのは `mutation_budget_minutes` のみ）。hook は次期改修（Issue #90）まで旧キーの変更を過剰に検知しますが、フェイルセーフ方向（余分にゲートに掛かるだけ）であり実害はありません
+1. **`npx ai-dev-helm init` を再実行する** — 新スキル（`test-recommendation`）・台帳雛形・改訂済みドキュメントが配置されます。台帳（`documents/development/test-recommendation-ledger.md`）は copy-if-missing のため、既存の台帳は上書きされません。あわせて quality-gate フックの登録も修復されます: `.claude/settings.json` は `hooks.PreToolUse` の quality-gate エントリの `timeout` が 30 未満（または未指定）なら 30 に引き上げられ、登録自体が無ければテンプレートのエントリが追記されます（既存のユーザー hook・その他のキーは温存）。`.codex/hooks.json` も同様に timeout が引き上げられ、イベント名がトップレベルにある旧形式は `hooks` キー配下へ移行されます。手動で直す場合は、両ファイルの quality-gate エントリの `timeout` が 30 未満なら 30 にしてください（フック本体の内部デッドラインは 20 秒で、それより短い登録だと途中で kill され、出力が無いまま「許可」と解釈されます）
+2. **ハーネス設定ファイル（CLAUDE.md / AGENTS.md / `.cursorrules`）の `### Quality Gate Overrides` から `mutation_threshold_high` / `mutation_threshold_medium` / `mutation_mode_medium` の宣言を削除する** — quality-check はこれらのキーを認識しなくなりました（認識するのは `mutation_budget_minutes` のみ）。hook は `Quality Gate Overrides` / `mutation_budget_minutes` の文字列を含む差分行だけを見るため、旧キーの宣言を削除するだけの差分はハーネスのみ変更として免除されます
 3. **`.quality-check-report.json` を読む自作ツールがある場合は追随する** — 旧トップレベルの `e2e_result` / `e2e_issues` は `e2e` オブジェクトに置き換わり、`mutation.mode` / `mutation.score` / `mutation.threshold` は廃止されました（スキーマは `skills/project/_schemas/quality-check-report.schema.md`）
 
 ### `ai-dev-helm personal` の対話フロー
@@ -335,7 +335,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ## 品質チェック（quality-check）の詳細
 
-`quality-check` スキルは、main へのマージ前にローカルで品質を担保するための多段ゲートです。CI はビルド確認のみの位置づけで、静的チェック・テスト・レビューは全てローカルで完結します。feature ブランチへの push はゲートされず、ハーネスファイル（CLAUDE.md、スキル等）のみの変更はチェック自体が不要です。ただし次の 2 つはこの免除の対象外で、quality-check（最低でも縮退レビュー）が必要です: (1) ハーネス設定ファイルの差分がゲートパラメータ（`Quality Gate Overrides` のキー）の変更を含む場合、(2) **ゲート制御面ファイル**（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.codex/config.toml`・`mcp.json`・settings の `hooks` / `permissions.deny` 等 — 正確な集合は quality-check スキルの「ハーネスのみ変更の免除」を参照）に触れる場合。
+`quality-check` スキルは、main へのマージ前にローカルで品質を担保するための多段ゲートです。CI はビルド確認のみの位置づけで、静的チェック・テスト・レビューは全てローカルで完結します。feature ブランチへの push はゲートされず、ハーネスファイル（CLAUDE.md、スキル等）のみの変更はチェック自体が不要です。ただし次の 2 つはこの免除の対象外で、quality-check（適用判定表に従うレビュー）が必要です: (1) ハーネス設定ファイルの差分がゲートパラメータ（`Quality Gate Overrides` のキー）の変更を含む場合、(2) **ゲート制御面ファイル**（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.codex/config.toml`・`mcp.json`・settings の `hooks` / `permissions.deny` 等 — 正確な集合は quality-check スキルの「ハーネスのみ変更の免除」を参照）に触れる場合。
 
 判断基準そのものは共有ドキュメント側に定義されています。リスクレベル（High/Medium/Low）とレベル別のゲート強度、テストオラクル原則、反復工程の打ち切り基準は `shared/documents/quality-policy.md`、静的チェックで機械的に担保すべき項目の標準（A1〜F2 の25カテゴリ）は `shared/documents/static-check-standard.md` を参照してください。
 
@@ -349,16 +349,19 @@ Step 0: ドキュメント更新の確認（feature-documentation）
 Step 1: 変更領域の判定（git diff でbackend/frontend/docs/infraを自動検出）+ リスクレベル判定（High/Medium/Low）
   ↓
 ┌─ サイクル（上限3。quality-policy §5）
-│ Step 2: 静的チェック = 決定的チェック層（linter, formatter, build。修正1パス + 確認1パス）
+│ Step 2: ビルド + 静的チェック = 決定的チェック層（linter, formatter, build。修正1パス + 確認1パス）
 │   ↓
 │ Step 3: ユニットテスト + テスト設計メモとの照合（High/Medium。test-design スキルのメモと突き合わせ、欠落時は遡及実行）
 │   ↓
-│ Step 4: マルチペルソナ・レビュー（差分規模に応じ3〜6ペルソナ。Step 2〜3 の結果を入力に含む。ファルシフィケーション型の観点を含む。サイクル2以降は検証レビューに縮退）
+│ Step 2〜3 に残存（解消できなかった違反・失敗テスト）があれば → Step 4 を実行せず高指摘として統合指摘に記録しサイクル終了
+│   ↓（残存なし）
+│ Step 4: マルチペルソナ・レビュー（適用判定表で変更内容から選定。docs のみは要件・仕様整合性 + セキュリティ（機密限定）。設計文書を含む場合は+アーキテクト、規範共有箇所への差分は+統合アーキテクチャ。ファルシフィケーション型の観点を含む。サイクル2以降は前サイクルで高/中指摘を出したペルソナのみによる検証レビュー）
 │   ↓
 │ 統合指摘（Lint 残存・テスト失敗・ペルソナ指摘）の対応
 │   ├── 高/中指摘なし → Step 5 へ
 │   ├── 残っている → 次サイクル（Step 2 から）
-│   └── 上限到達 / 停滞 → ユーザー判断（受容 / 方針変更して追加サイクル / 中断）
+│   ├── 構造的停滞（同一クラスの高指摘が閾値以上）→ ユーザー判断（設計に戻す / 受容して通す / 中断）
+│   └── 上限到達 / その他の停滞 → ユーザー判断（受容 / 方針変更して追加サイクル / 中断）
 └─
   ↓
 Step 5: 追加テスト提案（test-recommendation スキル。ミューテーション / E2E の推奨度 + 根拠を提示 → ユーザー判断 → 承認分のみ実行。E2E 実行時のサーバー起動・停止を内包）
@@ -378,14 +381,14 @@ Step 5 では、`test-recommendation` スキルが変更差分から追加テス
 
 ### 専門ペルソナによるレビュー
 
-Step 4 では、専門家ペルソナが並列のサブエージェントとしてレビューを実施します。差分が200行未満（生成ファイル除外）ならセキュリティ・QA・統合アーキテクチャの3ペルソナ、200行以上なら以下の6ペルソナ全てを適用します。
+Step 4 では、専門家ペルソナが並列のサブエージェントとしてレビューを実施します。起動するペルソナは差分規模ではなく変更内容で決まります（適用判定表は `quality-check` SKILL.md Step 1 を参照）。docs のみの変更では要件・仕様整合性とセキュリティ（機密情報混入確認に限定）の2ペルソナのみになります。ただし設計文書を含む場合はソフトウェアアーキテクトが、同一の規範を複数ファイルが持つ箇所に差分がある場合は統合アーキテクチャレビューが加わります。
 
 | ペルソナ | 重点観点 |
 |---------|---------|
 | **セキュリティエンジニア** | 脆弱性、認証・認可、データ漏洩、インジェクション、OWASP Top 10、サプライチェーン攻撃 |
 | **ソフトウェアアーキテクト** | SOLID/DRY、レイヤー責務、依存関係、拡張性、API 設計の後方互換性 |
 | **QA エンジニア（ファルシフィケーション型）** | この実装が間違っていることを証明する入力・シナリオ、テスト期待値の妥当性（既知のテスト値へのハードコード、実装と同一ロジックの複製による期待値生成、意味のない assertion）、エッジケース、エラーハンドリング、アクセシビリティ基本要件 |
-| **統合アーキテクチャ** | 変更全体の整合性、レイヤー依存方向、既存パターン一貫性、N+1 問題などの統合的パフォーマンス |
+| **統合アーキテクチャレビュー** | 変更全体の整合性、レイヤー依存方向、既存パターン一貫性、N+1 問題などの統合的パフォーマンス |
 | **パフォーマンスエンジニア** | アルゴリズム計算量、クエリ、バンドルサイズ、キャッシュ、スケーラビリティ |
 | **要件・仕様整合性レビュアー** | Issue/要件/設計/受け入れ条件と実装の一致、過剰実装・不足実装、ドキュメント乖離 |
 
@@ -393,27 +396,27 @@ Step 4 では、専門家ペルソナが並列のサブエージェントとし�
 
 ### サブエージェントのモデル切り替え
 
-サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。Fable は計画・設計の最初の方向付けに限定し、利用できない場合や Codex 利用時は Claude Opus 5 または GPT-5.6-Sol にフォールバックします。実装などの具体的な作業は Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra（またはエフォートを下げた GPT-5.6-Sol）で行い、レビュー・検証は Claude Opus 5 または GPT-5.6-Sol high で行います。探索・コンテキスト収集には Claude Sonnet 5 を使用します（Sonnet は探索・検索用途に限定し、実装・レビュー・計画には使用しません）。Claude Haiku はどのフェーズでも使用しません。
+サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。計画・設計の初期方向付けと設計・計画のレビューは同じ最上位階層（Fable。利用できない場合や Codex 利用時は Claude Opus 5 または GPT-5.6-Sol high）で行います。実装などの具体的な作業は既定で Claude Sonnet 5 / GPT-5.6-Terra を使い、計画が「判断を要する」と明記したタスクのみ Claude Opus 5 / GPT-5.6-Sol high を使います。純粋なドキュメントレビュー（README・`documents/` の記述確認で設計判断を含まない）は Claude Sonnet 5 / GPT-5.4-mini medium です。探索・コンテキスト収集には Claude Sonnet 5 / GPT-5.4-mini medium を使用します。quality-check のペルソナ・コードレビューは Claude Opus 5 または GPT-5.6-Sol high で行います。Claude Haiku はどのフェーズでも使用しません。
 
-| ハーネス | 計画・設計の初期判断 | 探索・コンテキスト収集 | 実装・具体的な作業 | レビュー・検証 |
-|---------|----------------------|----------------------|--------------------|---------------|
-| Claude Code | Task ツールに `model: fable` を明示指定（不可なら `opus`） | `model: sonnet` を明示指定 | `model: opus` を明示指定 | `model: opus` を明示指定 |
-| Codex | `gpt-5.6-sol` / `high` | `gpt-5.4-mini` / `model_reasoning_effort = "medium"` を明示指定 | `gpt-5.6-terra`（または `gpt-5.6-sol` でエフォートを `medium`/`low` に下げる） | `gpt-5.6-sol` / `model_reasoning_effort = "high"` を明示指定 |
-| Cursor | Fable を優先（不可なら Claude Opus 5 / GPT-5.6-Sol） | Claude Sonnet 5 などの高速モデル（Haiku は使用しない） | Claude Opus 5 / Composer 2.5 Fast / GPT-5.6-Terra / 低エフォート GPT-5.6-Sol | Claude Opus 5 を優先、代替で GPT-5.6-Sol high |
+| ハーネス | 計画・設計 | 設計・計画のレビュー | 探索 | 実装 | 純粋な文書レビュー | quality-check ペルソナ・コードレビュー |
+|---------|-----------|---------------------|------|------|-------------------|----------------------------------------|
+| Claude Code | `model: fable`（不可なら `opus`） | `model: fable`（不可なら `opus`） | `model: sonnet` | `model: sonnet`（判断タスクのみ `opus`） | `model: sonnet` | `model: opus` |
+| Codex | `gpt-5.6-sol` / `high` | `gpt-5.6-sol` / `high` | `gpt-5.4-mini` / `medium` | `gpt-5.6-terra`（判断タスクのみ `gpt-5.6-sol` high） | `gpt-5.4-mini` / `medium` | `gpt-5.6-sol` / `high` |
+| Cursor | Fable（不可なら Claude Opus 5） | Fable（不可なら Claude Opus 5） | Claude Sonnet 5 | Claude Sonnet 5（判断タスクのみ Claude Opus 5） | Claude Sonnet 5 | Claude Opus 5 |
 
 Claude Code の Task ツールの `model` パラメータは短縮エイリアス（`fable` / `opus` / `sonnet` / `haiku`）のみを受理するため、テンプレートでは `claude-opus-5` などのフル ID ではなく短縮名で指定します。また、テンプレートのモデル表はスキル内のモデル選択ガイド（例: subagent-driven-development の Model Selection 節）より優先されます。
 
 Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
 
-計画の実行はハーネスを問わず**サブエージェント駆動（subagent-driven-development）がデフォルト**です。メインセッション（Fable / GPT-5.6-Sol）は計画・オーケストレーションに専念し、実装タスクは Opus 5 等のサブエージェントに委譲することで、Fable のトークン消費を計画・設計に集中させます。インライン実行（executing-plans）はユーザーが明示的に指示した場合のみ使用します。
+計画の実行はハーネスを問わず**サブエージェント駆動（subagent-driven-development）がデフォルト**です。メインセッション（Fable / GPT-5.6-Sol）は計画・オーケストレーションに専念し、実装タスクは Sonnet 5 等の下位モデルのサブエージェントに委譲することで、Fable のトークン消費を計画・設計に集中させます。インライン実行（executing-plans）はユーザーが明示的に指示した場合のみ使用します。
 
 ### サイクルルール
 
-- **最低 1 サイクル実行**。2 周目以降は直前サイクルで優先度 高/中 の指摘があった場合のみ実施
-- **コード変更はペルソナを差分規模で段階化**（200 行未満: 3 ペルソナ / 200 行以上: 6 ペルソナ）。docs/infra のみの変更はペルソナを 3〜5 に絞って縮退（レビューコスト最適化）
-- **サイクル 2 以降の Step 4 は検証レビューに縮退**（前サイクルで高/中指摘を出したペルソナのみが修正差分を検証。新規の高指摘が出た場合は次サイクルでフルセットに復帰）
-- **高/中指摘が残らなくなるまでサイクルを繰り返す**（上限・停滞検出は quality-policy §5）
-- 上限到達・停滞時はユーザーに判断を仰ぐ（受容 / 方針変更して追加サイクル / 中断）
+- **機械的チェックが先**: Step 2〜3 に残存（解消できなかった違反・失敗テスト）があるサイクルは Step 4 を実行せず、残存を高指摘として統合指摘に記録してサイクルを終了する
+- **ペルソナは変更内容で選ぶ**: 差分規模ではなく変更内容が適用判定表（`quality-check` SKILL.md Step 1）を通じてペルソナを決める。docs のみの変更は要件・仕様整合性 + セキュリティ（機密限定）の2ペルソナ（設計文書を含む場合は+アーキテクト、規範を複数ファイルが共有する箇所への差分は+統合アーキテクチャレビュー）
+- **最低 1 サイクル実行**。2 周目以降は直前サイクルで優先度 高/中 の指摘があった場合のみ、指摘を出したペルソナによる検証レビュー（修正差分のみ）として実施（フルセットへの復帰はしない）
+- **高/中指摘が残らなくなるまでサイクルを繰り返す**（上限・停滞検出は quality-policy §5。同一クラスの高指摘が閾値以上出た場合は構造的停滞としてユーザー判断を仰ぐ）
+- 上限到達・停滞時はユーザーに判断を仰ぐ（受容 / 方針変更して追加サイクル / 中断。構造的停滞では方針変更による追加サイクルは選択肢に含めない）
 
 ### 自己改善ハーネス
 
@@ -443,13 +446,20 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 
 #### マージ前の品質チェック強制フック
 
-`settings.json` には `PreToolUse` フックが設定されており、`gh pr merge` / main 上での `git merge` / main への直接 `git push` を実行する際に `.quality-check-passed` フラグの有効性を検証します。**feature ブランチへの push はゲートされません**。
+**脅威モデル**: この hook が防ぐのは、善意の操作がうっかり main に到達することだけです。開発は必ず Issue → ブランチを切ってから始まる設計であり、main への push / マージが起きても最悪はリバートで戻せるため、hook は保険のブロックにすぎません。意図的な迂回（シェルの展開・クォート・エンコードで語を隠す形、ラッパ経由、間接実行等）は対象外とし、hook 本体のヘッダに「見通せない形」として列挙するに留めます — 実害が出た時点で個別に対応します。
 
-- フラグは quality-check 通過時の HEAD を記録した JSON（`{branch, commit}`）で、消費（削除）されません
-- 記録コミット以降の変更がハーネスファイル（CLAUDE.md、スキル等）のみであればフラグは有効なまま。非ハーネスのコード変更が入ると無効になり、再チェックが必要です。**例外**: ゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.codex/config.toml`・`mcp.json`・settings の `hooks` / `permissions.deny`）に触れる追加コミットはハーネスファイルであってもフラグを無効化し、hook が `Gate control-plane changed:` でブロックします
-- 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます（ただしゲートパラメータ（`Quality Gate Overrides` のキー）の変更、またはゲート制御面ファイルへの変更を含む差分はこのカーブアウトにより免除されず、フラグが必要です）
+`settings.json` には `PreToolUse` フックが設定されており、コマンド行を静的に分類するだけの装置として動作します（着地するコミットを解決しようとはしません）。対象は `gh pr merge` / `gh api` の `pulls/<n>/merge`（`<n>` が数字でなくても（変数・展開・その他の文字列）候補になり、展開文字項で block されます） / main・master 上での `git merge`・`git pull`・`git rebase` / 宛先が `main`・`master` に完全一致する `git push` / main・master 上で refspec を省略または `HEAD`・`@`（大小無視）のみを指定した `git push` です。**feature ブランチへの push はこれらの形に一致しない限りゲートされません**（ただし下記「意図的な過検出」も参照）。ただし refspec に展開文字（`$` `` ` `` `{` `}` `%`）を含む `git push`（例 `git push origin feat/$TICKET`）は宛先が静的に読めないため、ブランチを問わず候補として扱われ、規則2の展開文字項で block されます（未クォートの展開は語分割で `main` を持ち込みうるための fail-closed。`feat/x` のように書き下してください）。`git merge`・`git pull`・`git rebase` の `--abort`・`--continue`・`--quit`・`--skip` はゲート対象外です。
 
-つまり、main に取り込むたびに品質チェックを通す必要がありますが、レビュー後のハーネス微修正で再チェックは発生しません。
+- **無条件ブロック**（規則1の候補がある行について、フラグ・ブランチの状態に関わらず）: 規則1の候補がある行の force / delete push（`-f`/`-d` の短縮オプション束ね形を含む）・`+refspec`・`--mirror`・`--all`・`--branches`、ゲート対象と同一行にある別の git 操作（判定対象は**閉じた集合**です。HEAD を動かす commit・reset・checkout・switch・cherry-pick・rebase・revert・am・bisect・update-ref・stash pop・stash apply は改行区切りの複数行にまたがってもコマンド全体で判定、fetch・branch -f/-d/-D/--force は同一行で判定。status・add・log・diff・tag・remote 等の同居はブロックしません）、`-C`・`--git-dir`・`--work-tree`・`--namespace`・`-c`・`--config-env`・`GIT_*=` 代入・同一行の `cd`/`pushd`、規則1の候補がある行に限る行内の展開文字（`$` `` ` `` `{` `}` `%`。`$'…'`/`$"…"` の ANSI-C / ロケールクォートも展開扱い。`gh` の自由テキスト値オプション `-t`/`--subject`・`-b`/`--body`・`-F`/`--body-file` の6形と `--subject=`/`--body=`/`--body-file=` の `=` 付き3形を除く行内の全語（リダイレクト先の語は argv に残らないため除く。ただしその語内のコマンド置換の本体は同一行として解析する）が対象。候補が無い行の展開文字は対象外です — 脅威モデル外の迂回として hook ヘッダに列挙されます）、複数ゲート対象の同居、`<x>:main` 形の refspec（`<x>` が現在のブランチ名 / `HEAD` / `@`（大小無視）のいずれでもない逆形）。リダイレクト（`>` 等）はゲート判定上は特別扱いされず通常どおり解釈されます。別コマンドに分けて素の git を実行してください
+- **分類予算**: 64 KB を超えるコマンド、または 1 コマンド内の git/gh 語が 256 を超える場合は分類しません（引数位置に現れる `git`/`gh` も語として数えます — 過剰計上は fail-closed の方向）。前者（64 KB 超）はゲート語（`merge`/`pull`/`push`/`rebase`/`pr`、`pulls/<n>/merge`）を**コマンド全体**（行継続 `\`+改行を畳み、クォート `"`/`'` とバックスラッシュ `\` を除去した後の語でも判定）に含めば block、含まず展開文字（`$` `` ` `` `{` `}` `%`）も含まなければ allow です（同一行の別操作の判定は行いません）。除去後の文字列に展開文字を含む場合はゲート語の有無を問わず block します（`$'\x70'ush` 等を静的に読み切れない形への fail-closed）。後者（256 超の git/gh 語数）と 1 MB を超える hook ペイロード（stdin 全体）は分類せず無条件 block します（読み切れない入力を allow にはしません）
+- **通す条件**: フラグは quality-check 通過時の `commit`（repo ルートの `.quality-check-passed`、`{branch, commit}`、消費されない）を記録した JSON で、`commit` が `HEAD` と一致する場合（短縮 SHA の前方一致可。`branch` は診断用）、または `HEAD` の祖先で `commit..HEAD` の差分が全てハーネスファイル（制御面 carve-out・`Quality Gate Overrides` / `mutation_budget_minutes` の文字列変更 carve-out を除く。有効・コメントアウトの解析はせず、含まれていれば免除しません）である場合に通ります。**現在のトランク**自身のリモートからの同期は、引数なしの `git pull` / `git pull origin <trunk>` / `git merge origin/<trunk>` の3形（トランクが `master` のチェックアウトでは `master` 形）に完全一致する場合に限りフラグ不要です
+- 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます（ただしゲートパラメータ（`Quality Gate Overrides` のキー）の変更、またはゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.claude`/`.codex`/`.cursor` の `agents/`/`commands/`/`prompts/`/`rules/` ディレクトリ・`.codex/config.toml`・`mcp.json`・`.claude/settings.json`/`.claude/settings.local.json` 等）への変更を含む差分はこのカーブアウトにより免除されず、フラグが必要です。ゲート制御面ファイルに触れる追加コミットはハーネスファイルであってもフラグを無効化し、hook が `Gate control-plane changed:` でブロックします。`.claude/settings.json` / `.claude/settings.local.json` は**ファイル全体**が制御面です — hook はキー単位の解析をしないため、`permissions.allow` のみの変更もブロックします
+- **fail-open**（無条件で allow）は入力ペイロード不正（理由は stderr に出力されます）・git リポジトリ外の2つのみです。それ以外の git 呼び出し失敗はブロックされます
+- **トランク名は `main` / `master` 固定**です。他のトランク名を使うプロダクトは hook のゲート対象外で、`permissions.deny` 層と規約で担保します
+- **worktree 上の main**（#116）: セッションの作業ディレクトリが worktree でない場合、その worktree 内の main へのマージはこの hook からは見えません（`-C`/`cd` を使う形は無条件ブロックされます）。セッションの作業ディレクトリが worktree なら、その main は通常どおりゲートされます。hook はセッションの作業ディレクトリのリポジトリを基準に評価し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読みます。正規の手順は「その worktree を作業ディレクトリとするセッションで quality-check を完走し、フラグをその worktree に作成してからそこで merge する」の1つだけです。統括側の別ディレクトリで先にフラグを作ってからマージする手順は成立しません
+- **意図的な過検出**: フラグ不要な feature ブランチへの push であっても、候補語（`merge`/`pull`/`rebase`/refspec 省略の `push`/refspec に展開文字を含む `push`（例 `git push origin feat/$TICKET`））を含む行は、同一行の別 git 操作・`-C`/`cd`・展開文字・hard flag の各条件でブロックされることがあります。`git fetch && git rebase origin/main` のような行は分けて実行してください。改行で分けても、`git commit` と refspec 省略の `git push` は1回の tool 呼び出しなのでブロックされます（refspec を明示するか、別の tool 呼び出しに分けてください）
+
+つまり、main に取り込むたびに品質チェックを通す必要がありますが、レビュー後のハーネス微修正で再チェックは発生しません。main が独立して進んでいた場合、マージ後の main は未検証（マージ自体は成功しても main への push はブロックされる）になるため、マージ後の main で再度 quality-check を実行してから push してください。
 
 ### グローバルレベルの保護（personal コマンド）
 
@@ -755,6 +765,10 @@ Cursor を選択した場合、スタック固有のコーディングルール�
 
 `init` で生成される `CLAUDE.md` は、Claude Code が会話開始時に読み込む設定ファイルです。単なるルール集ではなく、AI の行動基準をレベル分けして定義しています。
 
+### 設計思想（必読）
+
+本ハーネスの設計思想（複数の AI モデル・ツールで動作し単一モデルに依存しない、1 Issue+ブランチ、設計レビューは基本 1 回、計画レビュー後のユーザー確認は不要、実装は下位モデル・開発中レビューなし、機械的チェックの後に内容で選んだペルソナレビュー、hook は main への直接 push/merge を止めるだけでミューテーション/E2E の提案は quality-check Step 5 が担う、通過判定は根拠付き）は `documents/development/development-policy.md` §1.0 を正とします。各テンプレート（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）には「Development Philosophy（必読）」節としてこの要約が載ります。
+
 ### SuperPowers 適用ルール
 
 - **1% でも該当する可能性があればスキルを適用する** のが基本原則
@@ -905,7 +919,7 @@ GitHub の Actions タブから `Sync Superpowers Skills` ワークフローを�
 
 ### Q: Codex でもマージ前の品質チェックは強制されますか？
 
-されます。`.codex/hooks.json` の `PreToolUse` フックが `gh pr merge` / main 上での `git merge` / main への直接 push を検査し、有効な `.quality-check-passed` フラグ（commit 紐付け JSON）がなければブロックします。feature ブランチへの push はゲートされません。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
+されます。`.codex/hooks.json` の `PreToolUse` フックが `gh pr merge` / main 上での `git merge`・`git pull`・`git rebase` / main への直接 push を検査し、有効な `.quality-check-passed` フラグ（commit 紐付け JSON）がなければブロックします。feature ブランチへの push はゲートされません。現在のトランク自身のリモートからの同期（引数なしの `git pull` / `git pull origin <trunk>` / `git merge origin/<trunk>` の3形。`master` トランクなら `master` 形）はフラグ不要です。トランク名は `main` / `master` 固定です。Claude Code と同等の仕組みで、Codex 側がプロジェクトを trusted としてロードする必要があります（Codex 起動時に確認されます）。
 
 ### Q: セットアップ後に ai-dev-helm リポジトリは必要ですか？
 

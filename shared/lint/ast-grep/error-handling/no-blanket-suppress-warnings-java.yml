@@ -1,0 +1,64 @@
+# Detects a `@SuppressWarnings` string value that falls into one of the three
+# categories Checkstyle's SuppressWarningsHolder (#117) actually treats as
+# suppression syntax, verified against Checkstyle 14.0.0:
+#   (a) the literal `all` - suppresses every Checkstyle check on the annotated
+#       declaration. Checkstyle itself compares this value case-sensitively
+#       (only the exact lowercase `all` is honored - `"ALL"` or `" all "` is
+#       inert to Checkstyle, unlike a module name, which IS matched
+#       case-insensitively). This rule nonetheless matches (a) case-insensitively:
+#       a value that is `all` apart from case is unambiguously meant as blanket
+#       suppression, and flagging it fail-closed is safer than waiting for
+#       someone to notice by hand that the annotation silently does nothing.
+#   (b) a `checkstyle:` prefix that IS present but is NOT the exact
+#       `checkstyle:<ModuleName>` reference (CamelCase, case-sensitive) to a
+#       module this preset declares - a typo'd, unrelated, wrong-case, or
+#       fully-qualified (`checkstyle:com.puppycrawl...MagicNumberCheck`)
+#       module reference after the prefix
+#   (c) no `checkstyle:` prefix at all, where the text (case-insensitive,
+#       trailing `Check` optional, optionally preceded by a dotted package
+#       path) names a module this preset declares - Checkstyle resolves the
+#       module by the short name at the end of a fully-qualified class name
+#       exactly as it does the bare name, so `"com.puppycrawl.tools.checkstyle
+#       .checks.coding.MagicNumberCheck"` is honored the same as `"MagicNumber"`
+# Each of (a)-(c) matches a plain string literal or a text-block literal
+# (`"""..."""`) the same way.
+#
+# A value outside these three shapes is deliberately left alone: javac's own
+# SuppressWarnings values (`unchecked`, `rawtypes`, `deprecation`, `serial`,
+# etc.) are not Checkstyle suppression syntax at all, and the exact
+# `checkstyle:<ModuleName>` fixed form is the sanctioned way to suppress one
+# module. Flagging either would make this rule fire on ordinary javac
+# annotations, not just on Checkstyle's suppression hole.
+#
+# If a module is added to or removed from the checkstyle.xml preset, update
+# the module-name alternation in both the (b) and (c) branches below to match
+# (checkstyle.xml carries the mirror note). Catalog: A3.
+id: no-blanket-suppress-warnings-java
+language: Java
+severity: error
+message: "SuppressWarnings string value blanket-suppresses every check (`all`), misdirects a check (checkstyle:<module not in this preset, or wrong case>), or silences a preset check by its bare or fully-qualified class name. Use the exact checkstyle:<ModuleName> form for a module this preset declares, or a plain javac value. (Catalog: A3, #117)"
+rule:
+  kind: string_literal
+  inside:
+    kind: annotation_argument_list
+    stopBy: end
+    inside:
+      kind: annotation
+      has:
+        field: name
+        regex: ^SuppressWarnings$
+  any:
+    # (a) blanket "all", any case, plain or text-block literal.
+    - regex: '(?i)^"{1,3}\s*all\s*"{1,3}$'
+    # (b) checkstyle: prefix present but not the exact fixed form.
+    - all:
+        - regex: '^"{1,3}\s*checkstyle:'
+        - not:
+            regex: '^"{1,3}\s*checkstyle:(AvoidStarImport|RegexpSinglelineJava|EqualsHashCode|EmptyCatchBlock|IllegalCatch|IllegalImport|UnusedImports|RedundantImport|UnusedLocalVariable|MethodLength|CyclomaticComplexity|ParameterNumber|NestedIfDepth|MagicNumber)\s*"{1,3}$'
+    # (c) no prefix, bare or fully-qualified preset module name (case-insensitive,
+    # Check optional, optional dotted package prefix - Checkstyle resolves the
+    # module by the short name at the end of a fully-qualified class name, and
+    # it does so even when a package segment is empty, e.g. ".MagicNumber" or
+    # "a..MagicNumber" - verified against Checkstyle 14.0.0, so the segment
+    # group allows a zero-length segment (`[A-Za-z0-9_$]*` not `+`) too).
+    - regex: '(?i)^"{1,3}\s*([A-Za-z0-9_$]*\.)*(AvoidStarImport|RegexpSinglelineJava|EqualsHashCode|EmptyCatchBlock|IllegalCatch|IllegalImport|UnusedImports|RedundantImport|UnusedLocalVariable|MethodLength|CyclomaticComplexity|ParameterNumber|NestedIfDepth|MagicNumber)(Check)?\s*"{1,3}$'

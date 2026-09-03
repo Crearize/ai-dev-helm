@@ -10,12 +10,36 @@
   Modules are grouped by concern; each group is delimited by a
   "group: <name> (catalog refs)" comment. A product opts out of a group by
   deleting the whole block between its group comment and the next one.
+
+  If a module is added to or removed from any group below, update the
+  bare/checkstyle-prefixed module-name enumeration in
+  shared/lint/ast-grep/error-handling/no-blanket-suppress-warnings-java.yml to
+  match (#117).
 -->
 <module name="Checker">
   <property name="charset" value="UTF-8"/>
   <property name="severity" value="error"/>
 
+  <!--
+    Line-level suppression wiring (#117): lets a declaration silence one
+    Checkstyle module by name (e.g. `@SuppressWarnings("checkstyle:IllegalCatch")`)
+    instead of freezing a whole file via suppressions-*.xml. SuppressWarningsFilter
+    reads the holder built by SuppressWarningsHolder (below, under TreeWalker) and
+    removes matching violations before they are reported. See
+    "Line-level suppression" in stacks/java-springboot/lint/README.md for the
+    abuse surface this opens and the ast-grep rules that close it.
+  -->
+  <module name="SuppressWarningsFilter"/>
+
   <module name="TreeWalker">
+
+    <!--
+      Line-level suppression wiring (#117), continued: SuppressWarningsHolder
+      scans each `@SuppressWarnings` annotation and records which module names
+      it names, for SuppressWarningsFilter (above, under Checker) to apply.
+      Declared first in TreeWalker so it observes every module that follows.
+    -->
+    <module name="SuppressWarningsHolder"/>
 
     <!-- group: correctness (A1) -->
     <module name="AvoidStarImport"/>

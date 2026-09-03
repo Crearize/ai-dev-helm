@@ -1,0 +1,38 @@
+# Detects `@SuppressWarnings("checkstyle:IllegalCatch")` declared at type or
+# field scope: class, interface (member constants parse as
+# `constant_declaration`, not `field_declaration`), enum, record, `@interface`,
+# or a field. At that scope the annotation covers every catch in the type
+# (or, for a field, the whole field), which revives file-wide suppression
+# through one line even though SuppressionFilter (file-level) is not in play
+# (#117). Only the smallest enclosing method, constructor, or a
+# lambda-holding local variable may carry this annotation - see the
+# "Line-level suppression" section of stacks/java-springboot/lint/README.md
+# for the `// 境界宣言:` convention. Catalog: A3.
+id: no-type-scope-illegal-catch-suppression-java
+language: Java
+severity: error
+message: "checkstyle:IllegalCatch suppression at type/field scope revives file-wide suppression through one annotation. Move it to the smallest enclosing method, constructor, or lambda-holding local variable. (Catalog: A3, #117)"
+rule:
+  all:
+    - kind: annotation
+      has:
+        field: name
+        regex: ^SuppressWarnings$
+    - has:
+        kind: string_literal
+        stopBy: end
+        regex: '^"{1,3}\s*checkstyle:IllegalCatch\s*"{1,3}$'
+    - inside:
+        kind: modifiers
+        inside:
+          any:
+            - kind: class_declaration
+            - kind: interface_declaration
+            - kind: enum_declaration
+            - kind: record_declaration
+            - kind: annotation_type_declaration
+            - kind: field_declaration
+            - kind: constant_declaration
+            # An enum constant with a body can hold any number of methods, so
+            # an annotation on the constant is type-scope suppression too.
+            - kind: enum_constant
