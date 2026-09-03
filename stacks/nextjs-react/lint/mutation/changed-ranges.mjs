@@ -43,7 +43,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Minimatch } from 'minimatch';
 
-export const DEFAULT_BASE_REFS = ['origin/main', 'origin/master'];
+// Remote-tracking refs first (the same order the quality-gate hook probes),
+// then the local trunk for clones and worktrees that carry no remote-tracking
+// ref at all. A stale local trunk only moves the merge base further back,
+// which WIDENS the scope - it can never narrow it, so the fallback stays on
+// the safe side of the gate.
+export const DEFAULT_BASE_REFS = ['origin/main', 'origin/master', 'main', 'master'];
 
 // git emits every added line of every changed file before our glob filter
 // runs; Node's default 1 MiB maxBuffer would crash on lockfile-sized diffs.
@@ -79,8 +84,7 @@ function refExists(ref, cwd) {
   }
 }
 
-// MUTATION_BASE_REF wins; otherwise probe origin/main then origin/master -
-// the same probe order the quality-gate hook uses for its merge base.
+// MUTATION_BASE_REF wins; otherwise probe DEFAULT_BASE_REFS in order.
 export function resolveBaseRef({ cwd = process.cwd(), baseRef = process.env.MUTATION_BASE_REF } = {}) {
   if (baseRef) return assertSafeRef(baseRef);
   for (const candidate of DEFAULT_BASE_REFS) {

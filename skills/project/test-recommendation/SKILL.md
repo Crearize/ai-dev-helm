@@ -42,7 +42,7 @@ Step 5: 永続台帳の更新 + 記録
 git diff origin/main...HEAD
 ```
 
-ベース ref の解決は quality-check Step 1 と同一とする（既定は `origin/main`、無ければ `origin/master`。基幹が異なるプロダクトは quality-check Step 1 と同じ ref を用いる）。**単体実行時も同じ差分を判定対象とする。**
+ベース ref の解決は quality-check Step 1 と同一とする（既定は `origin/main`、無ければ `origin/master`、いずれも無ければローカルの `main` / `master`。探索順の正は quality-policy §2「差分スコープの定義」。基幹が異なるプロダクトは quality-check Step 1 と同じ ref を用いる）。**単体実行時も同じ差分を判定対象とする。**
 
 判定の前に永続台帳（Step 5 参照）を読み取り、導線の状態（`pending` / `scenario_added` / `dismissed`）を判定に反映する。台帳が読み取れない場合の扱いは Step 5「生成と保全」に従う（黙って上書きしない）。
 

@@ -3,8 +3,9 @@
 // Extends stryker.config.mjs and narrows `mutate` to the lines of the WORKING
 // TREE changed against the merge base of the base ref, using Stryker's
 // mutation-range syntax (`path:startLine-endLine`). The base ref defaults to
-// origin/main (then origin/master), overridable with MUTATION_BASE_REF. Run
-// it as
+// origin/main, then origin/master, then a local main / master (clones and
+// worktrees without remote-tracking refs), overridable with MUTATION_BASE_REF.
+// Run it as
 //
 //   stryker run lint/mutation/stryker.diff.config.mjs
 //
