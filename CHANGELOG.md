@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0](https://github.com/Crearize/ai-dev-helm/compare/v1.12.0...v2.0.0) (2026-09-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **hooks:** replace the quality gate with a static classifier (main push/merge only)
+* **policy:** quality-check のミューテーション/E2E は提案ベース（test-recommendation スキル）に移行し、上書きキーは mutation_budget_minutes のみになりました。1.12.x からの移行手順: (1) npx ai-dev-helm init を再実行する（新スキル・台帳雛形・改訂文書が配置される。台帳は copy-if-missing で既存を上書きしない）(2) ハーネス設定ファイルの Quality Gate Overrides から mutation_threshold_high / mutation_threshold_medium / mutation_mode_medium の宣言を削除する（認識されなくなった）(3) .quality-check-report.json を読む自作ツールは e2e_result/e2e_issues → e2e オブジェクト、mutation.mode/score/threshold 廃止に追従する。詳細は README「1.12.x からの移行」を参照。
+
+### Added
+
+* **hooks:** replace the quality gate with a static classifier (main push/merge only) ([b58c531](https://github.com/Crearize/ai-dev-helm/commit/b58c53100deb37eddb79ad2b502d392606c04b2e))
+* **implementation-report:** follow new mutation/e2e report fields ([fb0feee](https://github.com/Crearize/ai-dev-helm/commit/fb0feee1c46dcd2b897e66c72234d9271ca0877c))
+* **init:** seed test-recommendation ledger (copy-if-missing) ([0eb3908](https://github.com/Crearize/ai-dev-helm/commit/0eb39085b4f61595bd9c788de644d7b54847b82b))
+* **lint:** checkstyle line-level suppression with ast-grep guards, suppression checklist, ast-grep sandbox procedure ([#117](https://github.com/Crearize/ai-dev-helm/issues/117) [#118](https://github.com/Crearize/ai-dev-helm/issues/118) [#103](https://github.com/Crearize/ai-dev-helm/issues/103)) ([77f8b74](https://github.com/Crearize/ai-dev-helm/commit/77f8b74872cdee61d59aeb1b957ed8c67171920e))
+* **policy:** drop mutation gate-mode/threshold override keys ([a573993](https://github.com/Crearize/ai-dev-helm/commit/a573993a94dd093e04bd5f1eefaa8ee89e47cb2a))
+* **policy:** replace mutation/E2E gates with propose-then-decide, single completion-criteria source ([a9a0a92](https://github.com/Crearize/ai-dev-helm/commit/a9a0a92c94c35475b0a7a947bdf83d1465ea8fe4))
+* propose-then-decide additional tests (test-recommendation) and lightweight quality-check ([c466ed9](https://github.com/Crearize/ai-dev-helm/commit/c466ed9f392dd48eae84506add35df3c9c640d5a))
+* **quality-check:** move mutation/E2E to propose-then-decide Step 5, verification-review cycles ([768aec1](https://github.com/Crearize/ai-dev-helm/commit/768aec19a79ec2aa17a7c4ae44dd7961ce394d82))
+* **schema:** recommendation/user_decision fields, e2e object, drop gate-mode keys ([6e63595](https://github.com/Crearize/ai-dev-helm/commit/6e63595295ac6eb93435b7ec02c0c681d53a406c))
+* **skills:** add test-recommendation skill (propose-then-decide additional tests) ([26d9acb](https://github.com/Crearize/ai-dev-helm/commit/26d9acb5f2e1868cce681911dbdbe3d7bf48248a))
+* **templates:** additional-test proposal flow, single-key overrides, platform-constraint rule ([#98](https://github.com/Crearize/ai-dev-helm/issues/98) [#101](https://github.com/Crearize/ai-dev-helm/issues/101)) ([4efe1d6](https://github.com/Crearize/ai-dev-helm/commit/4efe1d6279770d1ad88d1c70296be09d49b74033))
+* ハーネスを設計思想に揃え、quality-gate hook を main 直接 push / マージ禁止の静的分類器に置換（[#90](https://github.com/Crearize/ai-dev-helm/issues/90) ほか 15 Issue） ([56c3705](https://github.com/Crearize/ai-dev-helm/commit/56c37054e079896a41ae06746fe9b0efc4bcab42))
+
+
+### Fixed
+
+* **codex:** move hook events under top-level hooks key, migrate legacy files (closes [#112](https://github.com/Crearize/ai-dev-helm/issues/112)) ([9e28e4b](https://github.com/Crearize/ai-dev-helm/commit/9e28e4b3e73c80efa1c810979490bfa8e9af2b31))
+* **docs:** close remaining review findings - ownership split, schema semantics, migration notes ([9752f34](https://github.com/Crearize/ai-dev-helm/commit/9752f3471eac18197297c319cec7aa8e16a49ae7))
+* **docs:** cycle-3 verification fixes - E2E block kept absolute, conditional-skip sync, dismissed permanence, hook-enforcement caveats ([1eaf6e8](https://github.com/Crearize/ai-dev-helm/commit/1eaf6e894eba1461709aa68c3c349d9b37766830))
+* **docs:** final low-priority review polish - prompt template scope, E2E loop re-cap, date-granularity tiebreak ([fd7afea](https://github.com/Crearize/ai-dev-helm/commit/fd7afeab71dc4c0e9423167dd252cb3c8e8d562c))
+* **hooks:** block expansion in command/subcommand words, fold line continuations in the long-command fallback (quality-check cycle 2, round 4) ([27dcc26](https://github.com/Crearize/ai-dev-helm/commit/27dcc26b2dca4272ee61a5a159d9021996bb8581))
+* **hooks:** close redirect/bundled-flag/HEAD-refspec/newline-mover gaps, trunk-aware sync forms, classify budget (quality-check cycle 1) ([46e2932](https://github.com/Crearize/ai-dev-helm/commit/46e29328466484989452e25c586b44e1122d394d))
+* **hooks:** quote-stripped gate-word fallback, invocation budget, revert/am/bisect movers (quality-check cycle 2, round 3) ([a429e09](https://github.com/Crearize/ai-dev-helm/commit/a429e09d7c23b85e5560f4128551c292eaa1f29f))
+* **hooks:** read command substitutions as part of the word so gh api pulls/$(...)/merge is a candidate (quality-check cycle 5) ([4f4ca48](https://github.com/Crearize/ai-dev-helm/commit/4f4ca48ead9128dbf817d97bc255410d8b7d3717))
+* **hooks:** read command substitutions inside double quotes (cycle-5 M27) ([259d2e8](https://github.com/Crearize/ai-dev-helm/commit/259d2e89f893161143da80ed659781e69223178d))
+* **hooks:** read double-quoted command substitutions across newlines (cycle-5 M28) ([0132ed4](https://github.com/Crearize/ai-dev-helm/commit/0132ed4bb52c039c2b6272401d7d1b3a485a797b))
+* **hooks:** treat pulls/&lt;expansion&gt;/merge as a gh api candidate; header wording for stash mover and gh carve-out (quality-check cycle 5) ([b27bd01](https://github.com/Crearize/ai-dev-helm/commit/b27bd018c2425140f9a276e7d715c9972a1d014f))
+* **init:** accept quoted hook paths with spaces, refresh matcher docs (quality-check cycle 2, round 3) ([b84e6f4](https://github.com/Crearize/ai-dev-helm/commit/b84e6f43995c728b0df101f8acd7f68a7eb4a67b))
+* **init:** harden ledger seeding, restructure ledger template per review ([b0f3157](https://github.com/Crearize/ai-dev-helm/commit/b0f3157ece7c5de2a8804984fd2e0eb7f8d3b1b9))
+* **init:** migrate only hook-event-shaped arrays in legacy hooks.json ([#112](https://github.com/Crearize/ai-dev-helm/issues/112)) ([32f5e9c](https://github.com/Crearize/ai-dev-helm/commit/32f5e9cb10f2dfb8fbc8567097e01c26ff17d376))
+* **init:** repair the Claude Code quality-gate registration on re-init ([f4dc0d9](https://github.com/Crearize/ai-dev-helm/commit/f4dc0d920574faf0ceeaa72ddfa44078e39f9e07))
+* **init:** share template registration, action-required on unreadable template, anchored gate-command detection (quality-check cycle 2) ([ddacbb2](https://github.com/Crearize/ai-dev-helm/commit/ddacbb2f2eb7eab259ec63c9b9d6d7b4af230946))
+* **init:** stricter gate-registration detection, codex parity, action-required warnings (quality-check cycle 1) ([a99180e](https://github.com/Crearize/ai-dev-helm/commit/a99180ea6036c7553502a06b114fbcf205d3088b))
+* **init:** tighten quoted gate-path detection, treat "*" matcher as Bash (quality-check cycle 2, round 4) ([bdc7a85](https://github.com/Crearize/ai-dev-helm/commit/bdc7a859ff6359c297429560111ab62ce86f31cb))
+* **lint:** cover empty package segments in fully-qualified suppress values (quality-check cycle 2, round 3) ([5433b55](https://github.com/Crearize/ai-dev-helm/commit/5433b55a6fb1ab4668f1d4891ab839c5597b7185))
+* **lint:** detect fully-qualified suppress values, correct the case-sensitivity note for "all" (quality-check cycle 2) ([5599362](https://github.com/Crearize/ai-dev-helm/commit/55993623a8de53dffb33ee3d01940223936f4c0a))
+* **lint:** scope the suppress-warnings guard to checkstyle values, cover enum constants, pin module enumeration (quality-check cycle 1) ([766e631](https://github.com/Crearize/ai-dev-helm/commit/766e631ded1abc2d21bc8efd06a418f9fb1e4c31))
+* **skills:** close review findings - loop caps, commit ordering, out_of_scope, control-plane, verification-review guards ([4672429](https://github.com/Crearize/ai-dev-helm/commit/46724292fbd5cfc8e253d8e10d4ba2ac9754ff2d))
+
+
+### Changed
+
+* **hooks:** scope the gate to accidental operations - drop the positional expansion rule, document deliberate evasion as out of scope ([e0571ca](https://github.com/Crearize/ai-dev-helm/commit/e0571ca8713368ed73b69d042623ab9334ccdd66))
+
+
+### Documentation
+
+* align gate docs with the classifier, persona naming, docs-only persona rule, worktree procedure (quality-check cycle 1) ([a858a1d](https://github.com/Crearize/ai-dev-helm/commit/a858a1ddf27786249e6cf41cd8204a2808627dea))
+* align README and remaining references with the propose-then-decide model ([1f392cb](https://github.com/Crearize/ai-dev-helm/commit/1f392cb01c9f84fe30bf9c8c46151a806bf3d933))
+* close the gate-contract drift (mover set, 64 KB rule, worktree scope, rules/prompts control plane) and cycle-2 doc findings ([27cb6cd](https://github.com/Crearize/ai-dev-helm/commit/27cb6cdade69dbeb13c025a7e033eb9d044b7471))
+* expansion position rule, word-count budget wording, codex README gaps, schema id/notes (quality-check cycle 2, round 4) ([eefef2c](https://github.com/Crearize/ai-dev-helm/commit/eefef2c2cb571c68099815ed0515d3079714a557))
+* expansion-bearing refspecs are candidates on any branch; gh api pulls/&lt;expansion&gt;/merge; carve-out spellings (quality-check cycle 5) ([dc1dd66](https://github.com/Crearize/ai-dev-helm/commit/dc1dd66ffba9fb23cd0413ba4edff687634b2e87))
+* fallback expansion set and line-continuation folding in the classification-budget rule (quality-check cycle 2, round 4) ([e2fdf95](https://github.com/Crearize/ai-dev-helm/commit/e2fdf958176912c588d32be95eb4a021ddc7ccf3))
+* hard-flag blocks apply to candidate lines only; feature-push exception for expansion refspecs (quality-check cycle 5) ([27c01ed](https://github.com/Crearize/ai-dev-helm/commit/27c01eda1ba74ab026b018c23cd3fce643b2c93a))
+* note that substitution bodies in redirection targets still count ([9530a06](https://github.com/Crearize/ai-dev-helm/commit/9530a06df0bb987eeb86eaa7c53d74dcd464eba5))
+* **policy:** codify the harness philosophy, mechanical-first cycles, persona applicability, model tiers ([#122](https://github.com/Crearize/ai-dev-helm/issues/122)) ([1579c9f](https://github.com/Crearize/ai-dev-helm/commit/1579c9f03db09ead8c6551cc89ecd32d03573229))
+* qualify unconditional-block scope in codex README, exclude redirection targets from expansion wording ([c2929be](https://github.com/Crearize/ai-dev-helm/commit/c2929be761c2b72676a2755c5d611c966156038e))
+* **quality-check:** mechanical-first cycles, persona applicability table, structural stagnation, interruption resume, E2E port precheck ([#119](https://github.com/Crearize/ai-dev-helm/issues/119) [#120](https://github.com/Crearize/ai-dev-helm/issues/120) [#121](https://github.com/Crearize/ai-dev-helm/issues/121)) ([aaca0ca](https://github.com/Crearize/ai-dev-helm/commit/aaca0cae8fecab3ad8f1051f13275c05ae7f35a1))
+* **quality-check:** self-improvement from cycle 1-2 rework - dedicated temp dirs, requirement-first fix specs, two-input performance acceptance ([af06f9a](https://github.com/Crearize/ai-dev-helm/commit/af06f9ab9575ebd33bc78f1051a70674c1030653))
+* **readme:** drop the stale [#90](https://github.com/Crearize/ai-dev-helm/issues/90) over-detection note from the migration section ([e11a9ba](https://github.com/Crearize/ai-dev-helm/commit/e11a9baf749fca41c060fa020a8ad9719ddd884c))
+* state the gate threat model (accidental operations only), drop the positional expansion rule from the contract ([543073b](https://github.com/Crearize/ai-dev-helm/commit/543073b65f59b28d4db53e3bea8b6bd0ef16dec2))
+* sync gate contract with round-3 hook changes (movers, reverse refspec, classification budget) ([03e5553](https://github.com/Crearize/ai-dev-helm/commit/03e5553f6d6a088fa892bb2feef1e6125b462fb5))
+* **templates:** philosophy summary, model tiers, merge gate rewrite, persona applicability ([#120](https://github.com/Crearize/ai-dev-helm/issues/120) [#122](https://github.com/Crearize/ai-dev-helm/issues/122)) ([448d963](https://github.com/Crearize/ai-dev-helm/commit/448d9635c12334c3f963cd79978c090dbc8d4bf5))
+
 ## [1.12.0](https://github.com/Crearize/ai-dev-helm/compare/v1.11.0...v1.12.0) (2026-08-25)
 
 
