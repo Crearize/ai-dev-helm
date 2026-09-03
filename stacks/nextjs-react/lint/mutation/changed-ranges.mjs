@@ -155,8 +155,7 @@ export function resolveBaseRef({ cwd = process.cwd(), baseRef = process.env.MUTA
       : 'exists in this clone. ';
   throw new Error(
     `[mutation:diff] no base ref found: none of ${DEFAULT_BASE_REFS.join(', ')} ${why}` +
-      'Fetch the base branch (e.g. `git fetch origin main`) or set MUTATION_BASE_REF ' +
-      '(MUTATION_BASE_REF=HEAD measures only the uncommitted working-tree changes).'
+      'Fetch the base branch (e.g. `git fetch origin main`) or set MUTATION_BASE_REF to the trunk quality-check diffs against.'
   );
 }
 
@@ -281,6 +280,17 @@ export function deriveScope({ cwd = process.cwd(), baseRef, mutate = [] } = {}) 
     throw new Error(
       `[mutation:diff] cannot resolve the merge base of ${ref} and HEAD - is the base ref fetched? ` +
         `(git fetch origin main, or set MUTATION_BASE_REF)\n${err.message}`
+    );
+  }
+  // Merge base == HEAD (MUTATION_BASE_REF=HEAD, or a ref at/ahead of HEAD)
+  // scopes the uncommitted lines only. Fine for an ad-hoc look, never a gate
+  // measurement (quality-check's Step 1 diffs against the trunk), and said so
+  // whichever way the ref was chosen.
+  if (mergeBase === revParse('HEAD', cwd)) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] warning: base ${ref} resolves to HEAD itself - only the uncommitted working-tree changes are in scope. ` +
+        'This is not a gate measurement: quality-check needs the trunk it diffs against (mutation.base_ref).\n'
     );
   }
   const diff = git(
@@ -422,7 +432,7 @@ function removeStaleReport(baseConfig, cwd) {
   const root = path.resolve(cwd);
   const abs = path.resolve(root, fileName);
   const relative = path.relative(root, abs);
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+  if (relative === '' || relative.split(path.sep)[0] === '..' || path.isAbsolute(relative)) {
     fs.writeSync(
       2,
       `[mutation:diff] jsonReporter.fileName (${fileName}) resolves outside the run directory ${root} - not removing it\n`
@@ -523,6 +533,10 @@ function cacheIsReadable(absPath) {
 // sidecar to a scope that covers the recorded one. An interrupted run can
 // therefore leave the sidecar AHEAD of the cache but never behind it, and
 // the next decision errs on the discarding side. Keep it that way.
+// Returns whether Stryker may use the diff cache on this run. A cache that
+// has to be discarded but could not be removed stays on disk, and Stryker
+// would read it as this run's - so that case returns false (a cache-less
+// run, said so on stderr) rather than "starting the diff cache".
 function prepareDiffIncremental(cwd, scope) {
   const cachePath = path.resolve(cwd, DIFF_INCREMENTAL_FILE);
   const sidecarPath = path.resolve(cwd, DIFF_SCOPE_FILE);
@@ -536,8 +550,14 @@ function prepareDiffIncremental(cwd, scope) {
       2,
       `[mutation:diff] incremental: reusing the diff cache (${DIFF_INCREMENTAL_FILE}) - the scope still covers the previous run\n`
     );
+  } else if (!resetDiffCache(cwd)) {
+    fs.writeSync(
+      2,
+      '[mutation:diff] incremental: disabled for this run - the previous diff cache could not be removed ' +
+        `(${DIFF_INCREMENTAL_FILE}); remove it and re-run with MUTATION_INCREMENTAL=1 to start a new cache\n`
+    );
+    return false;
   } else {
-    resetDiffCache(cwd);
     fs.writeSync(2, `[mutation:diff] incremental: starting the diff cache (${DIFF_INCREMENTAL_FILE})\n`);
   }
   fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
@@ -554,6 +574,7 @@ function prepareDiffIncremental(cwd, scope) {
       2
     )}\n`
   );
+  return true;
 }
 
 // Returns `baseConfig` with `mutate` narrowed to the changed lines. On an
@@ -607,8 +628,7 @@ export function withChangedLines(
     process.exit(0);
   }
   fs.writeSync(2, `[mutation:diff] base ${ref}: ${scope.entries.length} changed range(s) in scope\n`);
-  const useCache = incremental === true;
-  if (useCache) prepareDiffIncremental(cwd, scope);
+  const useCache = incremental === true && prepareDiffIncremental(cwd, scope);
   return {
     ...baseConfig,
     mutate: scope.entries,

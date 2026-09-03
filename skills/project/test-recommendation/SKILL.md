@@ -119,7 +119,7 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 差分スコープ・ベース ref の規律は従来どおりとする。
 
 - 差分スコープ = **変更行**（Stryker: `mutation:diff` が、ベース ref との merge-base に対する作業ツリーの差分の hunk を行範囲として `mutate` に渡す。glob 特殊文字を含むパスはファイル単位に縮退）または**変更クラス**（PIT: `mutationDiff -PmutationDiffBase=origin/main`）。定義は quality-policy §2「差分スコープの定義」を正とする。変更ファイル全体・プロジェクト全体のフル実行は行わない
-- ベース ref は Step 1 の判定対象と同じ基幹でなければならない（基幹が異なるプロダクトは `MUTATION_BASE_REF` で Step 1 と同じ ref を指定する）。使用した ref を `mutation.base_ref` に、粒度を `mutation.scope`（`changed_lines` / `changed_classes`。旧配線のままファイル単位で実行された場合は `changed_files` — `lint-scaffolding` の再配線を案内する）に記録する
+- ベース ref は Step 1 の判定対象と同じ基幹でなければならない（基幹が異なるプロダクトは `MUTATION_BASE_REF` で Step 1 と同じ ref を指定する）。`HEAD` は Step 1 の基幹になり得ないため無効: `MUTATION_BASE_REF=HEAD` の計測、および stderr に `[mutation:diff] warning: ... resolves to HEAD itself` が出た計測（作業ツリーの未コミット行のみのスコープ）は、ゲートの計測（`executed`）として記録しない。使用した ref を `mutation.base_ref` に、粒度を `mutation.scope`（`changed_lines` / `changed_classes`。旧配線のままファイル単位で実行された場合は `changed_files` — `lint-scaffolding` の再配線を案内する）に記録する
 
 ### 実行手順
 
@@ -145,7 +145,7 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 
 同一ブランチ内での再実行（撃殺テスト追加後の再計測）では **Stryker の incremental を許可する**。
 
-初回計測は `MUTATION_INCREMENTAL` を**明示的に外して**（キャッシュなしで）行い、撃殺テスト追加後の再計測を `MUTATION_INCREMENTAL=1`（Windows は `cross-env` / `$env:`。受理値・キャッシュの仕組み・その限界は stack README「Re-measurement」を正とする）で実行する。実行時に stderr へ出る `[mutation:diff] incremental:` 行（`reusing` / `starting`）を確認し、キャッシュを再利用した計測かどうかを `mutation.incremental` に記録する（スキーマ参照）。キャッシュの再利用判定は行番号ベースであり、同一ファイルの大きな編集ではキャッシュ由来のミュータントが変更行の外に現れうる（README が明記する残存制限）。**変更行以外の行に生存が報告された場合は、フラグを外して 1 回だけ再実行して確認する** — この確認実行は `mutation.runs` に数え、上限（「実行回数の上限」）を超える場合はユーザーの明示承認を得る。
+初回計測は `MUTATION_INCREMENTAL` を**明示的に外して**（キャッシュなしで）行い、撃殺テスト追加後の再計測を `MUTATION_INCREMENTAL=1`（Windows は `cross-env` / `$env:`。受理値・キャッシュの仕組み・その限界は stack README「Re-measurement」を正とする）で実行する。実行時に stderr へ出る `[mutation:diff] incremental:` 行（`reusing` / `starting` / `disabled for this run` — 最後は前回キャッシュを削除できずキャッシュ無しで実行した意味）を確認し、キャッシュを再利用した計測かどうかを `mutation.incremental` に記録する（`reusing` のみ `true`。スキーマ参照）。キャッシュの再利用判定は行番号ベースであり、同一ファイルの大きな編集ではキャッシュ由来のミュータントが変更行の外に現れうる（README が明記する残存制限）。**変更行以外の行に生存が報告された場合は、フラグを外して 1 回だけ再実行して確認する** — この確認実行は `mutation.runs` に数え、上限（「実行回数の上限」）を超える場合はユーザーの明示承認を得る。
 
 ### 実行回数の上限
 

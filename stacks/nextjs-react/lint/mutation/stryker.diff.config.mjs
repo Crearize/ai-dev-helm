@@ -6,7 +6,9 @@
 // origin/main, then origin/master, then a local main / master (clones and
 // worktrees without remote-tracking refs; a local trunk whose merge base
 // with HEAD is HEAD itself is skipped - loud failure instead of a quiet
-// empty scope), overridable with MUTATION_BASE_REF.
+// empty scope), overridable with MUTATION_BASE_REF. A merge base that is
+// HEAD itself (MUTATION_BASE_REF=HEAD) is announced on stderr: uncommitted
+// lines only, not a gate measurement.
 // Run it as
 //
 //   stryker run lint/mutation/stryker.diff.config.mjs
@@ -33,7 +35,8 @@
 //   MUTATION_INCREMENTAL=1 opts in for re-measurement; the cache is reused
 //   only while the scope still covers the previous run against the same
 //   merge base and is discarded first otherwise - Stryker would keep the
-//   stale out-of-scope mutants in this run's report.
+//   stale out-of-scope mutants in this run's report. A cache that cannot be
+//   removed disables the cache for that run instead.
 //
 // A product that extends the base config (jest runner, a re-enabled mutator)
 // keeps this file untouched and wraps its own config the same way:
