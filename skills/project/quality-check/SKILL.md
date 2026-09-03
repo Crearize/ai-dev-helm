@@ -9,7 +9,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 **hook（quality-gate.cjs）は main 相当への直接 push / merge を止める静的分類器であり、`gh pr merge` / main 上での `git merge` / main への直接 `git push` の前に必ずこのスキルを実行することを強制する。同期 3 形（引数なし `git pull` / 現在トランクへの `git pull origin <trunk>` / `git merge origin/<trunk>`。`master` トランクなら `master` 形）以外は（ゲート対象となる行では）要フラグ。フラグは `commit` のみで判定する（`branch` は診断用）。全チェック通過後のみマージ可能。hook の無条件ブロック・fail-open・worktree 手順の完全な定義は次節を単一ソースとする — 他ドキュメントはここを参照し、転記しない。例外: `README.md` は利用者向けに同内容を再掲する — 本節を変更したら README の当該箇所も同時に更新する。**
 
-- **feature ブランチへの `git push` にフラグは不要**（ゲート対象外）。レビュー前の push・バックアップ push は自由に行える
+- **feature ブランチへの `git push` にフラグは不要**（ゲート対象外。refspec に展開文字を含む場合を除く（次節「対象」参照））。レビュー前の push・バックアップ push は自由に行える
 - CIはビルド確認のみ。静的チェック・テスト・レビューは全てローカルで実施する
 - 実行開始時（Step 0 冒頭）に既存の `.quality-check-passed` と `.quality-check-report.json` を削除する（古い許可証・レポートの残留防止）
 
@@ -17,11 +17,11 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 **脅威モデル**: この hook が防ぐのは、善意の操作がうっかり main に到達することだけである。開発は必ず Issue → ブランチを切ってから始まる設計であり、main への push / マージが起きても最悪はリバートで戻せるため、hook は保険のブロックにすぎない。意図的な迂回（シェルの展開・クォート・エンコードで語を隠す形、ラッパ経由、間接実行等）は対象外とし、hook 本体（`templates/hooks/quality-gate.cjs`）のヘッダに「見通せない形」として列挙するに留める — 実害が出た時点で個別に対応する。
 
-**対象**: `gh pr merge`、`gh api ...pulls/<n>/merge`（`<n>` が変数や展開でも候補になり、展開文字項で block される）、main / master 上の `git merge` / `git pull` / `git rebase`、宛先が `main` / `master` に完全一致する `git push`、および main / master 上で refspec を省略または `HEAD` / `@`（大小無視）のみを指定した `git push`。feature ブランチへの push はこれらの形に一致しない限りゲート対象外。ただし refspec に展開文字（`$` `` ` `` `{` `}` `%`）を含む `git push`（例 `git push origin feat/$TICKET`）は宛先が静的に読めないため、ブランチを問わず候補として扱い、規則2の展開文字項で block する（未クォートの展開は語分割で `main` を持ち込みうるための fail-closed。`feat/x` のように書き下す）。`git merge` / `git pull` / `git rebase` の `--abort` / `--continue` / `--quit` / `--skip` はゲート対象外（進行中の操作の中断・再開であり新規の同期・merge ではないため）。
+**対象**: `gh pr merge`、`gh api ...pulls/<n>/merge`（`<n>` が数字でなくても（変数・展開・その他の文字列）候補になり、展開文字項で block される）、main / master 上の `git merge` / `git pull` / `git rebase`、宛先が `main` / `master` に完全一致する `git push`、および main / master 上で refspec を省略または `HEAD` / `@`（大小無視）のみを指定した `git push`。feature ブランチへの push はこれらの形に一致しない限りゲート対象外。ただし refspec に展開文字（`$` `` ` `` `{` `}` `%`）を含む `git push`（例 `git push origin feat/$TICKET`）は宛先が静的に読めないため、ブランチを問わず候補として扱い、規則2の展開文字項で block する（未クォートの展開は語分割で `main` を持ち込みうるための fail-closed。`feat/x` のように書き下す）。`git merge` / `git pull` / `git rebase` の `--abort` / `--continue` / `--quit` / `--skip` はゲート対象外（進行中の操作の中断・再開であり新規の同期・merge ではないため）。
 
-**無条件ブロック**（フラグの有無・ブランチを問わず、以下のいずれかに該当すれば必ずブロックする）:
+**無条件ブロック**（規則1の候補がある行について、フラグの有無・ブランチを問わず、以下のいずれかに該当すれば必ずブロックする）:
 
-- force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`、`--branches`
+- 規則1の候補がある行の force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`、`--branches`
 - ゲート対象と同一行にある別の git 操作。この判定対象は**閉じた集合**である: HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `revert` / `am` / `bisect` / `update-ref` / `stash pop` / `stash apply`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定し、`fetch` および `branch -f` / `-d` / `-D` / `--force` は**同一行**で判定する。それ以外の git 操作（`status` / `add` / `log` / `diff` / `tag` / `remote` 等）は同居してもブロックしない
 - `-C` / `--git-dir` / `--work-tree` / `--namespace` / `-c` / `--config-env` / `GIT_*=` 代入 / 同一行の `cd` / `pushd`
 - 規則1の候補がある行に限り、行内のシェル展開文字（`$` `` ` `` `{` `}` `%`。`$'…'` / `$"…"` の ANSI-C / ロケールクォートも展開扱い）を無条件 block する。**行内の全語**が対象で、`gh` の自由テキスト値オプション（`-t`/`--subject`・`-b`/`--body`・`-F`/`--body-file` の6形と `--subject=` / `--body=` / `--body-file=` の `=` 付き3形）のみ例外。候補が無い行の展開文字は block しない（脅威モデル外の迂回として hook ヘッダの「見通せない形」に列挙する）
