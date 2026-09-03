@@ -1,6 +1,6 @@
 {
   "name": "@crearize/ai-dev-helm",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "AI coding tool (Claude Code, Cursor) development foundation setup CLI",
   "bin": {
     "ai-dev-helm": "./bin/cli.js"
