@@ -182,12 +182,16 @@ const DEADLINE = Date.now() + 20000;
 // had no rule-1 candidate at all, and the call was allowed (M26). An
 // unterminated `$(` or backtick swallows the rest of the LINE, which keeps the
 // expansion flag on the word rather than losing it (fail-closed).
-// The substitution BODY is tokenized as well and its segments are appended to
-// the same line, so a gated call written inside one - `` `git push origin
-// main` ``, `echo $(git push origin main)` - is still the candidate it always
-// was. Nesting is followed MAX_SUBST_DEPTH levels deep; below that the body is
-// left unread and only the word's expansion flag remains, which is deliberate
-// evasion and out of scope (see the threat model).
+// The substitution BODY is tokenized as well - the same whether it is
+// unquoted or sits inside double quotes (`"$(…)"`) - and its segments are
+// appended to the same line, so a gated call written inside one - `` `git
+// push origin main` ``, `echo $(git push origin main)`,
+// `echo "$(git push origin main)"` - is still the candidate it always was.
+// Nesting is followed MAX_SUBST_DEPTH levels deep; below that the body is
+// left unread, so a gated call inside it is not a candidate at all (the word
+// still carries its expansion flag, which only matters if the line has a
+// candidate elsewhere), which is deliberate evasion and out of scope (see the
+// threat model).
 // A redirection is NOT a separator either: the operator and the single word
 // that follows it are removed from the argv and everything else stays in the
 // same command, because that is what the shell does -
@@ -295,8 +299,18 @@ function tokenizeLines(command, depth = 0) {
       else if (ch === '\\' && '"\\$`\n'.includes(command[i + 1] ?? '')) {
         if (command[i + 1] !== '\n') word += command[i + 1];
         i++;
+      } else if ((ch === '$' && command[i + 1] === '(') || ch === '`') {
+        // A command substitution inside double quotes is read exactly as an
+        // unquoted one: the shell still runs it and the quotes stay open
+        // around it (an inner `"` pair the substitution owns does not close
+        // the outer quote - `scanSubstitution` tracks that itself).
+        const sub = scanSubstitution(command, i);
+        word += command.slice(i, sub.end + 1);
+        expand = true;
+        bodies.push(sub.inner);
+        i = sub.end;
       } else {
-        if (ch === '$' || ch === '`') expand = true;
+        if (ch === '$') expand = true;
         word += ch;
       }
     } else if ((ch === '$' && command[i + 1] === '(') || ch === '`') {
