@@ -92,6 +92,12 @@ pitest {
 // - An empty changed-class list disables the pitest task entirely: PIT is not
 //   booted just to conclude nothing matched. quality-check records
 //   `mutation.reason: "empty_scope"` for both empty cases.
+// - The report directory is deleted before EVERY diff run (task
+//   mutationDiffCleanReport, wired as a dependency of pitest): a diff run
+//   that writes no XML would otherwise leave an earlier run's report in
+//   place for quality-check to read as this run's result. A dependency, not
+//   a doFirst, so it still runs on the empty scope - a disabled task skips
+//   its own actions, its dependencies do not.
 def mutationDiffRequested = gradle.startParameter.taskNames.any {
     it == 'mutationDiff' || it.endsWith(':mutationDiff')
 }
@@ -136,6 +142,12 @@ if (mutationDiffRequested) {
         [fqcn, fqcn + '$*']
     }
     pitest.failWhenNoMutations = false
+    def mutationDiffCleanReport = tasks.register('mutationDiffCleanReport', Delete) {
+        group = 'verification'
+        description = 'Removes the previous PIT report so a diff run that produces no mutants cannot pass it off as its own.'
+        delete pitest.reportDir
+    }
+    tasks.named('pitest').configure { dependsOn(mutationDiffCleanReport) }
     if (changedClasses.isEmpty()) {
         logger.warn("[mutationDiff] empty scope: no production classes changed since ${mutationDiffBase} - nothing to mutate")
         tasks.named('pitest').configure { enabled = false }
