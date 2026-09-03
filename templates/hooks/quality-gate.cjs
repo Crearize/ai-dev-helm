@@ -38,8 +38,10 @@
 //
 // Rule 1 (gated candidates): `gh pr merge` (any args); `gh api` with a
 //   `pulls/<n>/merge` word, case insensitive (a `?query` or `#fragment` after
-//   it still merges; `<n>` need not be digits - `pulls/$PR/merge` is a
-//   candidate too, and the expansion character then blocks it under rule 2);
+//   it still merges; `<n>` need not be digits - `pulls/$PR/merge` and
+//   `pulls/$(gh pr view --json number -q .number)/merge` are candidates too,
+//   because the tokenizer keeps a command substitution inside the word, and
+//   the expansion character then blocks them under rule 2);
 //   `git merge` / `git pull` / `git rebase` (any args,
 //   except --abort/--continue/--quit/--skip) - gated only once ctx says the
 //   current branch is main/master; `git push` whose refspec DESTINATION is
@@ -168,27 +170,77 @@ const DEADLINE = Date.now() + 20000;
 // --------------------------------------------------------------------------
 // Tokenization: shell-style words, per line.
 // --------------------------------------------------------------------------
-// Newlines separate LINES (rules are evaluated per line); `;&|()` and
-// backticks separate segments inside a line. A redirection is NOT a separator:
-// the operator and the single word that follows it are removed from the argv
-// and everything else stays in the same command, because that is what the
-// shell does - `git push > /dev/null origin main` runs `git push origin main`.
+// Newlines separate LINES (rules are evaluated per line); `;&|` and an
+// unquoted `(`/`)` - a subshell - separate segments inside a line.
+// A COMMAND SUBSTITUTION is not a separator: `$(` ... `)` (parenthesis nesting
+// and quoting respected) and a backtick pair are read as part of the WORD they
+// sit in, exactly as the shell reads them, and the word records an expansion.
+// Whitespace, `;`, `&` and `|` INSIDE a substitution cut neither the word nor
+// the segment. Splitting there used to break
+// `gh api -X PUT repos/o/r/pulls/$(prnum)/merge` into `repos/o/r/pulls/$`,
+// `prnum` and `/merge`, so no word held a `pulls/<n>/merge` endpoint, the line
+// had no rule-1 candidate at all, and the call was allowed (M26). An
+// unterminated `$(` or backtick swallows the rest of the LINE, which keeps the
+// expansion flag on the word rather than losing it (fail-closed).
+// The substitution BODY is tokenized as well and its segments are appended to
+// the same line, so a gated call written inside one - `` `git push origin
+// main` ``, `echo $(git push origin main)` - is still the candidate it always
+// was. Nesting is followed MAX_SUBST_DEPTH levels deep; below that the body is
+// left unread and only the word's expansion flag remains, which is deliberate
+// evasion and out of scope (see the threat model).
+// A redirection is NOT a separator either: the operator and the single word
+// that follows it are removed from the argv and everything else stays in the
+// same command, because that is what the shell does -
+// `git push > /dev/null origin main` runs `git push origin main`.
 // `{`/`}` and `%` stay inside the word on purpose - they are expansion
 // markers, and splitting on them hid `git push origin ma{i,in}n` from the
 // destination comparison entirely.
 const SEGMENT_SEPARATORS = ';&|()';
+const MAX_SUBST_DEPTH = 8;
 // `>` `>>` `>|` `>&` `<` `<<` `<<-` `<&` `<>`, each optionally preceded by a
 // file descriptor (`2>`) or `&` (`&>`), both handled at the call site. Sticky,
 // so matching it costs the length of the operator and not the length of the
 // rest of the command line.
 const REDIRECT_OP_RE = /(?:>>|>&|>\||<<-?|<&|<>|>|<)/y;
 
+// Scan the command substitution that starts at `start` - `$(`, or a backtick -
+// and return `{ end, inner }`: the index of its LAST character and its body.
+// Quotes and backslash escapes inside are honoured, so the `)` in
+// `$(node -p 'require("./package.json").version')` does not close it early,
+// and `$(` nesting is counted. A substitution never crosses a newline: an
+// unterminated one ends at the end of the line (or of the command), so the
+// word keeps the text and its expansion flag instead of dropping them.
+function scanSubstitution(command, start) {
+  const backtick = command[start] === '`';
+  const bodyAt = start + (backtick ? 1 : 2);
+  let depth = 1;
+  let quote = null;
+  for (let i = bodyAt; i < command.length; i++) {
+    const ch = command[i];
+    if (ch === '\n') return { end: i - 1, inner: command.slice(bodyAt, i) };
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      else if (quote === '"' && ch === '\\') i++;
+      continue;
+    }
+    if (ch === '\\') i++;
+    else if (ch === "'" || ch === '"') quote = ch;
+    else if (backtick) {
+      if (ch === '`') return { end: i, inner: command.slice(bodyAt, i) };
+    } else if (ch === '(') depth++;
+    else if (ch === ')' && --depth === 0) return { end: i, inner: command.slice(bodyAt, i) };
+  }
+  return { end: command.length - 1, inner: command.slice(bodyAt) };
+}
+
 // Split into lines of segments of words. Quotes are removed (so `origin
 // "main"` compares as `main`); no expansion is performed, but every word
-// records whether its source carried an expansion character.
-function tokenizeLines(command) {
+// records whether its source carried an expansion character. `depth` is the
+// command-substitution nesting level and is set only by this function.
+function tokenizeLines(command, depth = 0) {
   const lines = [];
-  let line = { segments: [], backtick: false };
+  let line = { segments: [] };
+  let bodies = []; // Substitution bodies seen on this line, tokenized at its end.
   let seg = { words: [], expand: [] };
   let word = '';
   let expand = false;
@@ -219,8 +271,18 @@ function tokenizeLines(command) {
   };
   const endLine = () => {
     endSegment();
+    // A substitution body runs on the line that spells it, so its segments
+    // join that line rather than forming one of their own.
+    if (depth < MAX_SUBST_DEPTH) {
+      for (const body of bodies) {
+        for (const inner of tokenizeLines(body, depth + 1)) {
+          for (const s of inner.segments) line.segments.push(s);
+        }
+      }
+    }
+    bodies = [];
     if (line.segments.length > 0) lines.push(line);
-    line = { segments: [], backtick: false };
+    line = { segments: [] };
   };
 
   for (let i = 0; i < command.length; i++) {
@@ -237,6 +299,14 @@ function tokenizeLines(command) {
         if (ch === '$' || ch === '`') expand = true;
         word += ch;
       }
+    } else if ((ch === '$' && command[i + 1] === '(') || ch === '`') {
+      // A command substitution is part of the word, not a boundary.
+      const sub = scanSubstitution(command, i);
+      word += command.slice(i, sub.end + 1);
+      expand = true;
+      started = true;
+      bodies.push(sub.inner);
+      i = sub.end;
     } else if (ch === '$' && (command[i + 1] === "'" || command[i + 1] === '"')) {
       expand = true; // $'...' / $"..." — ANSI-C / locale quoting.
       started = true;
@@ -259,9 +329,6 @@ function tokenizeLines(command) {
       // `""#` and `x#` are words, so they comment out nothing - treating them
       // as comments hid `echo ""# ; git push origin main` from the gate.
       while (i + 1 < command.length && command[i + 1] !== '\n') i++;
-    } else if (ch === '`') {
-      line.backtick = true;
-      endSegment();
     } else if (ch === '<' || ch === '>' || (ch === '&' && command[i + 1] === '>')) {
       let start = i;
       if (ch === '&') start++; // `&>` / `&>>`
@@ -327,12 +394,17 @@ const UPSTREAM_REFS = new Set(['head', '@']);
 // lower-case spelling, so reading only one of them was a hole.
 // M24: the segment between `pulls/` and `/merge` is not required to be
 // digits - `pulls/$PR/merge`, `pulls/${PR}/merge` and `pulls/$(prnum)/merge`
-// are candidates too (any run of one or more non-`/`, non-whitespace
-// characters), because a PR-number variable is a benign, common way to write
-// this call. A variable or substitution word also carries a shell-expansion
-// character, so once it is a candidate the existing rule 2 expansion item -
-// not this regex - is what blocks it.
-const PULLS_MERGE_RE = /(^|\/)pulls\/[^/\s]+\/merge(?![A-Za-z0-9_-])/i;
+// are candidates too (any run of one or more non-`/` characters), because a
+// PR-number variable is a benign, common way to write this call. A variable or
+// substitution word also carries a shell-expansion character, so once it is a
+// candidate the existing rule 2 expansion item - not this regex - is what
+// blocks it.
+// M26: whitespace is allowed in that segment. Whitespace only reaches the
+// INSIDE of a word through quoting or a command substitution, and a
+// substitution is exactly the spelling this has to read -
+// `pulls/$(gh pr view --json number -q .number)/merge` is one word with spaces
+// in it. Excluding `\s` made that form miss, and a miss here is an allow.
+const PULLS_MERGE_RE = /(^|\/)pulls\/[^/]+\/merge(?![A-Za-z0-9_-])/i;
 const GIT_ENV_RE = /^GIT_[A-Za-z0-9_]*=/;
 // Last-resort screen for a command line the classifier will not read (over the
 // byte budget, or a classifier exception): does it mention a gated word at all?
@@ -550,7 +622,7 @@ function pushCandidate(inv) {
 function analyzeLine(line) {
   const cands = [];
   const invocations = [];
-  let expansion = line.backtick;
+  let expansion = false;
   let relocation = false;
 
   for (const seg of line.segments) {
