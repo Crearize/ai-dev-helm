@@ -37,6 +37,11 @@
 //   back to whole-file scope via a character-class-escaped glob ("[" becomes
 //   "[[]"). Plain parenthesis segments ((group) route groups) are not glob
 //   magic and keep their line ranges.
+// - A path whose FIRST character is "!" cannot be expressed at all: Stryker
+//   reads a mutate entry starting with "!" as a negation pattern, so both the
+//   range form and the literal-glob form would silently drop the file from
+//   the scope (fail-open). Such a path fails the run loudly instead. A "!"
+//   deeper in the path is literal and keeps its range.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -235,6 +240,13 @@ export function changedLineRanges({ cwd = process.cwd(), baseRef, mutate = [] } 
   const fileScoped = new Set();
   for (const range of parseUnifiedDiff(diff)) {
     if (!inScope(range.file)) continue;
+    if (range.file.startsWith('!')) {
+      throw new Error(
+        `[mutation:diff] cannot scope ${JSON.stringify(range.file)}: a mutate entry starting with "!" is a ` +
+          'negation pattern to Stryker and would silently drop the file from the scope (fail-open). ' +
+          'Rename the file or exclude it from the mutate globs.'
+      );
+    }
     if (hasGlobMagic(range.file)) {
       // Range syntax is unavailable for glob-magic paths (see header):
       // degrade this one file to whole-file scope, once.
