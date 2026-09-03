@@ -119,7 +119,7 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 差分スコープ・ベース ref の規律は従来どおりとする。
 
 - 差分スコープ = **変更行**（Stryker: `mutation:diff` が、ベース ref との merge-base に対する作業ツリーの差分の hunk を行範囲として `mutate` に渡す。glob 特殊文字を含むパスはファイル単位に縮退）または**変更クラス**（PIT: `mutationDiff -PmutationDiffBase=origin/main`）。定義は quality-policy §2「差分スコープの定義」を正とする。変更ファイル全体・プロジェクト全体のフル実行は行わない
-- ベース ref は Step 1 の判定対象と同じ基幹でなければならない（基幹が異なるプロダクトは `MUTATION_BASE_REF` で Step 1 と同じ ref を指定する）。`HEAD` は Step 1 の基幹になり得ないため無効: `MUTATION_BASE_REF=HEAD` の計測、および stderr に `[mutation:diff] warning: ... resolves to HEAD itself` が出た計測（作業ツリーの未コミット行のみのスコープ）は、ゲートの計測（`executed`）として記録しない。使用した ref を `mutation.base_ref` に、粒度を `mutation.scope`（`changed_lines` / `changed_classes`。旧配線のままファイル単位で実行された場合は `changed_files` — `lint-scaffolding` の再配線を案内する）に記録する
+- ベース ref は Step 1 の判定対象と同じ基幹でなければならない（基幹が異なるプロダクトは `MUTATION_BASE_REF` で Step 1 と同じ ref を指定する）。`HEAD` は Step 1 の基幹になり得ないため無効: `MUTATION_BASE_REF=HEAD` の計測、および stderr に `[mutation:diff] warning: ... resolves to HEAD itself` が出た計測（作業ツリーの未コミット行のみのスコープ）は、ゲートの計測（`executed`）として記録しない。その場合は Step 1 の基幹を `MUTATION_BASE_REF` に指定して再実行し（`runs` に数えない）、基幹を解決できないときは `scope_error` として記録する。基幹を指定しても同じ警告が出るのは Step 1 の差分（`origin/main...HEAD`）が空、すなわち変更がまだコミットされていない状態なので、コミットしてから quality-check を実行する（exit 0 の実行を `scope_error` として記録しない）。使用した ref を `mutation.base_ref` に、粒度を `mutation.scope`（`changed_lines` / `changed_classes`。旧配線のままファイル単位で実行された場合は `changed_files` — `lint-scaffolding` の再配線を案内する）に記録する
 
 ### 実行手順
 

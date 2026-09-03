@@ -55,8 +55,9 @@
 // API boundary: `withChangedLines` (the config wrapper - a PRE-RUN HOOK with
 // side effects: it may delete the stale report and the diff cache, writes
 // the scope sidecar, and exits the process on an empty scope),
-// `deriveScope` / `changedLineRanges` (pure scope derivation - use these to
-// inspect the scope without side effects), `resolveBaseRef` and the exported
+// `deriveScope` / `changedLineRanges` (scope derivation without file-system
+// side effects - beyond the result they only warn on stderr when the merge
+// base is HEAD; use these to inspect the scope), `resolveBaseRef` and the exported
 // constants are the supported surface. Every other export exists for the
 // harness's own tests and may change without notice.
 
@@ -553,7 +554,7 @@ function prepareDiffIncremental(cwd, scope) {
   } else if (!resetDiffCache(cwd)) {
     fs.writeSync(
       2,
-      '[mutation:diff] incremental: disabled for this run - the previous diff cache could not be removed ' +
+      '[mutation:diff] incremental: disabled for this run - the previous diff cache or its scope sidecar could not be removed ' +
         `(${DIFF_INCREMENTAL_FILE}); remove it and re-run with MUTATION_INCREMENTAL=1 to start a new cache\n`
     );
     return false;
