@@ -24,7 +24,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 - 規則1の候補がある行の force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`、`--branches`
 - ゲート対象と同一行にある別の git 操作。この判定対象は**閉じた集合**である: HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `revert` / `am` / `bisect` / `update-ref` / `stash pop` / `stash apply`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定し、`fetch` および `branch -f` / `-d` / `-D` / `--force` は**同一行**で判定する。それ以外の git 操作（`status` / `add` / `log` / `diff` / `tag` / `remote` 等）は同居してもブロックしない
 - `-C` / `--git-dir` / `--work-tree` / `--namespace` / `-c` / `--config-env` / `GIT_*=` 代入 / 同一行の `cd` / `pushd`
-- 規則1の候補がある行に限り、行内のシェル展開文字（`$` `` ` `` `{` `}` `%`。`$'…'` / `$"…"` の ANSI-C / ロケールクォートも展開扱い）を無条件 block する。**行内の全語**が対象で、`gh` の自由テキスト値オプション（`-t`/`--subject`・`-b`/`--body`・`-F`/`--body-file` の6形と `--subject=` / `--body=` / `--body-file=` の `=` 付き3形）のみ例外。候補が無い行の展開文字は block しない（脅威モデル外の迂回として hook ヘッダの「見通せない形」に列挙する）
+- 規則1の候補がある行に限り、行内のシェル展開文字（`$` `` ` `` `{` `}` `%`。`$'…'` / `$"…"` の ANSI-C / ロケールクォートも展開扱い）を無条件 block する。**行内の全語**（リダイレクト先の語は argv に残らないため除く）が対象で、`gh` の自由テキスト値オプション（`-t`/`--subject`・`-b`/`--body`・`-F`/`--body-file` の6形と `--subject=` / `--body=` / `--body-file=` の `=` 付き3形）のみ例外。候補が無い行の展開文字は block しない（脅威モデル外の迂回として hook ヘッダの「見通せない形」に列挙する）
 - 複数のゲート対象操作の同居
 - `<x>:main` 形の refspec（`<x>` が現在のブランチ名 / `HEAD` / `@`（大小無視）のいずれでもない逆形）
 
