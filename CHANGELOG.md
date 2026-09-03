@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0](https://github.com/Crearize/ai-dev-helm/compare/v2.0.0...v2.1.0) (2026-09-03)
+
+
+### Added
+
+* **mutation:** fall back to a local main / master base ref when no remote-tracking ref exists ([#113](https://github.com/Crearize/ai-dev-helm/issues/113)) ([ac86ae3](https://github.com/Crearize/ai-dev-helm/commit/ac86ae3c297d5a449aeb0b6c7def10e751479aba))
+* **mutation:** opt-in incremental for diff-scoped re-measurement, cache guarded by scope containment ([#92](https://github.com/Crearize/ai-dev-helm/issues/92)) ([513c878](https://github.com/Crearize/ai-dev-helm/commit/513c878fa1c9d5a41415fd9579f95379f5f8de19))
+
+
+### Fixed
+
+* **init:** ignore reports/mutation/ at any depth so workspace packages are covered ([#99](https://github.com/Crearize/ai-dev-helm/issues/99)) ([31d9626](https://github.com/Crearize/ai-dev-helm/commit/31d9626481e5c35972078c0e57b212193ee6d68b))
+* **mutation:** confine the stale-report removal to a file inside the run directory after quality-check cycle 2 ([#92](https://github.com/Crearize/ai-dev-helm/issues/92) [#95](https://github.com/Crearize/ai-dev-helm/issues/95) [#97](https://github.com/Crearize/ai-dev-helm/issues/97) [#99](https://github.com/Crearize/ai-dev-helm/issues/99) [#113](https://github.com/Crearize/ai-dev-helm/issues/113)) ([0ed7cc0](https://github.com/Crearize/ai-dev-helm/commit/0ed7cc0769726a5b158ea17fa846c2e5778653a0))
+* **mutation:** delete the stale PIT report before every diff run so an empty result is never a leftover ([#95](https://github.com/Crearize/ai-dev-helm/issues/95)) ([8f12567](https://github.com/Crearize/ai-dev-helm/commit/8f12567923db98ad37f1296e7b0c19d355ecfa85))
+* **mutation:** fail loudly on a "!"-prefixed root-level path instead of emitting a negation entry ([#97](https://github.com/Crearize/ai-dev-helm/issues/97)) ([bac2128](https://github.com/Crearize/ai-dev-helm/commit/bac2128bd499bbc7129f6672f0132995f771f0c7))
+* **mutation:** fall back to a cache-less run when the diff cache cannot be removed, and keep HEAD out of the gate's base-ref advice ([#92](https://github.com/Crearize/ai-dev-helm/issues/92) [#97](https://github.com/Crearize/ai-dev-helm/issues/97) [#113](https://github.com/Crearize/ai-dev-helm/issues/113)) ([c56a2c7](https://github.com/Crearize/ai-dev-helm/commit/c56a2c79c86131c442d2f422400ca90a558b6cf9))
+* **mutation:** harden the diff cache guard, base-ref fallback and PIT clean-up after quality-check cycle 1 ([#92](https://github.com/Crearize/ai-dev-helm/issues/92) [#95](https://github.com/Crearize/ai-dev-helm/issues/95) [#97](https://github.com/Crearize/ai-dev-helm/issues/97) [#99](https://github.com/Crearize/ai-dev-helm/issues/99) [#113](https://github.com/Crearize/ai-dev-helm/issues/113)) ([91560aa](https://github.com/Crearize/ai-dev-helm/commit/91560aaaf6e9fd1ce5829852d224e87de557321b))
+* **mutation:** incremental diff cache, PIT stale report, root-level "!" guard, **/reports/mutation/ ignore and base-ref fallback ([#92](https://github.com/Crearize/ai-dev-helm/issues/92) [#95](https://github.com/Crearize/ai-dev-helm/issues/95) [#97](https://github.com/Crearize/ai-dev-helm/issues/97) [#99](https://github.com/Crearize/ai-dev-helm/issues/99) [#113](https://github.com/Crearize/ai-dev-helm/issues/113)) ([44affdd](https://github.com/Crearize/ai-dev-helm/commit/44affdd45f5e7f0179484b0115730d9214487036))
+
+
+### Changed
+
+* **mutation:** lint-clean changed-ranges.mjs - no empty catch, Number.parseInt, optional chain ([#113](https://github.com/Crearize/ai-dev-helm/issues/113)) ([ff42b1f](https://github.com/Crearize/ai-dev-helm/commit/ff42b1f57c76caa9679b0ea327f0ae626ec670a3))
+
+
+### Documentation
+
+* **mutation:** close cycle-1 review findings - multi-module empty scope covers zero-mutant modules, monorepo minimatch site, ledger naming, re-measurement terminal rule ([ed21378](https://github.com/Crearize/ai-dev-helm/commit/ed21378b780f64efbd6689438f699a2c8310f270))
+* **mutation:** close cycle-2 review findings - shared __BASE_PACKAGE__ for multi-module PIT, conditional TS7 second step, aggregated raw score ([2820956](https://github.com/Crearize/ai-dev-helm/commit/28209569e513967ca9da1fd26ee75b24e2af621c))
+* **mutation:** cycle-3 low findings - mutants_total excludes the out-of-count set, TS7 condition covers `references`, guard rail links the shared __BASE_PACKAGE__ ([4f216b0](https://github.com/Crearize/ai-dev-helm/commit/4f216b048598c536f81752935ad7cea2a2a213c0))
+* **mutation:** environment notes, Windows base ref, PIT multi-module empty scope, triage rules ([#91](https://github.com/Crearize/ai-dev-helm/issues/91) [#94](https://github.com/Crearize/ai-dev-helm/issues/94) [#95](https://github.com/Crearize/ai-dev-helm/issues/95) [#100](https://github.com/Crearize/ai-dev-helm/issues/100) [#114](https://github.com/Crearize/ai-dev-helm/issues/114)) ([3963e34](https://github.com/Crearize/ai-dev-helm/commit/3963e34cba42f4a4ba43ceddba265569fd1f9011))
+* **mutation:** low-severity follow-ups from quality-check cycle 4 ([#92](https://github.com/Crearize/ai-dev-helm/issues/92) [#113](https://github.com/Crearize/ai-dev-helm/issues/113)) ([f6b4350](https://github.com/Crearize/ai-dev-helm/commit/f6b43507543cb82a012a36569d205c56ddbfe410))
+* **mutation:** ミューテーション資産の環境注記・Windows 手順・PIT マルチモジュール・トリアージ規律（[#91](https://github.com/Crearize/ai-dev-helm/issues/91) [#94](https://github.com/Crearize/ai-dev-helm/issues/94) [#95](https://github.com/Crearize/ai-dev-helm/issues/95)-1 [#100](https://github.com/Crearize/ai-dev-helm/issues/100) [#114](https://github.com/Crearize/ai-dev-helm/issues/114)） ([ddb7f41](https://github.com/Crearize/ai-dev-helm/commit/ddb7f411e2f32197d0fe30adfe4981648305603d))
+
 ## [2.0.0](https://github.com/Crearize/ai-dev-helm/compare/v1.12.0...v2.0.0) (2026-09-03)
 
 
