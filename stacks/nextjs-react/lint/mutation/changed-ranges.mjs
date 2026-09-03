@@ -70,17 +70,21 @@ function assertSafeRef(ref) {
   return ref;
 }
 
+function refExists(ref, cwd) {
+  try {
+    git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // MUTATION_BASE_REF wins; otherwise probe origin/main then origin/master -
 // the same probe order the quality-gate hook uses for its merge base.
 export function resolveBaseRef({ cwd = process.cwd(), baseRef = process.env.MUTATION_BASE_REF } = {}) {
   if (baseRef) return assertSafeRef(baseRef);
   for (const candidate of DEFAULT_BASE_REFS) {
-    try {
-      git(['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], cwd);
-      return candidate;
-    } catch {
-      // candidate absent - try the next one
-    }
+    if (refExists(candidate, cwd)) return candidate;
   }
   throw new Error(
     `[mutation:diff] no base ref found: none of ${DEFAULT_BASE_REFS.join(', ')} exists in this clone. ` +
@@ -107,7 +111,7 @@ export function unquoteGitPath(raw) {
     else if (next === 'n') bytes.push(0x0a);
     else if (next === 'r') bytes.push(0x0d);
     else if (next >= '0' && next <= '7') {
-      bytes.push(parseInt(inner.slice(i, i + 3), 8));
+      bytes.push(Number.parseInt(inner.slice(i, i + 3), 8));
       i += 2;
     } else {
       for (const byte of Buffer.from(next, 'utf8')) bytes.push(byte);
@@ -241,16 +245,22 @@ export function changedLineRanges({ cwd = process.cwd(), baseRef, mutate = [] } 
   return entries;
 }
 
+// Best-effort removal: a locked file must not turn a clean-up into a crash.
+function rmBestEffort(absPath) {
+  try {
+    fs.rmSync(absPath, { force: true });
+  } catch {
+    // swallowed on purpose - see above
+    return;
+  }
+}
+
 // A stale json report from a previous run must not survive an empty-scope
 // exit - quality-check would read yesterday's mutants as today's.
 function removeStaleReport(baseConfig, cwd) {
-  const fileName = baseConfig.jsonReporter && baseConfig.jsonReporter.fileName;
+  const fileName = baseConfig.jsonReporter?.fileName;
   if (!fileName) return;
-  try {
-    fs.rmSync(path.resolve(cwd, fileName), { force: true });
-  } catch {
-    // best effort - a locked file must not turn the empty scope into a crash
-  }
+  rmBestEffort(path.resolve(cwd, fileName));
 }
 
 // Returns `baseConfig` with `mutate` narrowed to the changed lines. On an
