@@ -38,7 +38,8 @@
 //
 // Rule 1 (gated candidates): `gh pr merge` (any args); `gh api` with a
 //   `pulls/<n>/merge` word, case insensitive (a `?query` or `#fragment` after
-//   it still merges);
+//   it still merges; `<n>` need not be digits - `pulls/$PR/merge` is a
+//   candidate too, and the expansion character then blocks it under rule 2);
 //   `git merge` / `git pull` / `git rebase` (any args,
 //   except --abort/--continue/--quit/--skip) - gated only once ctx says the
 //   current branch is main/master; `git push` whose refspec DESTINATION is
@@ -58,8 +59,10 @@
 //   line without blocking; `-C`/`--git-dir`/`--work-tree`/`--namespace`/`-c`/
 //   `--config-env`, a `GIT_*=` assignment or a `cd`/`pushd` on the line; shell
 //   expansion (`$`, backtick, `{`, `}`, `%`, `$'`) in a word, except the value
-//   of gh's six free-text options (`-t`/`--subject`, `-b`/`--body`,
-//   `-F`/`--body-file`), which is prose and not a ref; more than one gated
+//   of gh's free-text options - `-t`/`--subject`, `-b`/`--body`,
+//   `-F`/`--body-file` (six forms), plus their `--subject=`/`--body=`/
+//   `--body-file=` spellings (three more, nine in all) - which is prose and
+//   not a ref; more than one gated
 //   operation on the line; a `<x>:main` refspec whose `<x>` is neither
 //   HEAD/`@` nor the current branch.
 //   The expansion item, like the rest of rule 2, only looks at a line that
@@ -133,8 +136,11 @@
 //     `` `which git` push ``, `gi{t..t} push origin main`;
 //   - a SUBCOMMAND word spelled by an expansion, which leaves no candidate to
 //     find at all: `git pus{h..h} origin main`, `git $(echo push) origin main`,
-//     `gh pr me{r..r}ge 1`, `gh a{p..p}i -X PUT .../merge`,
-//     `git stash po{p..p}`;
+//     `gh pr me{r..r}ge 1`, `gh a{p..p}i -X PUT .../merge`;
+//   - a MOVER word spelled by an expansion, on a line of its own, which the
+//     whole-command mover scan never matches in the first place: `git push
+//     origin main` on one line and `git stash po{p..p}` on another - the
+//     line split does not hide the mover, the expansion does;
 //   - a gate word percent-encoded inside quotes, which a `gh api` endpoint
 //     reads back: `gh api -X PUT "repos/o/r/pulls/1/%6Derge"`;
 //   - arguments supplied by another process: `xargs git push`, `env -S`;
@@ -319,7 +325,14 @@ const UPSTREAM_REFS = new Set(['head', '@']);
 // character" rather than "end of word" (`pulls/1/merged` is a different call).
 // Case-insensitive: the API answers `PULLS/1/MERGE` exactly as it answers the
 // lower-case spelling, so reading only one of them was a hole.
-const PULLS_MERGE_RE = /(^|\/)pulls\/\d+\/merge(?![A-Za-z0-9_-])/i;
+// M24: the segment between `pulls/` and `/merge` is not required to be
+// digits - `pulls/$PR/merge`, `pulls/${PR}/merge` and `pulls/$(prnum)/merge`
+// are candidates too (any run of one or more non-`/`, non-whitespace
+// characters), because a PR-number variable is a benign, common way to write
+// this call. A variable or substitution word also carries a shell-expansion
+// character, so once it is a candidate the existing rule 2 expansion item -
+// not this regex - is what blocks it.
+const PULLS_MERGE_RE = /(^|\/)pulls\/[^/\s]+\/merge(?![A-Za-z0-9_-])/i;
 const GIT_ENV_RE = /^GIT_[A-Za-z0-9_]*=/;
 // Last-resort screen for a command line the classifier will not read (over the
 // byte budget, or a classifier exception): does it mention a gated word at all?
