@@ -180,13 +180,20 @@ const DEADLINE = Date.now() + 20000;
 // `gh api -X PUT repos/o/r/pulls/$(prnum)/merge` into `repos/o/r/pulls/$`,
 // `prnum` and `/merge`, so no word held a `pulls/<n>/merge` endpoint, the line
 // had no rule-1 candidate at all, and the call was allowed (M26). An
-// unterminated `$(` or backtick swallows the rest of the LINE, which keeps the
-// expansion flag on the word rather than losing it (fail-closed).
+// unterminated `$(` or backtick swallows the rest of the LINE, which keeps
+// the expansion flag on the word rather than losing it. Inside double quotes
+// an unterminated one swallows the rest of the COMMAND instead - it reads
+// across every newline in it, same as a terminated one does; bash rejects
+// such unterminated input as a syntax error and runs nothing, so nothing is
+// lost either way.
 // The substitution BODY is tokenized as well - the same whether it is
 // unquoted or sits inside double quotes (`"$(…)"`) - and its segments are
 // appended to the same line, so a gated call written inside one - `` `git
 // push origin main` ``, `echo $(git push origin main)`,
-// `echo "$(git push origin main)"` - is still the candidate it always was.
+// `echo "$(git push origin main)"` - is still the candidate it always was. A
+// double-quoted substitution is read across newlines, as the shell reads it;
+// an unquoted one stops at the end of the line, where the next line is
+// classified on its own anyway.
 // Nesting is followed MAX_SUBST_DEPTH levels deep; below that the body is
 // left unread, so a gated call inside it is not a candidate at all (the word
 // still carries its expansion flag, which only matters if the line has a
@@ -195,7 +202,10 @@ const DEADLINE = Date.now() + 20000;
 // A redirection is NOT a separator either: the operator and the single word
 // that follows it are removed from the argv and everything else stays in the
 // same command, because that is what the shell does -
-// `git push > /dev/null origin main` runs `git push origin main`.
+// `git push > /dev/null origin main` runs `git push origin main`. The target
+// word is dropped from the argv, but a substitution body inside it still
+// joins the line - `git push origin main > "$(git checkout x)"` blocks under
+// rule 2.
 // `{`/`}` and `%` stay inside the word on purpose - they are expansion
 // markers, and splitting on them hid `git push origin ma{i,in}n` from the
 // destination comparison entirely.
@@ -211,17 +221,21 @@ const REDIRECT_OP_RE = /(?:>>|>&|>\||<<-?|<&|<>|>|<)/y;
 // and return `{ end, inner }`: the index of its LAST character and its body.
 // Quotes and backslash escapes inside are honoured, so the `)` in
 // `$(node -p 'require("./package.json").version')` does not close it early,
-// and `$(` nesting is counted. A substitution never crosses a newline: an
-// unterminated one ends at the end of the line (or of the command), so the
-// word keeps the text and its expansion flag instead of dropping them.
-function scanSubstitution(command, start) {
+// and `$(` nesting is counted. Unquoted (`crossLines` false, the default), a
+// substitution never crosses a newline: an unterminated one ends at the end
+// of the line (or of the command), so the word keeps the text and its
+// expansion flag instead of dropping them. Called with `crossLines` true -
+// from a double-quoted substitution, where the shell keeps reading past the
+// line break - it is read across newlines the same way, ending at the
+// matching close or, unterminated, at the end of the command.
+function scanSubstitution(command, start, crossLines = false) {
   const backtick = command[start] === '`';
   const bodyAt = start + (backtick ? 1 : 2);
   let depth = 1;
   let quote = null;
   for (let i = bodyAt; i < command.length; i++) {
     const ch = command[i];
-    if (ch === '\n') return { end: i - 1, inner: command.slice(bodyAt, i) };
+    if (ch === '\n' && !crossLines) return { end: i - 1, inner: command.slice(bodyAt, i) };
     if (quote !== null) {
       if (ch === quote) quote = null;
       else if (quote === '"' && ch === '\\') i++;
@@ -300,11 +314,15 @@ function tokenizeLines(command, depth = 0) {
         if (command[i + 1] !== '\n') word += command[i + 1];
         i++;
       } else if ((ch === '$' && command[i + 1] === '(') || ch === '`') {
-        // A command substitution inside double quotes is read exactly as an
+        // A command substitution inside double quotes is read the same as an
         // unquoted one: the shell still runs it and the quotes stay open
         // around it (an inner `"` pair the substitution owns does not close
-        // the outer quote - `scanSubstitution` tracks that itself).
-        const sub = scanSubstitution(command, i);
+        // the outer quote - `scanSubstitution` tracks that itself). Unlike an
+        // unquoted one, it is read across newlines, as the shell reads it -
+        // an unquoted substitution stops at the end of the line instead, but
+        // that costs nothing because the next line is classified on its own
+        // anyway.
+        const sub = scanSubstitution(command, i, true);
         word += command.slice(i, sub.end + 1);
         expand = true;
         bodies.push(sub.inner);
