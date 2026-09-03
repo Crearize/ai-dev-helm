@@ -5,7 +5,8 @@ Both shapes below turn a real failure into a silent one, so the caller sees
 success and the incident surfaces much later somewhere unrelated. Adoption is
 per-directory: a product opts these rules in or out for the directories it wants
 covered, so legacy areas can stay excluded while new code is held to them. Each
-rule ships as `-ts`, `-tsx` and `-js` variants (plus `-java` for empty catch) so
+rule ships as `-ts`, `-tsx` and `-js` variants, plus Java-only rules:
+`no-empty-catch-java` and the three #117 suppression guards (see below) so
 `.ts`, `.tsx`, `.js`, `.jsx` and `.java` files are all actually scanned.
 
 ## Coverage of catalog A3 is PARTIAL
@@ -27,3 +28,23 @@ rule ships as `-ts`, `-tsx` and `-js` variants (plus `-java` for empty catch) so
 
 Do NOT list this directory as full coverage of A3 in a review guide; the
 uncovered items above stay assigned to AI review in the coverage map.
+
+## Suppression guards (#117, Java only)
+
+These three rules are not A3 detection - they guard against abuse of the
+Checkstyle line-level suppression mechanism (`SuppressWarningsFilter` /
+`SuppressWarningsHolder`) that backs A3 enforcement itself, so a suppression
+cannot silently widen into a blanket exemption. See
+`stacks/java-springboot/lint/README.md` ("Line-level suppression (#117)") for
+the full abuse surface and the operating convention these rules enforce.
+
+- `no-blanket-suppress-warnings-java` - flags any `@SuppressWarnings` string
+  value on a Checkstyle-suppressible declaration that is not an exact
+  `checkstyle:<ModuleName>` reference to a module the preset declares.
+- `no-type-scope-illegal-catch-suppression-java` - flags
+  `@SuppressWarnings("checkstyle:IllegalCatch")` declared at type or field
+  scope (class/interface/enum/record/`@interface`/field) instead of the
+  smallest enclosing method, constructor, or lambda-holding local variable.
+- `no-non-literal-suppress-warnings-java` - flags a `@SuppressWarnings` value
+  that is a constant reference, field access, or concatenation instead of a
+  plain string literal.

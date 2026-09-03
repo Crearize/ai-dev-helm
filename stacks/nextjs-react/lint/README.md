@@ -95,7 +95,9 @@ The stack rules land at `lint/ast-grep/nextjs-react/` and are picked up by the s
 
 ## Mutation testing (Stryker)
 
-`init` copies `mutation/stryker.config.mjs`, `mutation/stryker.diff.config.mjs` and `mutation/changed-ranges.mjs` to the product's `lint/mutation/`. The base config is a pre-built Stryker config: `testRunner: 'vitest'`, source-only `mutate` globs (tests, `*.d.ts` and generated/build output excluded), a lean mutator set (non-behavioural mutators excluded - the config's exclusion list is the single source; `ignoreStatic` on), the `clear-text` / `json` / `html` reporters, and `incremental` on for the full run. The diff config extends it, narrows `mutate` to the **changed lines**, and turns `incremental` off for its own runs (the cache is full-run state; sharing it would merge stale out-of-scope mutants into the diff report). The diff run is what quality-check Step 3.5 uses.
+`init` copies `mutation/stryker.config.mjs`, `mutation/stryker.diff.config.mjs` and `mutation/changed-ranges.mjs` to the product's `lint/mutation/`. The base config is a pre-built Stryker config: `testRunner: 'vitest'`, source-only `mutate` globs (tests, `*.d.ts` and generated/build output excluded), a lean mutator set (non-behavioural mutators excluded - the config's exclusion list is the single source; `ignoreStatic` on), the `clear-text` / `json` / `html` reporters, and `incremental` on for the full run. The diff config extends it, narrows `mutate` to the **changed lines**, and turns `incremental` off for its own runs (the cache is full-run state; sharing it would merge stale out-of-scope mutants into the diff report). The diff run is what the `test-recommendation` skill (quality-check Step 5, propose-then-decide) uses.
+
+Known limitation: `ignoreStatic` does not take effect for static mutants that have perTest coverage - Stryker core can still report them as Survived. Triage machine-classifies such survivors as `tool_false_negative` (see the `test-recommendation` skill's triage rules).
 
 ### Wiring
 
@@ -148,7 +150,7 @@ Then point the two scripts at `lint/product/...`. The `mutate` globs, reporters 
 
 ### Score and gating
 
-Stryker writes the machine-readable result to the **json report** (`reports/mutation/mutation.json`): every mutant with its mutator, location and status. `quality-check` reads that report, lists the survivors, triages them (gate mode) and compares the adjusted score against the mutation-score thresholds single-sourced in `quality-policy.md` §2 (do not restate the numbers here). This config deliberately does **not** set `thresholds.break`, so Stryker never fails the run on score - gating is entirely `quality-check`'s job. The `thresholds.high` / `thresholds.low` values in the config are report-coloring hints only and are not the gate. Excluded mutators appear as `Ignored` in the report and stay outside the score; `NoCoverage` mutants count as survivors in quality-check's triage (a changed line no test reaches is the strongest possible survivor).
+Stryker writes the machine-readable result to the **json report** (`reports/mutation/mutation.json`): every mutant with its mutator, location and status. The `test-recommendation` skill (quality-check Step 5, propose-then-decide) reads that report, lists the survivors, triages them with the user and presents the raw score as reference information - there is **no pass/fail score** (`quality-policy.md` §2). This config deliberately does **not** set `thresholds.break`, so Stryker never fails the run on score - a score gate exists nowhere. The `thresholds.high` / `thresholds.low` values in the config are report-coloring hints only. Excluded mutators appear as `Ignored` in the report and stay outside the score; `NoCoverage` mutants count as survivors in the triage (a changed line no test reaches is the strongest possible survivor).
 
 ### Where it runs
 

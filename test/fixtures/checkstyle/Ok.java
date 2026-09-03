@@ -5,7 +5,12 @@ package fixtures;
 // named imports only (no sun.*), no runtime process execution, constants
 // instead of magic numbers, specific exception types, no empty catch blocks
 // (every catch recovers or rethrows), equals and hashCode overridden together,
-// short and flat methods.
+// short and flat methods. It deliberately contains one
+// @SuppressWarnings("checkstyle:IllegalCatch") boundary-declared method
+// (below): staying clean is the execution-verified proof that the
+// SuppressWarningsFilter/SuppressWarningsHolder wiring (#117) actually
+// suppresses the IllegalCatch finding it targets, not just that the config
+// parses.
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -71,5 +76,19 @@ public final class Ok {
       throw new IOException("no name configured");
     }
     return name;
+  }
+
+  // 境界宣言: thread-pool outermost boundary - this runnable is handed to an
+  // executor whose contract requires it never throw, so a broad
+  // RuntimeException catch is the boundary, not a swallowed failure. The
+  // suppression is declared on this method only (the smallest enclosing
+  // declaration), never on the class or a field.
+  @SuppressWarnings("checkstyle:IllegalCatch")
+  public void runOnExecutor() {
+    try {
+      describe();
+    } catch (RuntimeException e) {
+      throw new IllegalStateException("background task failed", e);
+    }
   }
 }

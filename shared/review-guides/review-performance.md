@@ -1,6 +1,6 @@
 # Performance Review Guide
 
-**Note**: Used by the Performance Engineer persona during quality-check. Applies to any code change (backend, frontend, infra).
+**Note**: Used by the Performance Engineer persona during quality-check. Applies when the change touches queries, collection loops, caching, bundles, or hot paths (quality-check Step 1 applicability table); other code changes do not dispatch this persona.
 
 ## Required Reference Documents
 
@@ -57,3 +57,8 @@
 - [ ] Behavior is acceptable when data volume grows 10x-100x (no full-table scans, no loading entire datasets into memory)
 - [ ] Hot paths avoid locks or shared mutable state that would serialize concurrent requests
 - [ ] Background/batch work does not starve interactive requests
+
+### 8. Verifying a Fix
+
+- [ ] The fix is measured with the reviewer's exact reproduction input AND with the worst-case shape the finding describes (an input that actually exercises the path in question)
+- [ ] Measured numbers are recorded with the review result, not just "faster"

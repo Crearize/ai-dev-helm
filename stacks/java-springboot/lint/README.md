@@ -57,6 +57,27 @@ Notes verified by execution:
 - `EmptyCatchBlock` and the ast-grep rule `no-empty-catch-java` are deliberately kept in agreement: Checkstyle flags an empty catch that has no comment; the ast-grep rule is stricter (a comment-only body is still empty) and is the enforced rule when a product ships both. Do not re-add `exceptionVariableName` to `EmptyCatchBlock` - naming the variable `ignored` must not wave an empty catch through.
 - The `security` group's `RegexpSinglelineJava` is a second instance of that module (the first, in `correctness`, bans `System.out`/`System.err`); both surface in output as `[RegexpSinglelineJava]`, distinguished by their messages.
 
+### Line-level suppression (#117)
+
+`checkstyle.xml` wires `SuppressWarningsFilter` (directly under `Checker`) and `SuppressWarningsHolder` (first module inside `TreeWalker`) so a declaration can silence one module by name - `@SuppressWarnings("checkstyle:IllegalCatch")` - instead of freezing an entire file via `suppressions-*.xml`. `SuppressWarningsFilter`/`SuppressWarningsHolder` are structural wiring, not a concern group: they never themselves produce a finding (a filter removes findings; a holder only records annotation state), so they are not part of the module-group table above and are excluded from the execution coverage check the same way `Checker`/`TreeWalker` are.
+
+**Operating convention (MUST):**
+
+- Put the annotation on the smallest declaration that contains the catch - a method, a constructor, or a lambda-holding local variable. Never on a class, interface, enum, record, `@interface`, or field: at that scope the annotation covers everything inside it, which quietly revives file-wide suppression through one line.
+- The comment immediately above the annotation must start with `// 境界宣言: <なぜ型を絞れないか>` (why the catch type cannot be narrowed) - a boundary declaration, not a shrug.
+- Never add `IllegalCatch` to a product's `suppressions-*.xml`. File-level suppression and this line-level mechanism are not meant to coexist for the same module.
+
+**What the suppression mechanism will accept (verified against Checkstyle 14.0.0) - and why that is dangerous unchecked:**
+
+1. `@SuppressWarnings("all")` suppresses **every** Checkstyle check on the annotated declaration, not just `IllegalCatch`. Checkstyle compares this blanket value case-sensitively - only the exact lowercase `all` is honored (`"ALL"` / `" all "` do nothing to Checkstyle itself, unlike a module name below, which IS resolved case-insensitively) - but the ast-grep guard flags any case variant of `all` anyway, fail-closed, because the intent is unambiguously blanket suppression regardless of whether Checkstyle happens to act on it.
+2. The `checkstyle:` prefix is optional - a bare check name (case-insensitive, with or without a trailing `Check`) also suppresses that check, so a typo'd or unrelated module name silently goes dark instead of failing loudly. Checkstyle also resolves a **fully-qualified class name** (`"com.puppycrawl.tools.checkstyle.checks.coding.MagicNumberCheck"`, with or without the prefix or the `Check` suffix) by its short name, the same way - a fully spelled-out reference is not a safer form, and that includes a form with an empty package segment (`".MagicNumber"`, `"a..MagicNumber"`), which Checkstyle resolves by the same short-name rule.
+3. The value is honored from a text-block literal (`"""all"""`) exactly as from a normal string literal.
+4. A constant reference or a concatenation (`SOME_CONST`, `"al" + "l"`) is honored as identifier text, not resolved as a value - so grep-based review of "what does this suppress" cannot see it.
+5. Declaring the annotation on a class (or interface/enum/record/`@interface`) scopes it to everything inside, which is file-level suppression back from the dead via one annotation.
+6. Checkstyle's own `SuppressWarnings` check (the one that would normally flag `@SuppressWarnings("all")` as too broad) is itself subject to `SuppressWarningsFilter` - so wiring it in does not close the hole; a declaration that suppresses `all` suppresses the check that would have caught it, too.
+
+**The guard**: detection for points 1-5 above lives outside the Checkstyle suppression mechanism entirely (point 6 is the reason it has to - a check that lives inside the mechanism suppresses itself), in three ast-grep rules under `shared/lint/ast-grep/error-handling/` - `no-blanket-suppress-warnings-java`, `no-type-scope-illegal-catch-suppression-java`, `no-non-literal-suppress-warnings-java` (see that directory's README). Adopt all three at `error` severity in `lint:all` alongside the Checkstyle preset; each is execution-verified the same way this preset is (`lib/lint-assets.test.js`, fixtures under `test/fixtures/ast-grep/<rule-id>/`).
+
 ## Wiring ArchUnit (Gradle)
 
 1. Add the test dependency (JUnit 5 engine is already provided by `spring-boot-starter-test`):
@@ -83,7 +104,8 @@ Layout tolerance is built in: `consideringOnlyDependenciesInLayers()` ignores de
 
 ## How these assets were verified
 
-- Checkstyle (auto-verified): `java -jar checkstyle-14.0.0-all.jar -c checkstyle.xml` over `test/fixtures/checkstyle/` in this repo - `Violation.java` fires every module of every group (correctness, error-handling, security, dead-code, complexity, hardcode), `Ok.java` yields zero findings. `lib/checkstyle-assets.test.js` repeats that run when `CHECKSTYLE_JAR` points at the all-in-one JAR (static XML shape checks, group-label/module mapping, and the ArchUnit template shape checks always run).
+- Checkstyle (auto-verified; last executed 2026-09-03 against Checkstyle 14.0.0 when the suppression wiring landed): `java -jar checkstyle-14.0.0-all.jar -c checkstyle.xml` over `test/fixtures/checkstyle/` in this repo - `Violation.java` fires every module of every group (correctness, error-handling, security, dead-code, complexity, hardcode), `Ok.java` yields zero findings. `lib/checkstyle-assets.test.js` repeats that run when `CHECKSTYLE_JAR` points at the all-in-one JAR (static XML shape checks, group-label/module mapping, and the ArchUnit template shape checks always run).
+- Suppression wiring (#117) is verified by the boundary-declared method in `Ok.java` staying clean: it has a real `IllegalCatch` violation (`catch (RuntimeException e)`) guarded only by `@SuppressWarnings("checkstyle:IllegalCatch")`, so `Ok.java` reaching zero findings under `CHECKSTYLE_JAR` execution is proof the filter/holder pair actually suppresses it, not just that the config parses.
 - ArchUnit (manually verified): the template (with `__BASE_PACKAGE__` instantiated) was compiled and executed via `gradlew test` inside a real Spring Boot 3.2 / Java 21 / jOOQ project with controller, service, repository plus non-layer packages; all three rules evaluated its production classes and passed. **This was a one-time manual run (ArchUnit 1.4.1, JUnit 5, Gradle 8.5), not repeated per test run** - the repo has a no-CI policy, so there is no automated ArchUnit execution. `lib/checkstyle-assets.test.js` guards the template's structure (placeholder, imports, `@ArchTest` count) so edits cannot silently break its shape.
 
 ### ArchUnit cost
@@ -116,14 +138,14 @@ The `1.15.0` here is the **gradle-pitest-plugin** version (the Gradle integratio
 
 2. In the copied `lint/mutation/pitest.gradle`, replace every `__BASE_PACKAGE__` with the product's base package (e.g. `com.example.product`), exactly as for the ArchUnit template. That sets `targetClasses` to the product's production classes.
 
-The snippet sets `junit5PluginVersion` (Spring Boot tests are JUnit 5), `mutators = ['DEFAULTS']` (PIT's own default group of behaviour-changing mutators, pinned so the scope never silently widens to `STRONGER` / `ALL`), `outputFormats = ['XML', 'HTML']`, and `timestampedReports = false`. It deliberately sets **no `mutationThreshold`** or any other gate threshold: score gating is owned by quality-check (below).
+The snippet sets `junit5PluginVersion` (Spring Boot tests are JUnit 5), `mutators = ['DEFAULTS']` (PIT's own default group of behaviour-changing mutators, pinned so the scope never silently widens to `STRONGER` / `ALL`), `outputFormats = ['XML', 'HTML']`, and `timestampedReports = false`. It deliberately sets **no `mutationThreshold`** or any other gate threshold: there is no score gate anywhere - survivor triage is the `test-recommendation` skill's job (below).
 
 ### Entry points
 
 `pitest.gradle` registers both entry points itself. Gradle task names cannot contain `:` (it is the project-path separator), hence these names rather than the JS-side `mutation:full` / `mutation:diff` script names:
 
 - `gradle mutationFull` - the full-scope run (`gradle pitest` over everything under `targetClasses`, `__BASE_PACKAGE__.*`).
-- `gradle mutationDiff -PmutationDiffBase=origin/main` - the diff-scoped run quality-check Step 3.5 uses. The snippet lists the production sources changed in the **working tree** against the merge base of the base ref (uncommitted edits count), maps each to two `targetClasses` entries - the FQCN and `FQCN$*` for inner/nested classes (a bare `FQCN*` would also swallow unchanged sibling classes like `OrderServiceImpl`) - and narrows the run to them. PIT mutates whole classes - line-level scoping is not available - so this is the smallest scope PIT supports. Paths are resolved relative to the project the snippet is applied to, which also works for one module of a multi-module build.
+- `gradle mutationDiff -PmutationDiffBase=origin/main` - the diff-scoped run the `test-recommendation` skill (quality-check Step 5, propose-then-decide) uses. The snippet lists the production sources changed in the **working tree** against the merge base of the base ref (uncommitted edits count), maps each to two `targetClasses` entries - the FQCN and `FQCN$*` for inner/nested classes (a bare `FQCN*` would also swallow unchanged sibling classes like `OrderServiceImpl`) - and narrows the run to them. PIT mutates whole classes - line-level scoping is not available - so this is the smallest scope PIT supports. Paths are resolved relative to the project the snippet is applied to, which also works for one module of a multi-module build.
 
 Guard rails on the diff run:
 
@@ -138,8 +160,8 @@ Products that keep a persisted PIT history (`historyInputLocation` / `historyOut
 
 ### Maven products
 
-For a Maven build, use the `pitest-maven` plugin instead of this Gradle snippet: configure the `org.pitest:pitest-maven` plugin with the same intent - `targetClasses` set to the product base package, `mutators` at `DEFAULTS`, JUnit 5 support via `pitest-junit5-plugin`, XML + HTML `outputFormats`, and no `mutationThreshold`. For the diff scope, derive `targetClasses` from the changed sources the same way (a small script or profile passing `-DtargetClasses=...`). The scaffolding is Maven-specific but the score gating and thresholds are identical.
+For a Maven build, use the `pitest-maven` plugin instead of this Gradle snippet: configure the `org.pitest:pitest-maven` plugin with the same intent - `targetClasses` set to the product base package, `mutators` at `DEFAULTS`, JUnit 5 support via `pitest-junit5-plugin`, XML + HTML `outputFormats`, and no `mutationThreshold`. For the diff scope, derive `targetClasses` from the changed sources the same way (a small script or profile passing `-DtargetClasses=...`). The scaffolding is Maven-specific but the reading of the report - by the `test-recommendation` skill, with no score gate - is identical.
 
 ### How the score is gated
 
-quality-check reads the **XML** report PIT writes (`build/reports/pitest/mutations.xml`), lists the survivors, triages them (gate mode) and compares the adjusted score against the risk-based thresholds and time budget defined in quality-policy section 2 - the single source for those numbers. This snippet never hardcodes them, and neither should the product's build files (overrides go through the harness settings contract described in that section, not here). Mutation runs are **local-only**; there is no CI job in this repo that runs PIT.
+The `test-recommendation` skill (quality-check Step 5, propose-then-decide) reads the **XML** report PIT writes (`build/reports/pitest/mutations.xml`), lists the survivors, triages them with the user and presents the raw score as reference information - there is no pass/fail score. The run's time budget is defined in quality-policy section 2 - the single source for that number. This snippet never hardcodes it, and neither should the product's build files (overrides go through the harness settings contract described in that section, not here). Mutation runs are **local-only**; there is no CI job in this repo that runs PIT.

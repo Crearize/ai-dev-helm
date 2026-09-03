@@ -91,15 +91,15 @@ git diff origin/main...HEAD
 - リスクレベル: high / medium / low（`risk_level`）
 - 静的チェック AI 修正パス: N回（打ち切り事由: なし / oscillation）（`lint_cycles` / `lint_abort_reason`）
 - テスト設計メモ: verified / retroactive / out_of_scope / not_required（メモ: [パス] または なし）（`test_design.status` / `test_design.memo_path`）
-- ミューテーションテスト: モード gate / advisory、実行 N回、調整後スコア N%（生 N% / 閾値 N%）、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n）／ 未実行（理由: not_configured / low_risk / out_of_scope / mode_off / empty_scope / scope_error）（`mutation`）
+- ミューテーションテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、ユーザー判断 executed / declined / not_proposed（`mutation.recommendation` / `mutation.user_decision`）。`declined` の場合は見送り理由（`mutation.decline_reason`）を明記する。実施した場合はスコア N%（生スコア、参考情報）、実行 N回、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n / tool_false_negative n）（`mutation.score_raw` / `mutation.runs` / `mutation.survivors`）。判定・実行そのものが不能だった場合は理由（`mutation.reason`: not_configured / out_of_scope / empty_scope / scope_error / tool_error）
 - 品質チェックサイクル数: N回（N回目で高/中指摘ゼロ達成 / 打ち切り事由: なし / cycle_limit / stagnation / 追加サイクル: N回）（`total_cycles` / `cycle_abort_reason` / `cycle_extensions`）
-- E2Eテスト: 全件パス / N件失敗 / 対象外
+- E2Eテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、ユーザー判断 executed / declined / added_only / not_proposed（`e2e.recommendation` / `e2e.user_decision`）。`declined` の場合は見送り理由（`e2e.decline_reason`）を明記する。結果: pass / fail / skipped、検出した問題（`e2e.result` / `e2e.issues`）。新規シナリオがある場合は `e2e.new_scenarios` の各件（シナリオ名と判断: added_and_run / added_only / declined）を明記する
 - ドキュメント更新: updated / not_required（`documentation.status`、updated の場合は対象ファイル）
 - self-improvement: applied / skipped / not_required（`self_improvement.status`）
 
 ### ゲート上書き・承認
 - ゲートパラメータ上書き: なし / [キー: 値]（理由: [理由]）（`gate_parameter_overrides`）
-- 打ち切り承認: なし / [対象工程]（理由: [ユーザーの判断根拠]）（`gate_override`）
+- 打ち切り承認: なし / [打ち切り事由（`gate_override.abort_reasons`: cycle_limit / stagnation）]（理由: [ユーザーの判断根拠]）
 - リスクレベル引き下げ: なし / [メモ自己判定 → 採用レベル]（理由: [根拠]）（`risk_level_downgrade`）
 
 ### レビュー指摘への対応

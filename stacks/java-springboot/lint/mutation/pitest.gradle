@@ -46,15 +46,15 @@ pitest {
     // for the mutation score; HTML is for human inspection during local runs.
     outputFormats = ['XML', 'HTML']
 
-    // Stable report path (no per-run timestamp folder) so quality-check can find
-    // the latest XML at a fixed location.
+    // Stable report path (no per-run timestamp folder) so the report reader
+    // can find the latest XML at a fixed location.
     timestampedReports = false
 
     // Intentionally NOT setting mutationThreshold or any gate threshold here.
-    // Score and threshold gating is owned by quality-check, which reads the XML
-    // report and compares it against the risk-based thresholds in
-    // quality-policy.md section 2 (the single source). Numbers must never be
-    // hardcoded in this build snippet.
+    // There is no score gate: the test-recommendation skill (quality-check
+    // Step 5) reads the XML report, presents the score as reference
+    // information and triages survivors with the user (quality-policy.md
+    // section 2). Numbers must never be hardcoded in this build snippet.
 }
 
 // --- diff scope (applies ONLY when the mutationDiff task was requested) ------
