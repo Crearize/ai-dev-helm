@@ -121,6 +121,7 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）に�
 | `survivors` | `Survivor[]` | 任意 | 生存したミュータントの台帳（quality-policy.md §2）。生存がなければ空配列。`executed` が `true` の場合は必須 |
 | `scope_reduced` | `boolean` | 任意 | 実行時間バジェット（quality-policy.md §2「ミューテーションテストの実行時間バジェット」の既定値。`gate_parameter_overrides` の `mutation_budget_minutes` で上書き可 — 下記「上書きの契約」注記を参照）超過により、リスクの高いファイル優先で対象を絞ったか。`executed` が `true` の場合は必須 |
 | `aborted_reason` | `"unmeasurable_within_budget" \| null` | 任意 | 縮退再試行後も実行時間バジェット内で完走できなかった場合の正規 outcome（quality-policy.md §2「ミューテーションテストの実行時間バジェット」。非ブロック。途中結果を記録）。完走した場合は `null`。`executed` が `true` の場合は必須 |
+| `incremental` | `boolean` | 任意 | **最後の実行**が前回のキャッシュを再利用した計測か（Stryker: `MUTATION_INCREMENTAL=1` で実行し stderr に `[mutation:diff] incremental: reusing the diff cache` が出た場合 `true`。`starting the diff cache` やフラグなしの実行は `false`。PIT: `historyInputLocation` を用いた場合 `true`）。キャッシュ再利用は計測を弱め得るスイッチであり環境変数のため差分に残らないので、`score_raw` の解釈に必要な事実としてここに残す。`executed` が `true` の場合は必須 |
 
 **未実行時の表現はキーの省略に一本化し、`null` は置かない**（`reason` / `aborted_reason` の `null` は「該当なし」を表す別の意味である）。mutation は判定自体が行われないケース（`out_of_scope` / `not_configured`）があるためキー省略で最小化する。e2e は判定が常に走るため全キーを常在させ `null` を用いる（意図的な非対称）。
 

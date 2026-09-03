@@ -14,9 +14,13 @@
 //
 // Behavior notes (see changed-ranges.mjs for the mechanics):
 // - Empty scope (docs-only or test-only diffs, or changes only in excluded
-//   paths): the stale json report is removed, "[mutation:diff] empty scope"
-//   is printed and the process exits 0 before Stryker starts; quality-check
-//   records `mutation.reason: "empty_scope"`.
+//   paths): the stale json report and the diff cache are removed,
+//   "[mutation:diff] empty scope" is printed and the process exits 0 before
+//   Stryker starts; quality-check records `mutation.reason: "empty_scope"`.
+//   If a leftover could NOT be removed the process exits 1 instead
+//   (scope_error) - a stale report must never pass as this run's result.
+// - A root-level path starting with "!" cannot be expressed (Stryker would
+//   read the entry as a negation): the run fails loudly (scope_error).
 // - A failed scope derivation (base ref not fetched, git failure) throws
 //   loudly; quality-check records `mutation.reason: "scope_error"`. It is
 //   never converted into a silent empty scope.

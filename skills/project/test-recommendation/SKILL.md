@@ -145,7 +145,7 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 
 同一ブランチ内での再実行（撃殺テスト追加後の再計測）では **Stryker の incremental を許可する**。
 
-初回計測は既定（キャッシュなし）で行い、撃殺テスト追加後の再計測を `MUTATION_INCREMENTAL=1`（Windows は `cross-env` / `$env:`。配線の詳細は stack README「Re-measurement」を正とする）で実行する。差分実行スクリプトは差分専用のキャッシュを使い、スコープが前回の上位集合でない場合と merge-base が変わった場合にキャッシュを自動破棄する（レポートに差分外のミュータントが混入しない）。
+初回計測は `MUTATION_INCREMENTAL` を**明示的に外して**（キャッシュなしで）行い、撃殺テスト追加後の再計測を `MUTATION_INCREMENTAL=1`（Windows は `cross-env` / `$env:`。受理値・キャッシュの仕組み・その限界は stack README「Re-measurement」を正とする）で実行する。実行時に stderr へ出る `[mutation:diff] incremental:` 行（`reusing` / `starting`）を確認し、キャッシュを再利用した計測かどうかを `mutation.incremental` に記録する（スキーマ参照）。キャッシュの再利用判定は行番号ベースであり、同一ファイルの大きな編集ではキャッシュ由来のミュータントが変更行の外に現れうる（README が明記する残存制限）。**変更行以外の行に生存が報告された場合は、フラグを外して 1 回だけ再実行して確認する** — この確認実行は `mutation.runs` に数え、上限（「実行回数の上限」）を超える場合はユーザーの明示承認を得る。
 
 ### 実行回数の上限
 
@@ -175,7 +175,7 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 | 状況 | 挙動 |
 |---|---|
 | 差分スコープが空（`mutation:diff` / `mutationDiff` が**終了コード 0 + `empty scope` メッセージ**で終了。実行して初めてミュータント数 0（全て除外種別等）と判明した場合も同様。実行単位が複数に分かれる構成（PIT をモジュールごとに適用したマルチモジュール等）では各単位が自分の行を出すため、**どの単位もミュータントを 1 つも生成しなかった**（`empty scope` 行、またはスコープはあるがミュータント数 0 で完走）ときだけ空スコープとする — 1 単位の行で全体を判定しない。本行が空スコープ判定の正であり、スタック README は観測される出力の説明として参照する） | 実行しない（または実行結果を破棄する）。`reason: "empty_scope"` を記録してユーザーに提示する |
-| 差分スコープの導出に失敗（ベース ref 未取得等で**非 0 終了**。`cannot resolve the merge base` 等） | **`empty_scope` として記録してはならない。** `reason: "scope_error"` を記録し、解消手順（`git fetch origin main`、`MUTATION_BASE_REF` の設定等）を提示する。**非ブロック** — ユーザーが再試行を選べる |
+| 差分スコープの導出に失敗（ベース ref 未取得・ローカル基幹が HEAD と同一・スコープとして表現できないパス（Stryker の否定パターンと衝突する `!` 始まりのルート直下パス）・前回の残骸を削除できない、等で**非 0 終了**。`cannot resolve the merge base` / `no base ref found` / `cannot scope` 等） | **`empty_scope` として記録してはならない。** `reason: "scope_error"` を記録し、エラーメッセージが示す解消手順（`git fetch origin main`、`MUTATION_BASE_REF` の設定、ファイルの改名または mutate グロブからの除外、残骸の手動削除 等）を提示する。**非ブロック** — ユーザーが再試行を選べる |
 | ツールの起動失敗 | `reason: "tool_error"` を記録し（**非ブロック**）、解消手順を提示する。ユーザーが再試行を選べる |
 
 ミューテーションテストは**ローカルで実行し、CI には組み込まない**（quality-policy §2「ミューテーションテストの実行ポリシー」）。ミュータント単位のタイムアウトは Stryker / PIT の組み込み機構をそのまま使う。
@@ -267,7 +267,7 @@ test-recommendation スキル（quality-check Step 5）が管理する永続台�
 
 | オブジェクト | 内容 |
 |---|---|
-| `mutation` | `recommendation`（`strong` / `recommended` / `none`）/ `recommendation_basis`（該当ヒューリスティクス項目。判定不能の事実を含む）/ `user_decision`（`executed` / `declined` / `not_proposed`）/ `decline_reason`。実行時は `scope` / `base_ref` / `mutants_total` / `score_raw` / `survivors` 等の実行時フィールドを併せて記録する（実行モード・スコア基準等の旧キーは廃止 — 記録しない） |
+| `mutation` | `recommendation`（`strong` / `recommended` / `none`）/ `recommendation_basis`（該当ヒューリスティクス項目。判定不能の事実を含む）/ `user_decision`（`executed` / `declined` / `not_proposed`）/ `decline_reason`。実行時は `scope` / `base_ref` / `mutants_total` / `score_raw` / `survivors` / `incremental`（最後の実行がキャッシュを再利用したか）等の実行時フィールドを併せて記録する（実行モード・スコア基準等の旧キーは廃止 — 記録しない） |
 | `e2e` | `recommendation` / `recommendation_basis` / `user_decision` / `result` / `issues` / `new_scenarios`（起草したシナリオと 3 択の判断）。旧トップレベルの `e2e_result` / `e2e_issues` を置き換える |
 
 - 推奨度 `none` の対象も判定結果を記録する（`recommendation` / `recommendation_basis`、`user_decision: "not_proposed"`）
