@@ -22,9 +22,12 @@
 //   never converted into a silent empty scope.
 // - Files whose paths contain glob-magic characters (Next.js [id] segments)
 //   fall back to whole-file scope; all other files are scoped per line.
-// - The diff run disables `incremental`: the cache belongs to mutation:full,
-//   and sharing it would merge stale out-of-scope mutants into this run's
-//   report.
+// - `incremental` stays off by default and never touches the full run's
+//   cache (`incrementalFile` always names the diff-only cache).
+//   MUTATION_INCREMENTAL=1 opts in for re-measurement; the cache is reused
+//   only while the scope still covers the previous run against the same
+//   merge base and is discarded first otherwise - Stryker would keep the
+//   stale out-of-scope mutants in this run's report.
 //
 // A product that extends the base config (jest runner, a re-enabled mutator)
 // keeps this file untouched and wraps its own config the same way:

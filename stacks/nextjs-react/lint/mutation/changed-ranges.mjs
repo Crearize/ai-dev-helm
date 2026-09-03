@@ -42,6 +42,13 @@
 //   range form and the literal-glob form would silently drop the file from
 //   the scope (fail-open). Such a path fails the run loudly instead. A "!"
 //   deeper in the path is literal and keeps its range.
+// - Incremental is OFF by default and never shares the full run's cache.
+//   MUTATION_INCREMENTAL=1 opts in for re-measurement with a diff-only cache
+//   (DIFF_INCREMENTAL_FILE). Stryker keeps every mutant of a cache in the
+//   report - even one whose line is no longer inside `mutate` - so the cache
+//   is read only while the current scope still covers every line the cached
+//   run scoped, against the same merge base (recorded in DIFF_SCOPE_FILE);
+//   otherwise it is discarded first.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -54,6 +61,18 @@ import { Minimatch } from 'minimatch';
 // which WIDENS the scope - it can never narrow it, so the fallback stays on
 // the safe side of the gate.
 export const DEFAULT_BASE_REFS = ['origin/main', 'origin/master', 'main', 'master'];
+
+// The diff run's own incremental cache and the sidecar recording the scope
+// (base ref, merge base, mutate entries) that produced it. Both sit next to
+// the full run's cache under reports/mutation/ (gitignored by `init`).
+export const DIFF_INCREMENTAL_FILE = 'reports/mutation/stryker-incremental.diff.json';
+export const DIFF_SCOPE_FILE = 'reports/mutation/stryker-incremental.diff.scope.json';
+
+// MUTATION_INCREMENTAL: only "1" and "true" opt in. Anything else (unset,
+// "", "0", "false") keeps incremental off - the safe default.
+export function incrementalRequested(value) {
+  return value === '1' || value === 'true';
+}
 
 // git emits every added line of every changed file before our glob filter
 // runs; Node's default 1 MiB maxBuffer would crash on lockfile-sized diffs.
@@ -206,7 +225,14 @@ export function parseUnifiedDiff(text) {
 // Paths are relative to `cwd` (`--relative`), which must be the directory
 // Stryker runs from. A failed derivation throws with a fetch hint - loud, so
 // quality-check records `scope_error` - and is never a silent empty scope.
-export function changedLineRanges({ cwd = process.cwd(), baseRef, mutate = [] } = {}) {
+export function changedLineRanges(options) {
+  return deriveScope(options).entries;
+}
+
+// The scope with its provenance: `{ baseRef, mergeBase, entries }`. The merge
+// base is what the incremental sidecar pins - a rebased branch or a moved
+// base ref changes the lines under every entry.
+export function deriveScope({ cwd = process.cwd(), baseRef, mutate = [] } = {}) {
   const ref = assertSafeRef(baseRef ?? resolveBaseRef({ cwd }));
   let mergeBase;
   try {
@@ -258,7 +284,48 @@ export function changedLineRanges({ cwd = process.cwd(), baseRef, mutate = [] } 
     }
     entries.push(`${range.file}:${range.start}-${range.end}`);
   }
-  return entries;
+  return { baseRef: ref, mergeBase, entries };
+}
+
+// Mutate entries -> Map<file, Set<line> | null>, null meaning the whole file
+// (a glob-magic path). The range is split off at the LAST ":" and must be
+// `start-end`; anything else is a whole-file entry. A whole-file entry
+// absorbs any range entries of the same file.
+export function parseScope(entries) {
+  const files = new Map();
+  for (const entry of entries) {
+    const match = /^(.+):(\d+)-(\d+)$/.exec(entry);
+    if (!match) {
+      files.set(entry, null);
+      continue;
+    }
+    const [, file, start, end] = match;
+    const lines = files.get(file);
+    if (lines === null) continue;
+    const set = lines ?? new Set();
+    for (let line = Number(start); line <= Number(end); line++) set.add(line);
+    files.set(file, set);
+  }
+  return files;
+}
+
+// True when every line the `previous` scope covered is still inside
+// `current`: per file, a whole-file entry covers everything, a set of ranges
+// covers only its lines and never a whole-file entry. This is the reuse
+// guard for the diff cache. It compares line NUMBERS; Stryker itself
+// relocates cached mutants by matching source content, so a heavily edited
+// file can in theory carry a cached mutant to a line outside the numeric
+// scope - a residual, documented limitation, not a proof of containment.
+export function scopeCovers(current, previous) {
+  const cur = parseScope(current);
+  for (const [file, lines] of parseScope(previous)) {
+    if (!cur.has(file)) return false;
+    const curLines = cur.get(file);
+    if (curLines === null) continue;
+    if (lines === null) return false;
+    for (const line of lines) if (!curLines.has(line)) return false;
+  }
+  return true;
 }
 
 // Best-effort removal: a locked file must not turn a clean-up into a crash.
@@ -279,13 +346,67 @@ function removeStaleReport(baseConfig, cwd) {
   rmBestEffort(path.resolve(cwd, fileName));
 }
 
+function resetDiffCache(cwd) {
+  rmBestEffort(path.resolve(cwd, DIFF_INCREMENTAL_FILE));
+  rmBestEffort(path.resolve(cwd, DIFF_SCOPE_FILE));
+}
+
+function readScopeSidecar(absPath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(absPath, 'utf8'));
+    return parsed && typeof parsed === 'object' && Array.isArray(parsed.mutate) ? parsed : null;
+  } catch {
+    // missing or unreadable sidecar: the cache has no known provenance
+    return null;
+  }
+}
+
+// Decides whether this run may READ the diff cache, and records the current
+// scope for the next run. Reuse needs a sidecar naming the same merge base
+// whose scope the current one still covers (see scopeCovers); anything else
+// - no sidecar, another merge base, a shrunk or moved scope - discards the
+// cache first, because Stryker would keep the stale mutants in the report
+// quality-check triages. The decision is reported on stderr with the same
+// synchronous write as the scope line.
+function prepareDiffIncremental(cwd, scope) {
+  const cachePath = path.resolve(cwd, DIFF_INCREMENTAL_FILE);
+  const sidecarPath = path.resolve(cwd, DIFF_SCOPE_FILE);
+  const previous = fs.existsSync(cachePath) ? readScopeSidecar(sidecarPath) : null;
+  const reusable =
+    previous !== null &&
+    previous.mergeBase === scope.mergeBase &&
+    scopeCovers(scope.entries, previous.mutate);
+  if (reusable) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] incremental: reusing the diff cache (${DIFF_INCREMENTAL_FILE}) - the scope still covers the previous run\n`
+    );
+  } else {
+    resetDiffCache(cwd);
+    fs.writeSync(2, `[mutation:diff] incremental: starting the diff cache (${DIFF_INCREMENTAL_FILE})\n`);
+  }
+  fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
+  fs.writeFileSync(
+    sidecarPath,
+    `${JSON.stringify({ baseRef: scope.baseRef, mergeBase: scope.mergeBase, mutate: scope.entries }, null, 2)}\n`
+  );
+}
+
 // Returns `baseConfig` with `mutate` narrowed to the changed lines. On an
 // empty scope the run must not reach Stryker (it would abort with "No tests
-// were executed"): the stale report is removed, the empty scope is reported
-// on stderr via fs.writeSync (synchronous - console.warn through a pipe could
-// be truncated by process.exit) and the process exits 0; quality-check
-// records `mutation.reason: "empty_scope"` for that case.
-export function withChangedLines(baseConfig, { cwd = process.cwd(), baseRef } = {}) {
+// were executed"): the stale report and the diff cache are removed, the
+// empty scope is reported on stderr via fs.writeSync (synchronous -
+// console.warn through a pipe could be truncated by process.exit) and the
+// process exits 0; quality-check records `mutation.reason: "empty_scope"`
+// for that case.
+//
+// `incremental` (default: MUTATION_INCREMENTAL, see incrementalRequested)
+// opts the run into the diff-only cache; `incrementalFile` always names that
+// cache so the full run's cache is never read or written from here.
+export function withChangedLines(
+  baseConfig,
+  { cwd = process.cwd(), baseRef, incremental = incrementalRequested(process.env.MUTATION_INCREMENTAL) } = {}
+) {
   if (!Array.isArray(baseConfig.mutate) || baseConfig.mutate.length === 0) {
     throw new Error(
       '[mutation:diff] the base config must define explicit `mutate` globs - ' +
@@ -293,24 +414,22 @@ export function withChangedLines(baseConfig, { cwd = process.cwd(), baseRef } = 
     );
   }
   const ref = assertSafeRef(baseRef ?? resolveBaseRef({ cwd }));
-  const mutate = changedLineRanges({ cwd, baseRef: ref, mutate: baseConfig.mutate });
-  if (mutate.length === 0) {
+  const scope = deriveScope({ cwd, baseRef: ref, mutate: baseConfig.mutate });
+  if (scope.entries.length === 0) {
     removeStaleReport(baseConfig, cwd);
+    resetDiffCache(cwd);
     fs.writeSync(
       2,
       `[mutation:diff] empty scope: no changed lines inside the mutate set since ${ref} - nothing to mutate\n`
     );
     process.exit(0);
   }
-  fs.writeSync(2, `[mutation:diff] base ${ref}: ${mutate.length} changed range(s) in scope\n`);
+  fs.writeSync(2, `[mutation:diff] base ${ref}: ${scope.entries.length} changed range(s) in scope\n`);
+  if (incremental) prepareDiffIncremental(cwd, scope);
   return {
     ...baseConfig,
-    mutate,
-    // The incremental cache is full-run state. Reading it would merge stale
-    // out-of-scope mutants into this run's report (the exact report
-    // quality-check triages), and writing back would clobber the full-run
-    // cache - so the diff run opts out entirely. The scope is small; fully
-    // re-running it on each correction loop is cheap.
-    incremental: false,
+    mutate: scope.entries,
+    incremental: Boolean(incremental),
+    incrementalFile: DIFF_INCREMENTAL_FILE,
   };
 }
