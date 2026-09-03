@@ -40,6 +40,8 @@ Files are merged with closer paths overriding earlier ones (combined size limit:
 
 ## How Hooks Work
 
+**Threat model**: the hook only stops accidental, good-faith pushes/merges into main — development always starts from an Issue + branch, and a push/merge that lands on main can still be reverted, so the hook is a safety-net block, not a security boundary. Deliberate evasion (shell expansion/quoting/encoding tricks that hide a word, wrapper scripts, indirect execution) is out of scope by design and only enumerated in the hook's own header.
+
 `.codex/hooks.json` registers events under a top-level `hooks` key (Codex's schema, not a bare event key at the top level — see [#112](https://github.com/Crearize/ai-dev-helm/issues/112)):
 
 ```json

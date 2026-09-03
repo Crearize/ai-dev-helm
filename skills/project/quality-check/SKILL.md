@@ -15,6 +15,8 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 
 ### hook の完全な契約（無条件ブロック・通過条件・fail-open・worktree）
 
+**脅威モデル**: この hook が防ぐのは、善意の操作がうっかり main に到達することだけである。開発は必ず Issue → ブランチを切ってから始まる設計であり、main への push / マージが起きても最悪はリバートで戻せるため、hook は保険のブロックにすぎない。意図的な迂回（シェルの展開・クォート・エンコードで語を隠す形、ラッパ経由、間接実行等）は対象外とし、hook 本体（`templates/hooks/quality-gate.cjs`）のヘッダに「見通せない形」として列挙するに留める — 実害が出た時点で個別に対応する。
+
 **対象**: `gh pr merge`、`gh api ...pulls/<n>/merge`、main / master 上の `git merge` / `git pull` / `git rebase`、宛先が `main` / `master` に完全一致する `git push`、および main / master 上で refspec を省略または `HEAD` / `@`（大小無視）のみを指定した `git push`。feature ブランチへの push はこれらの形に一致しない限りゲート対象外。`git merge` / `git pull` / `git rebase` の `--abort` / `--continue` / `--quit` / `--skip` はゲート対象外（進行中の操作の中断・再開であり新規の同期・merge ではないため）。
 
 **無条件ブロック**（フラグの有無・ブランチを問わず、以下のいずれかに該当すれば必ずブロックする）:
@@ -22,7 +24,7 @@ description: マージ前に必ず実行。静的チェック・テスト・レ�
 - force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`、`--branches`
 - ゲート対象と同一行にある別の git 操作。この判定対象は**閉じた集合**である: HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `revert` / `am` / `bisect` / `update-ref` / `stash pop` / `stash apply`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定し、`fetch` および `branch -f` / `-d` / `-D` / `--force` は**同一行**で判定する。それ以外の git 操作（`status` / `add` / `log` / `diff` / `tag` / `remote` 等）は同居してもブロックしない
 - `-C` / `--git-dir` / `--work-tree` / `--namespace` / `-c` / `--config-env` / `GIT_*=` 代入 / 同一行の `cd` / `pushd`
-- 行内のシェル展開文字（`$` `` ` `` `{` `%`。`$'…'` / `$"…"` の ANSI-C / ロケールクォートも展開扱い）。**行内の全語**が対象で、`gh` の自由テキスト値オプション（`-t` / `--subject`、`-b` / `--body`、`-F` / `--body-file` の3組6形）のみ例外。この項目に限り、規則1の候補が無い行でも、次のいずれかの語に展開文字があれば無条件 block する: セグメントのコマンド語（先頭語。`git` / `gh` 以外でも）、`git` / `gh` 呼び出しのサブコマンド語（グローバルオプションを飛ばした最初の非オプション語）、`gh api` 呼び出しの任意の引数語（`gi{t..t} push` / `git pus{h..h}` / `git $(echo push)` を塞ぐ。`$HOME/bin/tool` のようなコマンド語の展開も block される — 意図的な過検出）。それ以外の位置の展開文字は従来どおり候補がある行でのみ block する
+- 規則1の候補がある行に限り、行内のシェル展開文字（`$` `` ` `` `{` `}` `%`。`$'…'` / `$"…"` の ANSI-C / ロケールクォートも展開扱い）を無条件 block する。**行内の全語**が対象で、`gh` の自由テキスト値オプション（`-t` / `--subject`、`-b` / `--body`、`-F` / `--body-file` の3組6形）のみ例外。候補が無い行の展開文字は block しない（脅威モデル外の迂回として hook ヘッダの「見通せない形」に列挙する）
 - 複数のゲート対象操作の同居
 - `<x>:main` 形の refspec（`<x>` が現在のブランチ名 / `HEAD` / `@`（大小無視）のいずれでもない逆形）
 
