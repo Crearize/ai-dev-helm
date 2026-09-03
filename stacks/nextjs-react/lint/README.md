@@ -121,7 +121,7 @@ The base ref defaults to `origin/main` (then `origin/master`) and must be fetche
 
 **Empty scope**: when no changed line falls inside the mutate set, `mutation:diff` deletes a stale `reports/mutation/mutation.json` from a previous run, prints `[mutation:diff] empty scope ...` and exits 0 without starting Stryker (Stryker itself would otherwise abort with "No tests were executed"). quality-check records `mutation.reason: "empty_scope"` for that case.
 
-Both configs stay in `lint/mutation/` and are addressed by path - nothing needs to move to the product root. Stryker resolves the `mutate` globs and ranges against the working directory, so run the scripts from the directory the globs are written for (the product root for the shipped globs). Add `reports/` and `.stryker-tmp/` to the product `.gitignore` (`ai-dev-helm init` registers `reports/mutation/` and `.stryker-tmp/` automatically) - a committed `stryker-incremental.json` would share stale mutant state between developers.
+Both configs stay in `lint/mutation/` and are addressed by path - nothing needs to move to the product root. Stryker resolves the `mutate` globs and ranges against the working directory, so run the scripts from the directory the globs are written for (the product root for the shipped globs). Add `reports/` and `.stryker-tmp/` to the product `.gitignore` (`ai-dev-helm init` registers `**/reports/mutation/` and `.stryker-tmp/` automatically - the `**/` prefix also covers workspace packages that run Stryker from their own directory) - a committed `stryker-incremental.json` would share stale mutant state between developers.
 
 ### Product-specific tuning (jest runner, re-enabling a mutator)
 
