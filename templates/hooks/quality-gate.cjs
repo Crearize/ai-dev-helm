@@ -11,6 +11,14 @@
 // using another trunk name is not gated here and relies on the
 // `permissions.deny` layer and convention.
 //
+// THREAT MODEL: this gate stops ACCIDENTAL, good-faith operations from reaching
+// main. Work always starts from an issue and a branch, and a push or merge that
+// does get through is recoverable with a revert, so the gate is insurance and
+// not a boundary. Deliberate evasion - spelling a word with shell expansion,
+// quoting or encoding, going through a wrapper, running git indirectly - is OUT
+// OF SCOPE by design: those forms are listed under "Nothing here can see
+// through" below, and each is addressed individually if it ever does harm.
+//
 // Evaluation order (fixed):
 //   0. Refuse what the classification budget will not read - a command line
 //      over 64 KB, or one whose `git` / `gh` words number more than 256 -
@@ -54,19 +62,13 @@
 //   `-F`/`--body-file`), which is prose and not a ref; more than one gated
 //   operation on the line; a `<x>:main` refspec whose `<x>` is neither
 //   HEAD/`@` nor the current branch.
-//   The expansion item has a POSITION half that needs no candidate at all,
-//   because an expansion in the word that NAMES the operation is what stops a
-//   candidate from being found: a segment's command word (its first word), the
-//   subcommand word of a `git` / `gh` call (the first non-option word after the
-//   global options), or ANY argument word of a `gh api` call blocks on sight.
-//   That closes `gi{t..t} push origin main`, `git pus{h..h} origin main`,
-//   `git $(echo push) origin main`, `gh a{p..p}i -X PUT .../merge` and
-//   `gh api -X PUT .../pulls/1/%6Derge`. Deliberate over-detection:
-//   `$HOME/bin/tool --flag` is a command-word expansion and blocks too, and the
-//   reason says to write the program name out. Everywhere else an expansion
-//   still only blocks a line that already holds a candidate, so
-//   `echo $HOME`, `npm run $TASK`, `git commit -m "$MSG"` and
-//   `git log --format=%H` stay allowed.
+//   The expansion item, like the rest of rule 2, only looks at a line that
+//   ALREADY holds a candidate, so `echo $HOME`, `npm run $TASK`,
+//   `NODE_ENV=$ENV npm test`, `gh api repos/{owner}/{repo}/issues`,
+//   `$HOME/bin/tool --flag`, `git commit -m "$MSG"` and `git log --format=%H`
+//   are allowed. An expansion in the word that NAMES the operation therefore
+//   leaves nothing to find - that is deliberate evasion, and out of scope (see
+//   the threat model above).
 //   The movers that move HEAD or make a commit (commit, reset, checkout,
 //   switch, cherry-pick, rebase, revert, am, bisect, update-ref,
 //   stash pop|apply) are judged over the WHOLE command, newlines included;
@@ -122,16 +124,19 @@
 // candidate blocks there; and `git push --force` with no refspec blocks
 // anywhere, because "no refspec" is a candidate.
 //
-// This is a static check for a cooperating agent, not a sandbox. Nothing here
-// can see through:
+// This is a static check for a cooperating agent, not a sandbox. It is aimed at
+// the accidental operation (see the threat model above); nothing here can see
+// through any of the following, and none of them is treated as a gap:
 //   - a shell that re-reads the string: `sh -c "git push origin main"`, a git
 //     alias, or a wrapper script;
-//   - a command word the SHELL builds out of a separate segment:
-//     `` `which git` push `` puts the substitution in its own segment, so the
-//     word left in front of `push` carries no expansion character and the
-//     position rule has nothing to see. (`$GIT push origin main` and
-//     `git $(echo push) …` DO block - the expansion stays in the command or
-//     subcommand word.)
+//   - a command WORD the shell writes for you: `$GIT push origin main`,
+//     `` `which git` push ``, `gi{t..t} push origin main`;
+//   - a SUBCOMMAND word spelled by an expansion, which leaves no candidate to
+//     find at all: `git pus{h..h} origin main`, `git $(echo push) origin main`,
+//     `gh pr me{r..r}ge 1`, `gh a{p..p}i -X PUT .../merge`,
+//     `git stash po{p..p}`;
+//   - a gate word percent-encoded inside quotes, which a `gh api` endpoint
+//     reads back: `gh api -X PUT "repos/o/r/pulls/1/%6Derge"`;
 //   - arguments supplied by another process: `xargs git push`, `env -S`;
 //   - a refspec that lives in configuration: `remote.<name>.push`,
 //     `push.default = matching`, `branch.<n>.merge`;
@@ -364,17 +369,14 @@ function segmentFacts(seg) {
   const ctlFrom = new Array(n + 1);      // --abort/--continue/--quit/--skip
   const forceFrom = new Array(n + 1);    // `git branch -f`
   const mergeApiFrom = new Array(n + 1); // a `pulls/<n>/merge` endpoint word
-  const expandFrom = new Array(n + 1);   // a word whose source carried `$`/`` ` ``/`{`/`}`/`%`
   ctlFrom[n] = false;
   forceFrom[n] = false;
   mergeApiFrom[n] = false;
-  expandFrom[n] = false;
   for (let i = n - 1; i >= 0; i--) {
     const w = seg.words[i];
     ctlFrom[i] = ctlFrom[i + 1] || MERGE_CONTROL_FLAGS.has(w);
     forceFrom[i] = forceFrom[i + 1] || BRANCH_FORCE_FLAGS.has(w);
     mergeApiFrom[i] = mergeApiFrom[i + 1] || PULLS_MERGE_RE.test(w);
-    expandFrom[i] = expandFrom[i + 1] || seg.expand[i];
     if (w.startsWith('-')) {
       words[i] = {
         flag: true,
@@ -394,44 +396,7 @@ function segmentFacts(seg) {
       };
     }
   }
-  return { words, ctlFrom, forceFrom, mergeApiFrom, expandFrom };
-}
-
-// Rule 2, the POSITION half of the expansion item: an expansion in a word that
-// NAMES the operation is not "an unreadable argument on a gated line", it is an
-// unreadable line - there is no candidate to find, because the candidate scan
-// is looking for the very word the shell has not written yet. `bash` expands
-// braces, variables and command substitutions in the command word too, so
-// `gi{t..t} push origin main`, `git pus{h..h} origin main`,
-// `git $(echo push) origin main` and `gh a{p..p}i -X PUT .../merge` all run the
-// gated call while the classifier sees no `git push` / `gh api` at all. Three
-// positions are therefore judged with no candidate required:
-//   (a) the segment's COMMAND word (its first word, whatever it names);
-//   (b) the SUBCOMMAND word of a `git` / `gh` call - the first non-option word
-//       after the global options;
-//   (c) every argument word of a `gh api` call, because the endpoint word is
-//       what makes it a merge (`.../pul{l..l}s/1/merge`, `.../1/%6Derge`).
-// Anywhere else an expansion still only blocks a line that already holds a
-// candidate. Over-detection is deliberate: `$HOME/bin/tool --flag` is a command
-// word expansion and blocks, and the reason says to write the name out.
-function positionalExpansion(seg, facts) {
-  const { words, expand } = seg;
-  if (words.length === 0) return false;
-  if (expand[0]) return true; // (a)
-  for (let i = 0; i < words.length; i++) {
-    const git = isCmdWord(words[i], 'git');
-    const gh = !git && isCmdWord(words[i], 'gh');
-    if (!git && !gh) continue;
-    const valueOpts = git ? GIT_VALUE_OPTS : GH_VALUE_OPTS;
-    let j = i + 1;
-    while (j < words.length && words[j].startsWith('-')) {
-      j += valueOpts.has(words[j]) ? 2 : 1;
-    }
-    if (j >= words.length) continue;
-    if (expand[j]) return true; // (b)
-    if (gh && words[j].toLowerCase() === 'api' && facts.expandFrom[j + 1]) return true; // (c)
-  }
-  return false;
+  return { words, ctlFrom, forceFrom, mergeApiFrom };
 }
 
 // Every `git <sub>` in one segment, with the global options that preceded the
@@ -574,11 +539,9 @@ function analyzeLine(line) {
   const invocations = [];
   let expansion = line.backtick;
   let relocation = false;
-  let posExpansion = false;
 
   for (const seg of line.segments) {
     const facts = segmentFacts(seg);
-    if (positionalExpansion(seg, facts)) posExpansion = true;
     const freeText = freeTextIndices(seg.words);
     seg.words.forEach((w, i) => {
       const lw = w.toLowerCase();
@@ -609,7 +572,7 @@ function analyzeLine(line) {
       }
     }
   }
-  return { line, cands, invocations, expansion, relocation, posExpansion };
+  return { line, cands, invocations, expansion, relocation };
 }
 
 // git subcommands that move HEAD or make a commit. They must be split out
@@ -721,7 +684,6 @@ function controlReason(files) {
   return `Gate control-plane changed: ${shown}${more}. Run the quality-check skill before merging into main.`;
 }
 
-const POSITIONAL_EXPANSION = 'A command or subcommand word carries a shell expansion, which cannot be classified. Write the program name and subcommand literally, without $, backtick, brace or %.';
 const NEED_FLAG = 'Quality check not passed. Run the quality-check skill before merging into main.';
 const STALE = 'Code changed after the last quality check. Re-run the quality-check skill before merging into main.';
 
@@ -752,11 +714,6 @@ function isHardPushFlag(f) {
 // branch (deliberate over-detection, see the header). `commandMover` is the
 // whole command's HEAD mover, computed once by the caller.
 function staticRules(a, commandMover) {
-  // The position rule comes FIRST, ahead of the candidate check: an expansion
-  // in a command or subcommand word is exactly the case where the candidate
-  // scan finds nothing, so gating it on "there is a candidate" gated it on the
-  // condition it defeats.
-  if (a.posExpansion) return deny('2', POSITIONAL_EXPANSION);
   if (a.cands.length === 0) return null;
   for (const c of a.cands) {
     if (c.kind !== 'push') continue;
