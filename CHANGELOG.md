@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0](https://github.com/Crearize/ai-dev-helm/compare/v2.1.0...v2.2.0) (2026-09-04)
+
+
+### Added
+
+* **templates:** batch design confirmation into one question round and one whole-design approval ([#128](https://github.com/Crearize/ai-dev-helm/issues/128)) ([25be8e2](https://github.com/Crearize/ai-dev-helm/commit/25be8e26218557e1e4ecd493c613848818bac04f))
+* **templates:** 設計確認を一括化 — 質問 1 通・設計承認 1 回、test-recommendation / lint-scaffolding の提示も 1 往復に ([#128](https://github.com/Crearize/ai-dev-helm/issues/128)) ([f8a62eb](https://github.com/Crearize/ai-dev-helm/commit/f8a62ebb12091c4046703090be957ee3a13fa8e9))
+
+
+### Documentation
+
+* **policy:** make batched design confirmation the §1.0 norm and list it as an override of the brainstorming skill ([#128](https://github.com/Crearize/ai-dev-helm/issues/128)) ([1c24685](https://github.com/Crearize/ai-dev-helm/commit/1c2468535aaa1b062631d766b944af2e9165baaa))
+* **skills:** present test-recommendation proposals and lint-scaffolding adoption in one round trip ([#128](https://github.com/Crearize/ai-dev-helm/issues/128)) ([4193f41](https://github.com/Crearize/ai-dev-helm/commit/4193f41e2e5e190661f0997e353d6768bb588755))
+
 ## [2.1.0](https://github.com/Crearize/ai-dev-helm/compare/v2.0.0...v2.1.0) (2026-09-03)
 
 
