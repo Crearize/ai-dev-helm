@@ -767,7 +767,7 @@ Cursor を選択した場合、スタック固有のコーディングルール�
 
 ### 設計思想（必読）
 
-本ハーネスの設計思想（複数の AI モデル・ツールで動作し単一モデルに依存しない、1 Issue+ブランチ、設計レビューは基本 1 回、計画レビュー後のユーザー確認は不要、実装は下位モデル・開発中レビューなし、機械的チェックの後に内容で選んだペルソナレビュー、hook は main への直接 push/merge を止めるだけでミューテーション/E2E の提案は quality-check Step 5 が担う、通過判定は根拠付き）は `documents/development/development-policy.md` §1.0 を正とします。各テンプレート（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）には「Development Philosophy（必読）」節としてこの要約が載ります。
+本ハーネスの設計思想（複数の AI モデル・ツールで動作し単一モデルに依存しない、1 Issue+ブランチ、設計レビューは基本 1 回、設計の確認は一括（質問は 1 通・全節を一括提示して承認 1 回）、計画レビュー後のユーザー確認は不要、実装は下位モデル・開発中レビューなし、機械的チェックの後に内容で選んだペルソナレビュー、hook は main への直接 push/merge を止めるだけでミューテーション/E2E の提案は quality-check Step 5 が担う、通過判定は根拠付き）は `documents/development/development-policy.md` §1.0 を正とします。各テンプレート（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）には「Development Philosophy（必読）」節としてこの要約が載ります。
 
 ### SuperPowers 適用ルール
 

@@ -10,7 +10,7 @@ Development policies, standards, and processes for this project.
 
 - 前提: 各種 AI モデル・AI ツール上で動作し、単一モデルに依存しない。品質は構造で担保する。テストは根拠を添えれば信用してよい（ミューテーションはそのための道具で必須ではない）。
 - 1 Issue とブランチ。
-- 2 設計（brainstorming）: レビューは基本 1 回。よほどの問題や大規模のときだけ複数回。ここのレビューがタスク単位レビューを不要にする。
+- 2 設計（brainstorming）: レビューは基本 1 回。よほどの問題や大規模のときだけ複数回。ここのレビューがタスク単位レビューを不要にする。ユーザーへの確認は纏める — 質問は 1 通に纏めて聞き、設計は全節を一括提示して承認は 1 回。一問一答・節ごとの承認・spec 書き出し後の再確認はしない[^batch]。
 - 3 計画（writing-plans）: 設計済みが前提。計画のレビューはしてよいが、その後のユーザー確認は不要。
 - 4〜6 実装: 設計と計画があれば下位モデルでよい。適切なモデルを都度指定する。開発中のレビューはしない（設計意図との合致は 7 で見る）。
 - 7 quality-check: まず機械的チェック（ビルド、テスト、Lint / CheckStyle 等の静的チェック）。通ってからマルチペルソナレビュー。実装内容に応じて不要なペルソナは動かさない。
@@ -20,6 +20,7 @@ Development policies, standards, and processes for this project.
 
 [^8]: 後半（ミューテーション / E2E の提案）は hook ではなく quality-check Step 5 → `test-recommendation` スキルが担う。hook はコマンド行の静的分類のみで、提案機能を持たない。
 [^report]: quality-check SKILL.md の「実装 Agent の自己申告を Quality Gate にしない」は、「実装に合わせて期待値を修正した」型の申告を根拠と認めない規定であり、本項と両立する。
+[^batch]: 一括確認の実行ルールはテンプレート 3 種の Design Confirmation Rules 節（Autonomy Principles 3 項と対）が担う。superpowers brainstorming スキル本体の「質問は 1 つずつ」「Visual Companion の提案は単独メッセージ」「節ごとに承認」「spec 書き出し後にユーザーレビュー」は外部プラグインのため編集せず、指示優先度で上書きする。project スキルの提案・採否確認（`test-recommendation` Step 2、`lint-scaffolding` 採否確認）も同じ原則で 1 往復に纏める。
 
 #### 充足済み項目（既存配布物で対応済み・変更なし）
 
