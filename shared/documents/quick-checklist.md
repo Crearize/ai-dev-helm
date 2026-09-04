@@ -36,7 +36,7 @@ A quick-reference checklist for AI tools when working on development tasks.
 - [ ] **Frontend tests passed**
 
 ### Review Cycles (minimum 1 cycle; repeat on High/Medium findings)
-- [ ] **Multi-persona review completed** (personas selected by change content - see the quality-check skill's applicability table; mechanical checks must pass before personas run)
+- [ ] **Review roster completed** (integrated reviewer always, falsification QA on any code change, at most one specialist - Security joins even a docs-only diff that touches gate control-plane files, harness config, CI workflows or dependency files; sized by change content, see the quality-check skill's Step 1 roster table; mechanical checks must pass before reviewers run)
 - [ ] **High/Medium findings = 0** (full definition: the quality-check skill's 完了条件)
 - [ ] **Report data saved** (`.quality-check-report.json`)
 

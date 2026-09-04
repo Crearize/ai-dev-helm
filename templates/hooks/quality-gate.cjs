@@ -89,7 +89,7 @@
 //   `mutation_budget_minutes` string changes are carved out of both rule 3
 //   and rule 4 (no validity analysis of the declaration - over-detection is
 //   fine). The control plane is the quality-check / test-recommendation skills
-//   and their schemas, the review persona docs, and - under `.claude`,
+//   and their schemas, the review guides, and - under `.claude`,
 //   `.codex` or `.cursor` - `hooks/`, `skills/`, `agents/`, `commands/`,
 //   `prompts/`, `rules/`, plus the hook's registration files (see
 //   GATE_CONTROL_PATTERNS, which is the authority).
@@ -740,7 +740,7 @@ function moverOf(invocations, scope) {
 const GATE_CONFIG_PATTERNS = [/(^|\/)CLAUDE\.md$/, /(^|\/)AGENTS\.md$/, /^\.cursorrules$/];
 
 // The gate's own control plane: the quality-check skill and its schemas, the
-// review persona docs, the hooks and their registration. A diff touching any
+// review guides, the hooks and their registration. A diff touching any
 // of them is never exempt - an unreviewed edit here disables the gate as
 // effectively as weakening a threshold. Case-INSENSITIVE: on Windows/macOS
 // `.claude/Hooks/quality-gate.cjs` is the same real file, and a case variant

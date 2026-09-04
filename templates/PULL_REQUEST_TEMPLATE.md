@@ -59,7 +59,7 @@ Closes #
 - Risk level downgrade (`risk_level_downgrade`):
 
 ### Review Feedback Response
-| Cycle | Feedback | Persona | Response |
+| Cycle | Feedback | Reviewer | Response |
 |-------|----------|---------|----------|
 | | | | |
 
