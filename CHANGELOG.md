@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0](https://github.com/Crearize/ai-dev-helm/compare/v2.2.0...v3.0.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **quality-check:** the `personas` / `findings[].source` vocabulary of .quality-check-report.json changes to the six roster role names, and the "Multi-Persona Review" section of the synced CLAUDE.md / AGENTS.md / .cursorrules is replaced by "Review Roster (quality-check Step 4)". Consumer projects must re-sync the harness; old reports remain readable via the schema migration notes.
+
+### Added
+
+* **harness:** add model-routed agents and shared review-only budgets ([788aabe](https://github.com/Crearize/ai-dev-helm/commit/788aabeb2b7d733e0291998129610fd3cb29f89e))
+* **quality-check:** replace the 6-role parallel review with a review roster ([#131](https://github.com/Crearize/ai-dev-helm/issues/131)) ([1656c73](https://github.com/Crearize/ai-dev-helm/commit/1656c73c9ede23e4cdf89da466fa84f77d5f0268))
+
 ## [2.2.0](https://github.com/Crearize/ai-dev-helm/compare/v2.1.0...v2.2.0) (2026-09-04)
 
 
