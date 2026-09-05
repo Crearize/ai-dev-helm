@@ -5,8 +5,9 @@
 | Item | Location | Description |
 |------|----------|-------------|
 | Skills | `.codex/skills/` | Symlink to `skills/` (referenced from AGENTS.md) |
-| Rules | `.codex/rules/` | Stack-specific coding rules |
-| Project config | `.codex/config.toml` | Project-local approval/sandbox |
+| Rules | `.codex/rules/` | Stack-specific coding rules and managed command-prefix safety rules |
+| Role agents | `.codex/agents/` | Named design, implementation, exploration, and review agents |
+| Project config | `.codex/config.toml` | Project-local subagent defaults; user permission settings are preserved |
 | Hook | `.codex/hooks/quality-gate.cjs` | Merge-gate hook (Node, cross-platform); always overwritten by init |
 | Hook registration | `.codex/hooks.json` | PreToolUse registration for quality-check enforcement |
 | AGENTS.md | `AGENTS.md` (project root) | AI configuration file |
@@ -18,7 +19,8 @@ your-project/
 ├── .codex/
 │   ├── skills -> ../skills    # Symlink to shared skills
 │   ├── rules/                  # Stack rules
-│   ├── config.toml             # Approval/sandbox
+│   ├── agents/                 # Model-routed named roles
+│   ├── config.toml             # Subagent defaults
 │   ├── hooks/
 │   │   └── quality-gate.cjs    # Merge-gate hook body
 │   └── hooks.json              # PreToolUse hook registration
@@ -75,9 +77,11 @@ Run `npx @crearize/ai-dev-helm personal` and pick option `3) Codex global settin
 - Merges `~/.codex/config.toml` with safe defaults:
   - `approval_policy = "on-request"`
   - `sandbox_mode = "read-only"`
-  - `model = "gpt-5.6-sol"` (existing value preserved unless upgraded)
-- Adds `[[rules]]` entries that deny destructive commands (rm -rf /, force push to main, etc.)
-- Existing settings are preserved; a timestamped backup is created before any change.
+  - `model = "gpt-6-astra"` (existing value preserved unless upgraded)
+- Installs managed safety rules in `.codex/rules/ai-dev-helm-safety.rules` using Codex's supported `prefix_rule(... decision = "forbidden")` format. Direct-prefix coverage includes common recursive `rm` forms targeting `/`, literal `~`, or `.`, `git reset --hard`, forced `git clean`, conventional force pushes to `origin` main/master, `docker system prune`, and package publishing. This is not equivalent to the old regex policy: expanded home paths, other remotes/refspecs, unlisted flag spellings/orderings, shell indirection and alternate tools require additional user rules. Inspect the installed rules before relying on their coverage.
+- Installs four project-local role agents with explicit routing: designer/reviewer use Astra/high, implementer uses Terra/medium, and explorer uses Luna/medium. Existing model and permission choices remain unchanged.
+- The former TOML `[[rules]]` schema is unsupported by current Codex. Exact legacy ai-dev-helm rules can be migrated to the supported mechanism; unknown user rules are retained with a warning for manual migration.
+- Existing settings are preserved; updates create timestamped backups before writing.
 - Use `--upgrade-model` to force-overwrite the `model` field with the template value.
 
 ## Customization

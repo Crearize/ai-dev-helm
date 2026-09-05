@@ -14,7 +14,7 @@ Development policies, standards, and processes for this project.
 - 3 計画（writing-plans）: 設計済みが前提。計画のレビューはしてよいが、その後のユーザー確認は不要。
 - 4〜6 実装: 設計と計画があれば下位モデルでよい。適切なモデルを都度指定する。開発中のレビューはしない（設計意図との合致は 7 で見る）。
 - 7 quality-check: まず機械的チェック（ビルド、テスト、Lint / CheckStyle 等の静的チェック）。通ってから体制レビュー（統合レビュアー＋反証型 QA＋専門家最大 1 体）。実装内容に応じて体制を絞り、不要なレビュアーは動かさない。
-- 8 hook: main（相当ブランチ）への直接 push / merge を禁止するだけの装置。加えて 7 の状態・実装状態に応じてミューテーション / E2E の実施を提案する（test-recommendation）[^8]。
+- 8 hook: quality-gate は main（相当ブランチ）への直接 push / merge を禁止する装置。別の review-budget フックはレビューだけの回数上限を制御し、実装・探索・通常テストを数えない（`harness-runtime.md`）。加えて 7 の状態・実装状態に応じてミューテーション / E2E の実施を提案する（test-recommendation）[^8]。
 - 通過判定: レビュー結果・品質チェックの結果。AI の申告でもよいが必ず根拠を添える[^report]。
 - これらをハーネスを利用する全プロダクトで必ず守らせる。
 

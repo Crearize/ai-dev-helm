@@ -2,7 +2,7 @@
 # Merged by `ai-dev-helm personal`. Existing values are preserved.
 # Docs: https://developers.openai.com/codex/config-basic
 
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_reasoning_effort = "high"
 
 # Default policy: prompt only when needed
@@ -11,59 +11,9 @@ approval_policy = "on-request"
 # Default sandbox: read-only at user level; per-project files can opt into workspace-write
 sandbox_mode = "read-only"
 
-# Block destructive commands at the rules layer.
-# Matches Bash invocations and rejects them before sandbox evaluation.
-#
-# The patterns tolerate flag reordering and combined/split flag spellings:
-# the original one-spelling patterns (`rm -rf /` exact, `--force` only
-# before the refspec) let `rm -fr /`, `rm -r -f /`, and
-# `git push origin main --force` through unmatched (weak-regex feedback
-# from downstream gate reviews). These rules are one advisory layer; the
-# quality-gate hook remains the enforced gate for main/master.
-[[rules]]
-name = "block-rm-rf-root"
-match = { tool = "Bash", command_regex = "rm\\s+(-[a-zA-Z-]+\\s+)*-{1,2}[a-zA-Z]*[rR][a-zA-Z]*\\s+(-[a-zA-Z-]+\\s+)*/(\\s|$)" }
-decision = "deny"
-reason = "Blocked by ai-dev-helm: recursive rm of / is destructive"
-
-[[rules]]
-name = "block-rm-rf-home"
-match = { tool = "Bash", command_regex = "rm\\s+(-[a-zA-Z-]+\\s+)*-{1,2}[a-zA-Z]*[rR][a-zA-Z]*\\s+(-[a-zA-Z-]+\\s+)*~/?(\\s|$)" }
-decision = "deny"
-reason = "Blocked by ai-dev-helm: recursive rm of ~ is destructive"
-
-[[rules]]
-name = "block-rm-rf-dot"
-match = { tool = "Bash", command_regex = "rm\\s+(-[a-zA-Z-]+\\s+)*-{1,2}[a-zA-Z]*[rR][a-zA-Z]*\\s+(-[a-zA-Z-]+\\s+)*\\./?(\\s|$)" }
-decision = "deny"
-reason = "Blocked by ai-dev-helm: recursive rm of . is destructive"
-
-[[rules]]
-name = "block-git-force-push-main"
-match = { tool = "Bash", command_regex = "git\\s+push\\s+([^\\s;&|]+\\s+)*(--force(-with-lease[^\\s;&|]*)?|-f)\\s+([^\\s;&|]+\\s+)*([^\\s;&|]*:)?\\+?(main|master)(\\s|$)|git\\s+push\\s+([^\\s;&|]+\\s+)*([^\\s;&|]*:)?\\+?(main|master)\\s+([^\\s;&|]+\\s+)*(--force(-with-lease[^\\s;&|]*)?|-f)(\\s|$)|git\\s+push\\s+([^\\s;&|]+\\s+)*\\+(main|master)(\\s|$)" }
-decision = "deny"
-reason = "Blocked by ai-dev-helm: force push to main/master"
-
-[[rules]]
-name = "block-git-reset-hard"
-match = { tool = "Bash", command_regex = "git\\s+reset\\s+(-[a-zA-Z-]+\\s+)*--hard" }
-decision = "deny"
-reason = "Blocked by ai-dev-helm: git reset --hard"
-
-[[rules]]
-name = "block-git-clean-force"
-match = { tool = "Bash", command_regex = "git\\s+clean\\s+(-[a-zA-Z-]+\\s+)*-{1,2}[a-zA-Z]*[fF][a-zA-Z]*(\\s|$)" }
-decision = "deny"
-reason = "Blocked by ai-dev-helm: git clean with -f/--force deletes untracked files"
-
-[[rules]]
-name = "block-docker-system-prune"
-match = { tool = "Bash", command_regex = "docker\\s+system\\s+prune" }
-decision = "deny"
-reason = "Blocked by ai-dev-helm: docker system prune"
-
-[[rules]]
-name = "block-npm-publish"
-match = { tool = "Bash", command_regex = "(npm|pnpm|yarn)\\s+publish" }
-decision = "deny"
-reason = "Blocked by ai-dev-helm: package publish must be done manually"
+# Codex CLI rejects the former TOML [[rules]] schema. Managed command safety
+# is installed as supported .codex/rules/*.rules prefix rules.
+[agents]
+enabled = true
+default_subagent_model = "gpt-5.6-terra"
+default_subagent_reasoning_effort = "medium"

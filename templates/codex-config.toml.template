@@ -8,4 +8,8 @@ approval_policy = "on-request"
 # Default sandbox mode for this project's automation
 sandbox_mode = "workspace-write"
 
-# Project-local hooks are defined in .codex/hooks.json
+# Named role files in .codex/agents/ carry explicit model routing.
+[agents]
+enabled = true
+default_subagent_model = "gpt-5.6-terra"
+default_subagent_reasoning_effort = "medium"

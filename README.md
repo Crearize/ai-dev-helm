@@ -73,6 +73,15 @@ npx @crearize/ai-dev-helm lint --checks secrets,import-exists --json
 - 設定はプロジェクトルートの `.ai-dev-helm-lint.json` で調整できます（`exclude` グロブ、チェックごとの `enabled` / オプション）
 - 終了コード: `0` = 問題なし / `1` = 違反あり / `2` = 実行エラー（設定不正など）
 
+### 4. quality-check の共通コンテキスト生成（コーディネータ AI 向け）
+
+```bash
+npx @crearize/ai-dev-helm quality-context --cycle 1            # 基準 ref は origin/main
+npx @crearize/ai-dev-helm quality-context --cycle 2 --out <scratchpad>/quality-check
+```
+
+quality-check Step 4 のレビュアーに渡す共通コンテキスト（`cycle-<N>/context.md`）の決定的な部分を生成します。変更ファイル一覧・差分（長い場合は `diff.patch`）・完全性の証跡・変更ファイルのスナップショット、サイクル 2 以降は前サイクルの統合指摘一覧（`findings.json`）とスナップショットからの修正差分（`fix-diff.patch`）を出力します。既定の出力先は OS の一時ディレクトリ配下（`ai-dev-helm/<リポジトリ名>-<パスのハッシュ>/quality-check`）で、リポジトリ内への出力は拒否します。生成物には差分全文と変更ファイルのコピーが含まれるため、共有マシンでは `--out` を保護されたディレクトリに向け、quality-check 全体の終了・中断後に削除してください。
+
 ### ローカルインストールで実行する場合
 
 ```bash
@@ -390,33 +399,42 @@ Step 4 では、Step 1 で決めた体制がそれぞれ並列のサブエージ
 | **専門家（最大 1 体）** | セキュリティ: 認証・認可・入出力処理・秘密情報・暗号・シリアライズ・外部 URL・アップロード・CORS / CSP・機密ログ・設定ファイル / Dockerfile / CI・hook / ゲート制御面・ハーネス設定・依存関係（lockfile 単独更新を含む。docs のみの差分でもゲート制御面等に触れれば起動） ／ 要件・仕様整合性: Issue・仕様書付きの機能差分 ／ パフォーマンス: クエリ・ループ・キャッシュ・バンドル・高頻度経路 | 単一観点を専用ガイドで深掘りする |
 | **検証レビュアー** | サイクル 2 以降（修正が production コードに及びセキュリティ起動条件に該当する場合は反証型 QA を併走） | 前サイクルの統合指摘（全件）と修正差分の突き合わせ。修正が持ち込んだ新規の高指摘（特にセキュリティ・反証観点）の検出 |
 
-パフォーマンスと要件・仕様整合性には専用のレビューガイド（`.github/review-performance.md` / `.github/review-requirements.md`）が配布され、専門家として起動した場合と統合レビュアーの観点チェックの両方で使われます。コーディネータは各サイクルで共通コンテキスト（差分・変更ファイル一覧・Step 2〜3 の結果・ガイド本文）を 1 回だけ生成し、各レビュアーはそれを読んでからレビューします。
+パフォーマンスと要件・仕様整合性には専用のレビューガイド（`.github/review-performance.md` / `.github/review-requirements.md`）が配布され、専門家として起動した場合と統合レビュアーの観点チェックの両方で使われます。コーディネータは各サイクルで共通コンテキスト（差分・変更ファイル一覧・Step 2〜3 の結果・ガイド）を 1 回だけ生成し、各レビュアーはそれを読んでからレビューします。決定的な部分（差分・変更ファイル一覧・完全性の証跡・スナップショット・前サイクルからの修正差分）は `npx @crearize/ai-dev-helm quality-context --cycle <N>` で生成します。
 
 この体制は 2026-09 の実測に基づきます。旧来の 6 体並列構成では、高指摘が出たラウンドの約 6 割で 2 体以上が同じ高を挙げており、単独でしか見つけられなかった高指摘は反証型 QA とアーキテクト系の観点に偏っていました（根拠: Issue #131 に集計を記録）。現行モデルでは観点の分割そのものより「独立した別プロセスで見ること」と「壊す側に立つ構え」に価値が残るため、設計・保守性を主眼とする統合レビュアーと反証型 QA を基本の 2 体とし、専門家は差分内容で条件起動します。モデル階層は変えていません。
 
 ### サブエージェントのモデル切り替え
 
-サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。計画・設計の初期方向付けと設計・計画のレビューは同じ最上位階層（Fable。利用できない場合や Codex 利用時は Claude Opus 5 または GPT-5.6-Sol high）で行います。実装などの具体的な作業は既定で Claude Sonnet 5 / GPT-5.6-Terra を使い、計画が「判断を要する」と明記したタスクのみ Claude Opus 5 / GPT-5.6-Sol high を使います。純粋なドキュメントレビュー（README・`documents/` の記述確認で設計判断を含まない）は Claude Sonnet 5 / GPT-5.4-mini medium です。探索・コンテキスト収集には Claude Sonnet 5 / GPT-5.4-mini medium を使用します。quality-check のレビュアー（統合レビュアー・QA・専門家・検証レビュアー）とコードレビューは Claude Opus 5 または GPT-5.6-Sol high で行います。Claude Haiku はどのフェーズでも使用しません。
+サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。計画・設計の初期方向付けと設計・計画のレビューは同じ最上位階層（Fable。利用できない場合や Codex 利用時は Claude Opus 5 または GPT-6 Astra high）で行います。実装などの具体的な作業は既定で Claude Sonnet 5 / GPT-5.6-Terra を使い、計画が「判断を要する」と明記したタスクのみ Claude Opus 5 / GPT-6 Astra high を使います。純粋なドキュメントレビュー（README・`documents/` の記述確認で設計判断を含まない）は Claude Sonnet 5 / GPT-5.6-Luna medium です。探索・コンテキスト収集には Claude Sonnet 5 / GPT-5.6-Luna medium を使用します。quality-check のレビュアー（統合レビュアー・QA・専門家・検証レビュアー）とコードレビューは Claude Opus 5 または GPT-6 Astra high で行います。Claude Haiku はどのフェーズでも使用しません。
 
 | ハーネス | 計画・設計 | 設計・計画のレビュー | 探索 | 実装 | 純粋な文書レビュー | quality-check レビュアー・コードレビュー |
 |---------|-----------|---------------------|------|------|-------------------|----------------------------------------|
 | Claude Code | `model: fable`（不可なら `opus`） | `model: fable`（不可なら `opus`） | `model: sonnet` | `model: sonnet`（判断タスクのみ `opus`） | `model: sonnet` | `model: opus` |
-| Codex | `gpt-5.6-sol` / `high` | `gpt-5.6-sol` / `high` | `gpt-5.4-mini` / `medium` | `gpt-5.6-terra`（判断タスクのみ `gpt-5.6-sol` high） | `gpt-5.4-mini` / `medium` | `gpt-5.6-sol` / `high` |
+| Codex | `gpt-6-astra` / `high` | `gpt-6-astra` / `high` | `gpt-5.6-luna` / `medium` | `gpt-5.6-terra`（判断タスクのみ `gpt-6-astra` high） | `gpt-5.6-luna` / `medium` | `gpt-6-astra` / `high` |
 | Cursor | Fable（不可なら Claude Opus 5） | Fable（不可なら Claude Opus 5） | Claude Sonnet 5 | Claude Sonnet 5（判断タスクのみ Claude Opus 5） | Claude Sonnet 5 | Claude Opus 5 |
 
 Claude Code の Task ツールの `model` パラメータは短縮エイリアス（`fable` / `opus` / `sonnet` / `haiku`）のみを受理するため、テンプレートでは `claude-opus-5` などのフル ID ではなく短縮名で指定します。また、テンプレートのモデル表はスキル内のモデル選択ガイド（例: subagent-driven-development の Model Selection 節）より優先されます。
 
 Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
 
-計画の実行はハーネスを問わず**サブエージェント駆動（subagent-driven-development）がデフォルト**です。メインセッション（Fable / GPT-5.6-Sol）は計画・オーケストレーションに専念し、実装タスクは Sonnet 5 等の下位モデルのサブエージェントに委譲することで、Fable のトークン消費を計画・設計に集中させます。インライン実行（executing-plans）はユーザーが明示的に指示した場合のみ使用します。
+計画の実行はハーネスを問わず**サブエージェント駆動（subagent-driven-development）がデフォルト**です。メインセッション（Fable / GPT-6 Astra）は計画・オーケストレーションに専念し、実装タスクは Sonnet 5 等の下位モデルのサブエージェントに委譲することで、Fable のトークン消費を計画・設計に集中させます。インライン実行（executing-plans）はユーザーが明示的に指示した場合のみ使用します。
 
 ### サイクルルール
 
+- **回数上限はレビューだけ**: 最大3巡（ユーザーが指定した小さい上限を優先）。同じ一巡の複数レビュアーは1回。実装・探索・通常テストや、Step 4 未実施の工程数は含めない
 - **機械的チェックが先**: Step 2〜3 に残存（解消できなかった違反・失敗テスト）があるサイクルは Step 4 を実行せず、残存を高指摘として統合指摘に記録してサイクルを終了する
 - **体制は変更内容で決まる**: 差分規模ではなく変更内容がレビュー体制の決定表（`quality-check` SKILL.md Step 1）を通じて体制を決める。統合レビュアーは常時、反証型 QA はコード変更時、専門家は最大 1 体（セキュリティ > 要件・仕様整合性 > パフォーマンス）。docs のみの変更は統合レビュアー 1 体（ゲート制御面等に触れる場合はセキュリティエンジニアが加わる）
 - **最低 1 サイクル実行**。2 周目以降は直前サイクルで優先度 高/中 の指摘があった場合のみ、検証レビュアー 1 体による検証レビュー（統合指摘一覧と修正差分の突き合わせ）として実施（フルセットへの復帰はしない）
 - **高/中指摘が残らなくなるまでサイクルを繰り返す**（上限・停滞検出は quality-policy §5。同一クラスの高指摘が閾値以上出た場合は構造的停滞としてユーザー判断を仰ぐ）
 - 上限到達・停滞時はユーザーに判断を仰ぐ（受容 / 方針変更して追加サイクル / 中断。構造的停滞では方針変更による追加サイクルは選択肢に含めない）
+
+### レビュー起動の制御と Codex 設定の更新
+
+`init` は Claude Code / Codex に共通の `review-budget.cjs` と起動前フックを配布します。レビュー開始前に一巡を予約し、返されたロール別の起動情報を依頼文に付けます。回数は Git common directory に保存され、セッション再開やツール切り替えではリセットされません。起動情報の使い回しと上限超過を拒否し、実装・探索の起動は数えません。自動延長コマンドはありません。
+
+Codex には `.codex/agents/helm-*.toml` と、指定漏れ時の Terra / medium の既定を生成します。モデル指定は実行環境の利用可能一覧を正とし、Astra が利用できない環境で自動的に品質レビューを下位モデルへ落とすことはしません。再初期化は既存の独自指示を残して管理ブロックを更新します。
+
+詳細と起動例は [harness-runtime.md](shared/documents/harness-runtime.md)。レビューの別名への偽装、親自身の思考内レビュー、外部 CLI、無効化したフックや改ざんまで防ぐセキュリティ境界ではありません。フックを信頼・有効化した実行環境で使用してください。
 
 ### 自己改善ハーネス
 
@@ -503,15 +521,16 @@ Cursor はコードベースでの設定が困難なため、推奨ルールを�
 
 #### Codex グローバル設定
 
-`~/.codex/config.toml` に以下を安全にマージします（TOML フォーマット）。
+`CODEX_HOME` が指定されていればその配下、なければ `~/.codex/config.toml` に以下を安全にマージします（TOML フォーマット）。
 
-- **モデル**: `gpt-5.6-sol`（既存設定は保持、`--upgrade-model` で強制上書き）
+- **モデル**: `gpt-6-astra`（既存設定は保持、`--upgrade-model` で強制上書き）
 - **推論レベル**: `model_reasoning_effort = "high"`
 - **承認ポリシー**: `approval_policy = "on-request"`
 - **サンドボックス**: `sandbox_mode = "read-only"`（プロジェクトごとに `workspace-write` 等へ昇格可能）
-- **破壊的コマンド拒否ルール**: `[[rules]]` テーブルとして `rm -rf /` / 強制 push / `git reset --hard` / `docker system prune` / `npm publish` 等をブロック
+- **サブエージェント既定**: `gpt-5.6-terra` / `medium`（既存値は保持）
+- **コマンド保護**: 対応する `rules/ai-dev-helm-safety.rules` を配布。接頭辞一致による保護であり、任意のシェル表記すべてを判定するものではありません
 
-既存ファイルがある場合はタイムスタンプ付きバックアップを自動作成し、`rules` リストは `name` をキーに union マージ（既存ルールを保持）します。
+変更前にバックアップを作成します。現行CLIが認識しない旧 `[[rules]]` は、旧配布内容と一致する項目だけ移行し、独自項目は削除せず手動移行の警告を出します。独自に変更したエージェント定義・安全ルールも保持します。
 
 ---
 
@@ -528,6 +547,7 @@ ai-dev-helm/
 │   ├── merge-settings.js       # JSON 設定ファイルのマージ
 │   ├── merge-toml.js           # TOML 設定ファイルのマージ（Codex グローバル設定）
 │   ├── lint/                   # 横断リンター（`ai-dev-helm lint`）本体とチェック群
+│   ├── quality-check-context.js # quality-check の共通コンテキスト生成（`ai-dev-helm quality-context`）
 │   └── utils.js                # 共通ユーティリティ
 │
 ├── skills/                     # AI スキル定義
@@ -662,10 +682,12 @@ your-project/
 ├── AGENTS.md                       # Codex のメイン設定ファイル（プロジェクトルート）
 └── .codex/                         # Codex 用ディレクトリ
     ├── skills -> ../skills         #   スキルへのシンボリックリンク
-    ├── rules/                      #   コーディングルール
-    ├── config.toml                 #   approval_policy / sandbox_mode
-    ├── hooks/quality-gate.cjs      #   品質ゲートフック本体（Node 製）
-    └── hooks.json                  #   PreToolUse フック登録（quality-check 強制）
+    ├── rules/                      #   コーディングルール / コマンド保護
+    ├── agents/helm-*.toml           #   設計・実装・探索・レビューのモデル設定
+    ├── config.toml                 #   承認・サンドボックス / subagent 既定
+    ├── hooks/quality-gate.cjs       #   main への push/merge ゲート
+    ├── hooks/review-budget.cjs      #   レビューだけの回数制御
+    └── hooks.json                  #   起動前判定 / レビュアーIDの記録
 ```
 
 ### 各ファイルの役割
@@ -931,7 +953,7 @@ GitHub の Actions タブから `Sync Superpowers Skills` ワークフローを�
 
 ### Q: 既存の CLAUDE.md や .cursorrules がある場合は？
 
-既存ファイルがある場合は上書きされません。スキップされてそのまま残ります。
+既存の独自本文は保持します。CLAUDE.md / AGENTS.md はランタイム規約への参照を管理ブロックとして追加・更新し、変更前にバックアップします。`.cursorrules` は従来どおり既存ファイルを保持します。
 
 ### Q: スキルが多すぎて全部は使わない場合は？
 
