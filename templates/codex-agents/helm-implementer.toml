@@ -1,0 +1,5 @@
+name = "helm-implementer"
+description = "Implements approved changes with focused verification."
+developer_instructions = "Implement the requested scope, preserve unrelated changes, and verify the behavior you alter."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"

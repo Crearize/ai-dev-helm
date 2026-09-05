@@ -116,7 +116,87 @@ yargs(hideBin(process.argv))
       process.exitCode = result.exitCode;
     }
   )
-  .demandCommand(1, 'Please specify a command: init, personal, or lint')
+  .command(
+    'quality-context',
+    'Generate the shared context pack for a quality-check review cycle',
+    (yargs) => {
+      return yargs
+        .option('cycle', {
+          type: 'number',
+          describe: 'Cycle number (1-based)',
+          demandOption: true,
+        })
+        .option('base', {
+          type: 'string',
+          describe: 'Base ref the diff is taken against',
+          default: 'origin/main',
+        })
+        .option('out', {
+          type: 'string',
+          describe: 'Output directory (<scratchpad>/quality-check), must be outside the repository. Default: OS temp dir. The pack contains the full diff - protect or delete it',
+        })
+        .option('verbose', {
+          type: 'boolean',
+          describe: 'Show detailed output and stack traces on error',
+          default: false,
+        });
+    },
+    (argv) => {
+      const { buildContextPack } = require('../lib/quality-check-context');
+      let result;
+      try {
+        result = buildContextPack({
+          dir: process.cwd(),
+          cycle: argv.cycle,
+          baseRef: argv.base,
+          outDir: argv.out,
+        });
+      } catch (err) {
+        console.error(`Error: ${err.message}`);
+        if (argv.verbose) console.error(err.stack);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`context: ${result.contextPath}`);
+      console.log(`changed files: ${result.names.length} (+ ${result.untracked.length} untracked), diff ${result.diffLines} lines${result.diffInline ? ' (inline)' : ' -> diff.patch'}`);
+      console.log(`snapshot: ${result.snapshotDir} (${result.snapshotCopied.length} files${result.snapshotSkipped.length ? `, ${result.snapshotSkipped.length} not copied` : ''})${result.replacedSnapshot ? ' - replaced the previous snapshot of this cycle' : ''}`);
+      if (result.fixDiff) {
+        console.log(`fix diff: ${result.fixDiff.path} (${result.fixDiff.files.length} files)`);
+      } else if (result.fixDiffSkippedReason) {
+        console.log(`fix diff: not generated - ${result.fixDiffSkippedReason}`);
+      }
+      if (result.findingsError) {
+        console.log(`findings: previous findings.json unreadable - ${result.findingsError}`);
+      }
+      if (result.untrackedOverLimit) {
+        console.log(`warning: ${result.untracked.length} untracked files - only the first ${result.untrackedSnapshotted} untracked files snapshotted; fix .gitignore if these are build outputs`);
+      }
+      console.log(`integrity: ${result.integrityOk ? 'ok' : 'MISMATCH - name-only list and diff headers differ'}`);
+      if (!result.integrityOk) process.exitCode = 1;
+    }
+  )
+  .command(
+    'review-budget <action>',
+    'Reserve or inspect review-only round budgets (shared by Claude Code and Codex)',
+    (yargs) => yargs
+      .positional('action', { choices: ['begin', 'status'], type: 'string' })
+      .option('phase', { choices: ['requirements', 'design', 'plan', 'quality'], type: 'string' })
+      .option('roles', { type: 'string', describe: 'Comma-separated review roster' })
+      .option('limit', { type: 'number', describe: 'Lower review ceiling (1-3); cannot raise an existing ceiling' }),
+    (argv) => {
+      const budget = require('../templates/hooks/review-budget.cjs');
+      try {
+        const result = argv.action === 'status' ? budget.status() : budget.beginRound({
+          phase: argv.phase, roles: argv.roles?.split(','), limit: argv.limit,
+        });
+        console.log(JSON.stringify(result, null, 2));
+      } catch (error) {
+        console.error(`Error: ${error.message}`);
+        process.exitCode = 1;
+      }
+    }
+  )
+  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, or review-budget')
   .strict()
   .help()
   .version()

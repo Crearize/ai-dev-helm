@@ -199,7 +199,7 @@ Checkstyle の `SuppressWarningsFilter`、ESLint の `eslint-disable`、ast-grep
 完成したカバレッジマップを **`documents/development/lint-coverage-map.md`** に保存する。これが**採否台帳**であり、以後の正となる:
 
 - ルールを追加・削除・不採用に変更するたびに更新する（更新規律はテンプレート末尾の節を参照）
-- `quality-check` Step 4 のペルソナレビューは、このマップで Lint 担保に割当済みの項目をレビュー対象外とする（マップが存在しないプロダクトでは何も除外されない）
+- `quality-check` Step 4 の体制レビュー（統合レビュアー・QA・専門家）は、このマップで Lint 担保に割当済みの項目をレビュー対象外とする（マップが存在しないプロダクトでは何も除外されない）
 
 ---
 

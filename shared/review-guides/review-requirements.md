@@ -1,6 +1,6 @@
 # Requirements Consistency Review Guide
 
-**Note**: Used by the Requirements Consistency Reviewer persona during quality-check. Verifies that the implementation builds the right thing, not just that it is built right.
+**Note**: Used by the Requirements Consistency Reviewer specialist pass when quality-check dispatches it (a feature-level diff with an Issue, spec or design document and no higher-priority specialist applies - quality-check Step 1 review roster), and by the integrated reviewer's requirements-alignment checklist in every cycle. Verifies that the implementation builds the right thing, not just that it is built right.
 
 ## Required Reference Documents
 

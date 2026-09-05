@@ -1,0 +1,54 @@
+# Harness runtime: models and review admission
+
+この文書は Claude Code / Codex のモデル選択・レビュー起動の実行規約です。古いテンプレートや外部 superpowers スキルの同項目より優先します。ユーザーが指定した小さいレビュー上限は常に優先します。実装・探索・テストをレビュー回数に含めません。
+
+## Codex のモデル選択
+
+| 作業 | モデル / effort | 配布するカスタムエージェント |
+|---|---|---|
+| 設計・計画・高度な判断 | `gpt-6-astra` / `high` | `helm-designer` |
+| 設計済みの実装・テスト追加 | `gpt-5.6-terra` / `medium` | `helm-implementer` |
+| 探索・コンテキスト収集 | `gpt-5.6-luna` / `medium`（単純検索は `low`） | `helm-explorer` |
+| 品質・設計・計画レビュー | `gpt-6-astra` / `high` | `helm-reviewer` |
+| 設計判断のない文章確認 | `gpt-5.6-luna` / `medium` | モデル・effort を明示して起動 |
+
+- 起動時に利用可能モデルの一覧を確認する。表のモデルが未提供なら、黙って他モデルへ変更せず制約と代替案を報告する。品質レビュー・設計を探索モデルへ落とさない。
+- 実際のツール定義を正とする。`spawn_agent` が `reasoning_effort` を受ける環境ではその名前を使う。設定 TOML のキーは `model_reasoning_effort`。`model` と effort の両方を指定する。
+- モデル指定の委譲は `fork_turns: "none"`（または必要最小限の履歴）で行う。全履歴フォークでのモデル上書きを前提にしない。課題、対象ファイル、入出力、禁止事項、検証方法を短い依頼に含める。
+- `agent_type` を受ける環境では `.codex/agents/helm-*.toml` を選べる。未対応なら上表のモデル・effort を直接指定する。カスタム定義に書かれたモデルが起動時指定を上書きする点に注意する。
+- `[agents]` の既定は Terra / medium。省略による親の最上位モデル継承を避けるための補助であり、役割別指定を省略する理由にはしない。
+- 機能の有無はツール一覧で確認する。独立した課題を子へ渡し、親は別の統合作業を進める。子の出力を根拠・テスト結果と照合して統合する。子へ追加レビューや更なる委譲を一律に許可しない。
+- スキルは配布先 `.codex/skills` から読み込める。起動時のスキル一覧に現れることを確認し、現れない場合は AGENTS.md の明示パスで必要な SKILL.md を読む。未発見を読み込み済みとして扱わない。
+
+Claude Code のモデル選択は CLAUDE.md の表を維持する。下記レビュー制御は両ツール共通。
+
+## レビューだけを数える
+
+設計・要件・計画・最終品質チェックのレビューは、**起動直前**に一巡を予約する。設計等は通常一巡。必要性が事前に認められる文書レビューのみ初回予約で `--limit 3` を指定できる。ユーザーが「一度だけ」と指定した場合は必ず `--limit 1`。品質レビューの既定の絶対上限は3巡。工程内の通常テスト、修正、探索、結果待ちは予約不要。
+
+プロジェクトルートで実行（Codexのみのプロジェクトでは `.claude` を `.codex` に置き換える）:
+
+```sh
+node .claude/hooks/review-budget.cjs status
+node .claude/hooks/review-budget.cjs begin --phase quality --roles integrated-reviewer,falsification-qa
+```
+
+パッケージ CLI でも同じ状態を扱う: `ai-dev-helm review-budget begin --phase quality --roles integrated-reviewer`。未インストールの旧リリースを `npx` で取得して回避せず、プロジェクトに配布済みのスクリプトを優先する。
+
+1. チェックが通り、レビューを行う場合にだけ `begin` を呼ぶ。戻り値の `round` はレビュー回数であり、レポートの `total_cycles`（機械チェックを含む工程数）とは別。`quality-context --cycle` には継続中の工程番号を渡す。例えば失敗した3工程の次で初めてレビューする場合、工程番号は4、予約の round は1となる。レビュー開始のために工程番号を1へ戻したり、継続中のレポートやスナップショットを初期化したりしない。
+2. 戻り値 `markers` の該当ロールの行（`HELM_REVIEW:…:integrated-reviewer` 等）を **各レビュアーへの message / prompt の先頭にそのまま置く**。起動名も `reviewer` を含む名前にする。Claude の `Agent` / `Task`、Codex の `spawn_agent` で同じ手順を使う。
+3. 共通コンテキスト生成と結果統合は既存 quality-check に従う。初回は `integrated-reviewer`、コード変更なら `falsification-qa`、専門家は `security-engineer` / `requirements-analyst` / `performance-engineer` の最大1体。2巡目以降は `verification-reviewer` と条件付き `falsification-qa`。文書レビューは phase `requirements` / `design` / `plan`、role `document-reviewer`。
+4. 同じ一巡の複数ロールは1回。各ロールの起動情報は一度限り。既存レビュアーへの再検証依頼（`followup_task` / `send_message` / `send_input` / Agentの `resume`）も新しい一巡を予約する。待機・結果取得は追加レビューではない。レビュー依頼の追記は起動前にまとめ、起動後の連絡で実質的な再レビューを増やさない。
+5. 拒否されたら迂回しない。上限に達したら残存事項を報告しユーザーに判断を仰ぐ。実装・探索・通常テストはこの上限では止めない。構造的問題や停滞は別の報告理由であり、無根拠な修正の繰り返しを求めるものではない。
+
+状態は Git common directory の `ai-dev-helm-reviews/<branch-hash>.json` に保存され、再起動・コミット・別ツール・同一ブランチのworktreeで共有される。予約直後に中断した場合も保守的に一巡消費する。自動 reset / extension コマンドは提供しない。エージェントは状態やロックを削除・編集せず、上限を自己承認で延長しない。ユーザーが方針変更を承認して別のレビュー期間を始める場合は、ユーザー自身が `status` のパスと既存記録を確認・退避して手動で管理する。
+
+## 効く範囲と限界
+
+- 信頼して有効化された `PreToolUse` フックが、マーカー付きレビューと既知のレビュアー名の起動を拒否する。`SubagentStart` は停止に使わない。PostToolUse はレビュアーIDを記録し再開も識別する。
+- 「レビュー機能を実装する」のような通常の実装依頼はレビューではない。役割を明確に分ける。状態が壊れた場合、名前・マーカーで識別できるレビューは拒否し、通常の実装・探索は制限しない。
+- 未知の不透明なIDだけで再開し追跡状態も読めない場合は、非レビューを一律に止めないため判定対象外となる。レビュアーの明示名とマーカーを必ず使う。
+- 親が自分の思考だけでレビューする、レビューを別名の汎用タスクに偽装する、外部CLI経由で起動する、フックを無効化する、状態を書き換える行為までは封じない。完全な改ざん防止や、任意の自然言語からのレビュー自動判定を保証する仕組みではない。
+- フックが読み込まれていない／信頼されていない環境では機械的制限は働かない。`status` が読めるだけではフックの有効化証明にならない。無害な試験レビューを起動前に拒否できることを別途確認する。
+
+仕様参照: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)、[Codex hooks](https://learn.chatgpt.com/docs/hooks)、[Claude Code hooks](https://code.claude.com/docs/en/hooks)。

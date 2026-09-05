@@ -1,0 +1,15 @@
+# Managed by ai-dev-helm. These direct-prefix rules do not cover shell syntax,
+# alternate tools, or user-authored rules; review those separately.
+prefix_rule(pattern = ["rm", ["-r", "-R", "-rf", "-fr", "-Rf", "-fR", "--recursive"], ["/", "~", "~/", ".", "./"]], decision = "forbidden", justification = "Recursive deletion of a root, home or current directory is destructive.")
+prefix_rule(pattern = ["rm", ["-r", "-R", "--recursive"], ["-f", "--force"], ["/", "~", "~/", ".", "./"]], decision = "forbidden", justification = "Recursive deletion of a root, home or current directory is destructive.")
+prefix_rule(pattern = ["rm", ["-f", "--force"], ["-r", "-R", "--recursive"], ["/", "~", "~/", ".", "./"]], decision = "forbidden", justification = "Recursive deletion of a root, home or current directory is destructive.")
+prefix_rule(pattern = ["git", "reset", "--hard"], decision = "forbidden", justification = "git reset --hard discards uncommitted changes.")
+prefix_rule(pattern = ["git", "clean", ["-f", "-fd", "-df", "-fx", "-fdx", "-xdf", "--force"]], decision = "forbidden", justification = "Forced git clean deletes untracked files.")
+prefix_rule(pattern = ["git", "push", ["--force", "--force-with-lease", "-f"], "origin", ["main", "master", "HEAD:main", "HEAD:master"]], decision = "forbidden", justification = "Force pushing main/master rewrites shared history.")
+prefix_rule(pattern = ["git", "push", "origin", ["--force", "--force-with-lease", "-f"], ["main", "master", "HEAD:main", "HEAD:master"]], decision = "forbidden", justification = "Force pushing main/master rewrites shared history.")
+prefix_rule(pattern = ["git", "push", "origin", ["main", "master", "HEAD:main", "HEAD:master"], ["--force", "--force-with-lease", "-f"]], decision = "forbidden", justification = "Force pushing main/master rewrites shared history.")
+prefix_rule(pattern = ["git", "push", "origin", ["+main", "+master", "+HEAD:main", "+HEAD:master"]], decision = "forbidden", justification = "Force pushing main/master rewrites shared history.")
+prefix_rule(pattern = ["docker", "system", "prune"], decision = "forbidden", justification = "Docker system prune deletes shared resources.")
+prefix_rule(pattern = ["npm", "publish"], decision = "forbidden", justification = "Publishing requires an explicit manual release decision.")
+prefix_rule(pattern = ["pnpm", "publish"], decision = "forbidden", justification = "Publishing requires an explicit manual release decision.")
+prefix_rule(pattern = ["yarn", "publish"], decision = "forbidden", justification = "Publishing requires an explicit manual release decision.")

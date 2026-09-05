@@ -28,6 +28,8 @@
 > **移行注記**: フェーズ2の配線完了以前に生成されたレポートに `risk_level` / `lint_cycles` / `lint_abort_reason` / `mutation` / `test_design` が存在しないことは、レポート不正ではなく未配線を意味する。ただし `gate_override` の記録義務は quality-policy.md §5「打ち切り時のゲート挙動」により配線に先行して有効だったため、承認が発生したレポートでは配線前でも記録されている。
 
 > **移行注記（`review_mode` の旧値）**: 旧レポートに残る `review_mode: "staged"` / `"reduced"` は、いずれも現行の `"full"` として読み替える。旧レポートに付随する `diff_line_count`（差分行数による段階化の名残）は無視する。いずれも新規レポートには出力しない。
+>
+> **移行注記（レビュー体制の再編 #131 以前の語彙）**: 旧レポートの `personas` / `findings[].source` に残る `ソフトウェアアーキテクト` / `統合アーキテクチャレビュー` は `統合レビュアー`（`concern: "design"`）として読み替える。旧レポートの `persona_selection_basis` が `applied` 行 6 行の旧構成でも検証しない。旧レポートの `QA エンジニア（ファルシフィケーション型）`（空白入り）は `QAエンジニア（ファルシフィケーション型）` として読み替える。新規レポートには現行の語彙のみを出力する。
 
 ### Cycle オブジェクト
 
@@ -35,21 +37,22 @@
 |-----------|-----|------|------|
 | `cycle_number` | `number` | 必須 | サイクル番号（1始まり） |
 | `findings` | `Finding[]` | 必須 | このサイクルで検出された指摘事項 |
-| `review_mode` | `"full" \| "verification"` | 任意 | 適用ペルソナセットの種別。`full`: Step 1 の適用判定表による選択 / `verification`: サイクル2以降、直前サイクルで Step 4 を実行し高/中指摘が出た場合の、指摘ペルソナによる修正差分レビュー（`quality-check` SKILL.md 4-3「サイクルと `review_mode`」）。直前サイクルが Step 2〜3 の残存で Step 4 を実行せず終了した場合、次サイクルも `full` として判定表から選び直す。省略時は `full` 扱い |
-| `personas` | `string[]` | 任意 | このサイクルで実行したペルソナ名一覧（`review_mode` が `verification` の場合は必須。`full` で Step 4 を実行したサイクルも必須）。`review_mode` が `verification` で前サイクルの残存指摘が非ペルソナ由来のみ（ペルソナの高/中指摘が0件）**かつ前サイクルの修正差分がテスト・設定・フォーマットのみ（production コード非該当）**の場合に Step 4 をスキップし、検証対象なしとして `personas: []`（空配列）を記録する（ゲート制御面ファイルに触れる修正差分はこの条件でもスキップ不可）。修正差分が production コードに及ぶ場合はスキップせず、セキュリティエンジニアと QA エンジニアの2ペルソナで検証レビューを行う（`quality-check` SKILL.md 4-3 を正とする）。Step 2〜3 の残存で Step 4 を実行せず終了したサイクルも `personas: []`（`review_mode: "full"` と組み合わせて「Step 4 未実行」を意味する） |
-| `persona_selection_basis` | `{ persona: string, applied: boolean, basis: string }[]` | 任意 | Step 1 の適用判定表による起動判定の根拠。判定表の6ペルソナ全件を含め、`applied: false` の行には理由を `basis` に書く（`quality-check` SKILL.md Step 1「ペルソナ起動判定」）。`review_mode: "full"` で Step 4 を実行したサイクルでは必須。`verification`、および Step 4 未実行（`personas: []`）のサイクルでは省略可。**`persona` は `quality-check` SKILL.md Step 4「ペルソナ定義」表の名称と完全一致させる**（Step 1 判定表側の表記もこれに合わせる）。`applied: true` の行の集合は同サイクルの `personas` と一致しなければならない |
+| `review_mode` | `"full" \| "verification"` | 任意 | レビュー体制の種別。`full`: Step 1「レビュー体制の決定」による選択（統合レビュアー ＋（コード変更時）QAエンジニア（ファルシフィケーション型）＋（該当時）専門家 1 体）/ `verification`: サイクル2以降、直前サイクルで Step 4 を実行し高/中指摘が出た場合の、検証レビュアー 1 体による修正差分レビュー（`quality-check` SKILL.md 4-3「サイクルと `review_mode`」）。`full` の Step 4 がそのブランチでまだ一度も実行されていない場合（直前サイクルが Step 2〜3 の残存で Step 4 を実行せず終了した場合を含む）、次サイクルは必ず `full` として決定表から選び直す。省略時は `full` 扱い |
+| `personas` | `string[]` | 任意 | このサイクルで起動したレビュアー名一覧。値は `quality-check` SKILL.md Step 4「役割定義」の名称（`統合レビュアー` / `QAエンジニア（ファルシフィケーション型）` / `セキュリティエンジニア` / `要件・仕様整合性レビュアー` / `パフォーマンスエンジニア` / `検証レビュアー`）に完全一致させる（`review_mode` が `verification` の場合は必須。`full` で Step 4 を実行したサイクルも必須）。`review_mode` が `verification` で前サイクルの残存指摘が非レビュアー由来のみ（レビュアーの高/中指摘が0件）**かつ前サイクルの修正差分がテスト・フォーマット・セキュリティに無関係な設定のみ（production コード非該当）**の場合に Step 4 をスキップし、検証対象なしとして `personas: []`（空配列）を記録する（ゲート制御面ファイル、セキュリティ起動条件に該当する設定、ハーネス設定ファイル（ゲートパラメータの上書きを含む）、静的チェック・ミューテーション計測範囲・実行時間バジェットを緩める設定に触れる修正差分はこの条件でもスキップ不可 — 検証レビュアー 1 体（セキュリティを重点観点）で検証レビューを行う）。修正差分が production コード（Step 1「コード変更」からテストコードを除いたもの。コメント・空白のみは非該当だが、静的チェック・型チェック・ミューテーション計測の抑止コメントとコメントアウトの解除は production コード該当 — `quality-check` SKILL.md 4-3）に及ぶ場合はスキップせず、検証レビュアー 1 体（セキュリティ・反証を重点観点として明示）で検証レビューを行い、さらに Step 1 のセキュリティエンジニア起動条件に該当する場合は `QAエンジニア（ファルシフィケーション型）` を併走させて両方を記録する（`quality-check` SKILL.md 4-3 を正とする）。Step 2〜3 の残存で Step 4 を実行せず終了したサイクルも `personas: []`（`review_mode: "full"` と組み合わせて「Step 4 未実行」を意味する） |
+| `persona_selection_basis` | `{ persona: string, applied: boolean, basis: string }[]` | 任意 | Step 1「レビュー体制の決定」の根拠。統合レビュアー・QAエンジニア（ファルシフィケーション型）・専門家 3 種（セキュリティエンジニア / 要件・仕様整合性レビュアー / パフォーマンスエンジニア）の 5 行全件を含め、`applied: false` の行には理由を `basis` に書く（起動条件に該当したが優先順位で見送った専門家のみ「優先順位により未起動（統合レビュアーの重点観点に昇格）」と書き、該当しない専門家は非該当の理由を書く。QA・専門家の行の `basis` は変更ファイル一覧のパスまたは差分中のシンボルを 1 つ以上引用し、`applied: false` の行は確認した起動条件の項目名を挙げる — 引用も項目名もない一語の `basis` は不可。`quality-check` SKILL.md Step 1「レビュー体制の決定」）。`review_mode: "full"` で Step 4 を実行したサイクルでは必須。`verification`、および Step 4 未実行（`personas: []`）のサイクルでは省略可。**`persona` は `quality-check` SKILL.md Step 4「役割定義」表の名称と完全一致させる**（専門家は括弧内の個別名を用いる）。`applied: true` の行の集合は同サイクルの `personas` と一致しなければならない |
 | `notes` | `string[]` | 任意 | サイクル単位の観測事実の記録先。トップレベル `_notes` と同じ `[Step N]` 接頭辞規則に従う（各要素の先頭にそのサイクル内の記録元ステップを示す `[Step N]` を付ける）。該当がなければ省略または空配列 |
 
 ### Finding オブジェクト
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
-| `source` | `string` | 必須 | 指摘元。ペルソナ名（例: "セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合の持ち越し不足分）。ペルソナ名は `quality-check` SKILL.md Step 4「ペルソナ定義」表の名称と完全一致させる（`persona` と同じ）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの提案ベース工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
+| `source` | `string` | 必須 | 指摘元。レビュアー名（例: "統合レビュアー"、"セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合の持ち越し不足分）。レビュアー名は `quality-check` SKILL.md Step 4「役割定義」表の名称と完全一致させる（`persona` と同じ）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの提案ベース工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
 | `severity` | `"高" \| "中" \| "低"` | 必須 | 優先度 |
 | `description` | `string` | 必須 | 指摘内容の概要 |
 | `action` | `"対応済" \| "未対応" \| "対象外"` | 必須 | 対応状況 |
 | `detail` | `string` | 任意 | 対応の詳細説明 |
 | `id` | `string` | 任意 | 指摘の追跡 ID。検証レビュー（`review_mode: "verification"`）で前サイクルの指摘を参照する際に用いる |
+| `concern` | `"design" \| "security" \| "performance" \| "requirements" \| "docs" \| "falsification"` | 必須（レビュアー由来の指摘） | 指摘の観点。`source` がレビュアー名の指摘では必須（`source` が `lint` / `test` / `test_design` の指摘では省略する）。統合レビュアーの指摘では観点別セクションから決まる（`design`: 設計・保守性 / `security` / `performance` / `requirements`: 要件整合 / `docs`: 文書整合）。QAエンジニア（ファルシフィケーション型）の指摘は `falsification`、専門家の指摘は各自の観点、検証レビュアーの指摘は元の指摘の観点を引き継ぐ。旧レポートには存在しない |
 
 ### E2E オブジェクト
 
@@ -223,7 +226,8 @@ quality-policy.md §2「上書きの契約」に基づき、プロダクトの�
       "cycle_number": 1,
       "findings": [
         {
-          "source": "セキュリティエンジニア",
+          "source": "統合レビュアー",
+          "concern": "security",
           "severity": "高",
           "description": "SQLインジェクション対策確認",
           "action": "対応済",
@@ -272,19 +276,19 @@ High リスクの backend 変更で、`test-recommendation` スキル（Step 5�
     {
       "cycle_number": 1,
       "review_mode": "full",
-      "personas": ["QAエンジニア（ファルシフィケーション型）", "要件・仕様整合性レビュアー", "セキュリティエンジニア", "統合アーキテクチャレビュー"],
+      "personas": ["統合レビュアー", "QAエンジニア（ファルシフィケーション型）", "セキュリティエンジニア"],
       "persona_selection_basis": [
-        { "persona": "QAエンジニア（ファルシフィケーション型）", "applied": true, "basis": "コード変更（backend）を含む" },
-        { "persona": "要件・仕様整合性レビュアー", "applied": true, "basis": "常に起動" },
-        { "persona": "セキュリティエンジニア", "applied": true, "basis": "認証・認可・入力処理の変更を含む" },
-        { "persona": "ソフトウェアアーキテクト", "applied": false, "basis": "新規モジュール・公開インターフェース・構造変更を含まない" },
-        { "persona": "統合アーキテクチャレビュー", "applied": true, "basis": "複数モジュールにまたがる変更" },
-        { "persona": "パフォーマンスエンジニア", "applied": false, "basis": "クエリ・ループ・キャッシュ・バンドル・高頻度経路の変更を含まない" }
+        { "persona": "統合レビュアー", "applied": true, "basis": "常に起動" },
+        { "persona": "QAエンジニア（ファルシフィケーション型）", "applied": true, "basis": "コード変更を含む（backend/src/main/java/.../AuthService.java とそのテスト）" },
+        { "persona": "セキュリティエンジニア", "applied": true, "basis": "認証・認可・入力処理の変更を含む（優先 1）" },
+        { "persona": "要件・仕様整合性レビュアー", "applied": false, "basis": "優先順位により未起動（統合レビュアーの重点観点に昇格）" },
+        { "persona": "パフォーマンスエンジニア", "applied": false, "basis": "起動条件（クエリ・ループ・キャッシュ・バンドル・高頻度経路）に該当するパスなし（変更ファイル一覧を確認）" }
       ],
       "findings": [
         {
           "id": "cycle1-qa-01",
           "source": "QAエンジニア（ファルシフィケーション型）",
+          "concern": "falsification",
           "severity": "中",
           "description": "失効済みトークンでの更新拒否を証明する入力が未検証",
           "action": "対応済",

@@ -22,6 +22,12 @@ This project uses the [superpowers](https://github.com/obra/superpowers) skill s
 - `/writing-plans` — Create implementation plans before writing code
 - `/quality-check` — Run quality checks before merging
 
+### Editing files from Claude Code on Windows
+
+- Git Bash on Windows fails on long heredocs (`cat <<'EOF' ...`) that mix multi-byte text and quotes (`unexpected EOF while looking for matching quote`), and the failure discards the whole command. Write edit scripts, fixtures and long Japanese text with the Write tool (or an editor) first, then run them from Bash.
+- Short ASCII replacements via `sed` or an inline `python -c` are fine; anything longer, or containing Japanese, goes through a script file.
+- Test fixtures that contain `node_modules` junctions must be staged with explicit paths, not `git add .`, or the junction target gets walked.
+
 ## Pull Request Process
 
 1. **Do not push directly to `main`** — Always create a feature branch
