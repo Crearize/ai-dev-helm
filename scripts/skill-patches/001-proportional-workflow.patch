@@ -1,0 +1,2343 @@
+diff --git a/using-superpowers/SKILL.md b/using-superpowers/SKILL.md
+index 7ab2eb6..7567b0a 100644
+--- a/using-superpowers/SKILL.md
++++ b/using-superpowers/SKILL.md
+@@ -1,63 +1,20 @@
+ ---
+ name: using-superpowers
+-description: Use when starting any conversation - establishes how to find and use skills, requiring skill invocation before ANY response including clarifying questions
++description: Use when selecting skills for a task or resolving how skill workflows apply
+ ---
+ 
+-<SUBAGENT-STOP>
+-If you were dispatched as a subagent to execute a specific task, ignore this skill.
+-</SUBAGENT-STOP>
++# Using Superpowers
+ 
+-<EXTREMELY-IMPORTANT>
+-If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
++Use a skill when the user requests it or its workflow materially helps the task. Read the relevant skill once before applying it, and briefly state its purpose. A matching keyword or a small chance of relevance alone does not require loading a skill. Ordinary questions and read-only exploration can proceed directly.
+ 
+-IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
++User instructions and project policy take precedence. Reuse decisions and authorization already present in the conversation; do not restart an approved design or ask again merely because a skill was loaded. Ask only for information or authorization that is still needed.
+ 
+-This is not negotiable. You cannot rationalize your way out of this.
+-</EXTREMELY-IMPORTANT>
++Scale process to the work. A bounded change can be implemented by the parent with a short approach and appropriate verification. Use design and planning skills for unresolved requirements, architectural decisions, dependencies, or a useful handoff. Independent bounded tasks may be delegated when doing so reduces total effort; having subagent tools does not require using them.
+ 
+-## The Rule
++The project's quality-check remains the independent final quality gate. Skill workflows do not add per-task reviews or another whole-branch review on top of it. Keep the project's review budget, test oracles, and evidence requirements.
+ 
+-**Invoke relevant or requested skills BEFORE any response or action** — including clarifying questions, exploring the codebase, or checking files. If it turns out wrong for the situation, you don't have to use it.
+-
+-**Before entering plan mode:** if you haven't already brainstormed, invoke the brainstorming skill first.
+-
+-Then announce "Using [skill] to [purpose]" and follow the skill exactly. If it has a checklist, create a todo per item.
+-
+-## Skill Priority
+-
+-When multiple skills apply, process skills come first — they set the approach, then implementation skills (frontend-design, etc.) carry it out. Brainstorming and systematic-debugging are Superpowers' most common process skills, but the rule holds for any of them.
+-
+-- "Let's build X" → superpowers:brainstorming first, then implementation skills.
+-- "Fix this bug" → superpowers:systematic-debugging first, then domain skills.
+-
+-## Red Flags
+-
+-These thoughts mean STOP—you're rationalizing:
+-
+-| Thought | Reality |
+-|---------|---------|
+-| "This is just a simple question" | Questions are tasks. Check for skills. |
+-| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+-| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+-| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+-| "Let me gather information first" | Skills tell you HOW to gather information. |
+-| "This doesn't need a formal skill" | If a skill exists, use it. |
+-| "I remember this skill" | Skills evolve. Read current version. |
+-| "This doesn't count as a task" | Action = task. Check for skills. |
+-| "The skill is overkill" | Simple things become complex. Use it. |
+-| "I'll just do this one thing first" | Check BEFORE doing anything. |
+-| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+-| "I know what that means" | Knowing the concept ≠ using the skill. Invoke it. |
+-
+-## Platform Adaptation
+-
+-If your harness appears here, read its reference file for special instructions:
+-
+-- Codex: `references/codex-tools.md`
+-- Pi: `references/pi-tools.md`
+-- Antigravity: `references/antigravity-tools.md`
+-- Hermes Agent: `references/hermes-tools.md`
+-
+-## User Instructions
+-
+-User instructions (CLAUDE.md, AGENTS.md, GEMINI.md, etc, direct requests) take precedence over skills, which in turn override default behavior. Only skip skill workflows or instructions when your human partner has explicitly told you to.
++For tool syntax consult only the reference relevant to your runtime, and trust the actual available tools and instructions over examples:
++- Codex: [references/codex-tools.md](references/codex-tools.md)
++- Pi: [references/pi-tools.md](references/pi-tools.md)
++- Antigravity: [references/antigravity-tools.md](references/antigravity-tools.md)
++- Hermes: [references/hermes-tools.md](references/hermes-tools.md)
+diff --git a/brainstorming/SKILL.md b/brainstorming/SKILL.md
+index 8f996c6..32c3104 100644
+--- a/brainstorming/SKILL.md
++++ b/brainstorming/SKILL.md
+@@ -1,250 +1,20 @@
+ ---
+ name: brainstorming
+-description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
++description: Use when requirements, tradeoffs, or architectural decisions need clarification before implementation
+ ---
+ 
+ # Brainstorming Ideas Into Designs
+ 
+-Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
++Read the relevant existing flow and the user's constraints. Identify the intended behavior, scope, and observable success criteria. Do not reopen decisions or approvals already given.
+ 
+-Start by classifying how much process the request needs, then work
+-through your path: understand the context, refine the idea, present a
+-design, and get your human partner's approval.
++- For a bounded, authorized change, describe the approach briefly and proceed once requirements are clear. A separate spec or approval round is unnecessary.
++- For exploratory work, state what the probe can establish and report its limitations. Do not turn a disposable experiment into a product change outside the authorized scope.
++- For architectural work, compare the meaningful alternatives and document interfaces, data flow, failure behavior, compatibility, and verification. Split only where the work has independent deliverables.
+ 
+-<HARD-GATE>
+-Do NOT invoke any implementation skill, write any code, scaffold any
+-project, or take any implementation action until you have told your
+-human partner what you intend and they have approved it. This applies
+-to EVERY task on EVERY path below — the ceremony scales with the task;
+-the approval gate never does.
+-</HARD-GATE>
++Bundle related clarification questions into a small set. Resolve routine implementation choices from the repository and conversation. When a consequential product decision or authorization is missing, ask and continue only independent work while waiting. Do not interpret elapsed time as approval.
+ 
+-## Three Paths
++Write a spec when it helps review or preserves decisions across sessions, normally at docs/superpowers/specs/YYYY-MM-DD-topic-design.md. Check for ambiguity, contradictions, and scope gaps. Follow the project's independent design review policy and budget; do not add another review merely because a skill also mentions it. Respect ignored/local-only documentation and do not force a commit.
+ 
+-Before your first question, classify the request and say the
+-classification out loud — "this looks bounded, so I'll present a short
+-design here rather than write a spec" — so your human partner can
+-override it:
++Use writing-plans when sequencing or handoff benefits from a plan; otherwise continue with implementation and appropriate tests. Preserve the independent final quality-check.
+ 
+-- **Spike** — a feasibility question ("can we...", "is it possible...",
+-  "quick and dirty is fine") whose output is an answer, not code you
+-  keep. Present the question and what you'll try in 2-3 sentences, get
+-  a nod, then find out as cheaply as correctness allows. No design
+-  doc, no spec file. Report findings as a recommendation; anything you
+-  built stays labeled throwaway.
+-- **Bounded** — a well-scoped change to code that already exists in
+-  this repo: a new flag, a small endpoint, a one-file fix.
+-  Understanding the kind of app is not enough — bounded means the flow
+-  you are changing is already here to read. If there is no existing
+-  flow to change, the task is not bounded. Ask the clarifying
+-  questions that matter, present a short design IN CHAT (a few
+-  sentences to a few short paragraphs), and STOP. Implementation
+-  starts only after your human partner says yes to that design — a
+-  bounded task's approval is as hard a gate as an architectural
+-  one. No spec file, no implementation plan document.
+-- **Architectural** — new projects, new subsystems, changes that
+-  restructure how components fit together or alter interfaces others
+-  depend on. Follow the full process: questions, approaches, sectioned
+-  design, written spec, then the writing-plans skill.
+-
+-When in doubt between two paths, take the heavier one. The ratchet is
+-one-way: hidden complexity discovered mid-task upgrades the path —
+-stop, say so, and step up. Nothing downgrades mid-task.
+-
+-## Anti-Pattern: "Too Simple To Need Approval"
+-
+-Every path ends with your human partner approving your intent before
+-implementation. A todo list, a single-function utility, a config
+-change — the design may be two sentences in chat, but you MUST present
+-it and get approval. "Simple" tasks are where unexamined assumptions
+-cause the most wasted work. What scales with simplicity is the
+-artifact, never the approval.
+-
+-## Red Flags
+-
+-| Thought | Reality |
+-|---------|---------|
+-| "This is too simple to need a design" | Simple means a short design, not no design. Two sentences in chat, then approval. |
+-| "I'll call it bounded and skip the spec" | Reaching for a label to skip work IS the doubt — take the heavier path. |
+-| "It's bounded and the design is obvious — I'll start while they read it" | The gate is the approval, not the design's length. Present, then stop until you hear yes. |
+-| "I understand this kind of app, so it's bounded" | Bounded measures the repo, not your familiarity. A new project has no existing flow — it is architectural. |
+-| "The spike works, so I'll keep the code" | A spike's output is an answer. Keeping the code is a new request — classify it. |
+-| "It grew, but I'm almost done — no need to re-classify" | Hidden complexity upgrades the path mid-task. Stop and say so. |
+-| "They approved the spike, so the follow-up change is approved too" | Each task gets its own classification and its own approval. |
+-
+-## Checklist
+-
+-Classify first, announce the path, then create a task for each item on
+-your path and complete them in order.
+-
+-**Spike:**
+-1. **Explore project context** — enough to frame the probe
+-2. **Present question + probe plan** — 2-3 sentences
+-3. **Get approval** — a nod is enough
+-4. **Investigate** — as cheaply as correctness allows
+-5. **Report findings** — a recommendation; label anything built as throwaway
+-
+-**Bounded:**
+-1. **Explore project context** — check files, docs, recent commits
+-2. **Ask clarifying questions** — one at a time, the ones that matter
+-3. **Present short design in chat** — approach, files touched, testing
+-4. **Get approval** — STOP and wait for an explicit yes; presenting the design and starting in the same breath is skipping the gate
+-5. **Implement** — proceed with the normal development workflow (TDD applies); no plan document
+-
+-**Architectural:**
+-1. **Explore project context** — check files, docs, recent commits
+-2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own message); on approval its browser tab opens for you. If no visual question ever arises, never offer it. See the Visual Companion section below.
+-3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
+-4. **Propose 2-3 approaches** — with trade-offs and your recommendation
+-5. **Present design** — in sections scaled to their complexity, get user approval after each section
+-6. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commit
+-7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
+-8. **User reviews written spec** — ask user to review the spec file before proceeding
+-9. **Transition to implementation** — invoke writing-plans skill to create implementation plan
+-
+-## Process Flow
+-
+-```dot
+-digraph brainstorming {
+-    "Classify: spike / bounded / architectural" [shape=diamond];
+-    "Present question + probe (2-3 sentences)" [shape=box];
+-    "Ask clarifying questions (bounded)" [shape=box];
+-    "Present short design in chat" [shape=box];
+-    "Human approves?" [shape=diamond];
+-    "Investigate; report recommendation" [shape=doublecircle];
+-    "Implement via normal workflow (no plan doc)" [shape=doublecircle];
+-    "Explore project context" [shape=box];
+-    "Ask clarifying questions" [shape=box];
+-    "Propose 2-3 approaches" [shape=box];
+-    "Present design sections" [shape=box];
+-    "User approves design?" [shape=diamond];
+-    "Write design doc" [shape=box];
+-    "Spec self-review\n(fix inline)" [shape=box];
+-    "User reviews spec?" [shape=diamond];
+-    "Invoke writing-plans skill" [shape=doublecircle];
+-    "Hidden complexity? Upgrade path" [shape=box];
+-
+-    "Classify: spike / bounded / architectural" -> "Present question + probe (2-3 sentences)" [label="spike"];
+-    "Classify: spike / bounded / architectural" -> "Ask clarifying questions (bounded)" [label="bounded"];
+-    "Classify: spike / bounded / architectural" -> "Explore project context" [label="architectural"];
+-    "Present question + probe (2-3 sentences)" -> "Human approves?";
+-    "Ask clarifying questions (bounded)" -> "Present short design in chat";
+-    "Present short design in chat" -> "Human approves?";
+-    "Human approves?" -> "Investigate; report recommendation" [label="spike: yes"];
+-    "Human approves?" -> "Implement via normal workflow (no plan doc)" [label="bounded: yes"];
+-    "Hidden complexity? Upgrade path" -> "Classify: spike / bounded / architectural";
+-    "Explore project context" -> "Ask clarifying questions";
+-    "Ask clarifying questions" -> "Propose 2-3 approaches";
+-    "Propose 2-3 approaches" -> "Present design sections";
+-    "Present design sections" -> "User approves design?";
+-    "User approves design?" -> "Present design sections" [label="no, revise"];
+-    "User approves design?" -> "Write design doc" [label="yes"];
+-    "Write design doc" -> "Spec self-review\n(fix inline)";
+-    "Spec self-review\n(fix inline)" -> "User reviews spec?";
+-    "User reviews spec?" -> "Write design doc" [label="changes requested"];
+-    "User reviews spec?" -> "Invoke writing-plans skill" [label="approved"];
+-}
+-```
+-
+-**Terminal states are path-bound.** Architectural: the ONLY skill you
+-invoke after brainstorming is writing-plans — never frontend-design,
+-mcp-builder, or any other implementation skill. Bounded: after
+-approval, implementation proceeds directly through the normal
+-development workflow; no plan document. Spike: the terminal state is a
+-reported recommendation.
+-
+-## The Process
+-
+-The subsections below serve the bounded and architectural paths (a
+-spike stops at "present the probe, get a nod"). Sections from
+-**Exploring approaches** onward are architectural-path depth — for
+-bounded work, context plus a few questions plus a short in-chat design
+-is the whole process.
+-
+-**Understanding the idea:**
+-
+-- Check out the current project state first (files, docs, recent commits)
+-- Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
+-- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
+-- For appropriately-scoped projects, ask questions one at a time to refine the idea
+-- Prefer multiple choice questions when possible, but open-ended is fine too
+-- Only one question per message - if a topic needs more exploration, break it into multiple questions
+-- Focus on understanding: purpose, constraints, success criteria
+-
+-**Exploring approaches:**
+-
+-- Propose 2-3 different approaches with trade-offs
+-- Present options conversationally with your recommendation and reasoning
+-- Lead with your recommended option and explain why
+-- YAGNI ruthlessly - remove unnecessary features from every approach and design
+-
+-**Presenting the design:**
+-
+-- Once you believe you understand what you're building, present the design
+-- Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
+-- Ask after each section whether it looks right so far
+-- Cover: architecture, components, data flow, error handling, testing
+-- Be ready to go back and clarify if something doesn't make sense
+-
+-**Design for isolation and clarity:**
+-
+-- Break the system into smaller units that each have one clear purpose, communicate through well-defined interfaces, and can be understood and tested independently
+-- For each unit, you should be able to answer: what does it do, how do you use it, and what does it depend on?
+-- Can someone understand what a unit does without reading its internals? Can you change the internals without breaking consumers? If not, the boundaries need work.
+-- Smaller, well-bounded units are also easier for you to work with - you reason better about code you can hold in context at once, and your edits are more reliable when files are focused. When a file grows large, that's often a signal that it's doing too much.
+-
+-**Working in existing codebases:**
+-
+-- Explore the current structure before proposing changes. Follow existing patterns.
+-- Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design - the way a good developer improves code they're working in.
+-- Don't propose unrelated refactoring. Stay focused on what serves the current goal.
+-
+-## After the Design (architectural path)
+-
+-**Documentation:**
+-
+-- Write the validated design (spec) to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+-  - (User preferences for spec location override this default)
+-- Use elements-of-style:writing-clearly-and-concisely skill if available
+-- Commit the design document to git
+-
+-**Spec Self-Review:**
+-After writing the spec document, look at it with fresh eyes:
+-
+-1. **Placeholder scan:** Any "TBD", "TODO", incomplete sections, or vague requirements? Fix them.
+-2. **Internal consistency:** Do any sections contradict each other? Does the architecture match the feature descriptions?
+-3. **Scope check:** Is this focused enough for a single implementation plan, or does it need decomposition?
+-4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
+-
+-Fix any issues inline. No need to re-review — just fix and move on.
+-
+-**User Review Gate:**
+-After the spec review loop passes, ask the user to review the written spec before proceeding:
+-
+-> "Spec written and committed to `<path>`. Please review it and let me know if you want to make any changes before we start writing out the implementation plan."
+-
+-Wait for the user's response. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
+-
+-**Implementation:**
+-
+-- Invoke the writing-plans skill to create a detailed implementation plan
+-- Do NOT invoke any other skill. writing-plans is the next step.
+-
+-## Visual Companion
+-
+-A browser-based companion for showing mockups, diagrams, and visual options during brainstorming. Available as a tool — not a mode. Accepting the companion means it's available for questions that benefit from visual treatment; it does NOT mean every question goes through the browser.
+-
+-**Offering the companion (just-in-time):** Do NOT offer it upfront. Wait until a question would genuinely be clearer shown than told — a real mockup / layout / diagram question, not merely a UI *topic*. The first time that happens, offer it then, as its own message:
+-> "This next part might be easier if I show you — I can put together mockups, diagrams, and comparisons in a browser tab as we go. It's still new and can be token-intensive. Want me to? I'll open it for you."
+-
+-**This offer MUST be its own message.** Only the offer — no clarifying question, summary, or other content. Wait for the user's response. If they accept, start the server with `--open` so their browser opens to the first screen automatically. If they decline, continue text-only and don't offer again unless they raise it.
+-
+-**Per-question decision:** Even after the user accepts, decide FOR EACH QUESTION whether to use the browser or the terminal. The test: **would the user understand this better by seeing it than reading it?**
+-
+-- **Use the browser** for content that IS visual — mockups, wireframes, layout comparisons, architecture diagrams, side-by-side visual designs
+-- **Use the terminal** for content that is text — requirements questions, conceptual choices, tradeoff lists, A/B/C/D text options, scope decisions
+-
+-A question about a UI topic is not automatically a visual question. "What does personality mean in this context?" is a conceptual question — use the terminal. "Which wizard layout works better?" is a visual question — use the browser.
+-
+-If they agree to the companion, read the detailed guide before proceeding:
+-`skills/superpowers/brainstorming/visual-companion.md`
++For decisions that benefit from browser mockups, use the optional [visual companion](visual-companion.md). Follow the user's existing preference and the guide's browser launch instructions.
+diff --git a/writing-plans/SKILL.md b/writing-plans/SKILL.md
+index f74605b..7079293 100644
+--- a/writing-plans/SKILL.md
++++ b/writing-plans/SKILL.md
+@@ -1,171 +1,24 @@
+ ---
+ name: writing-plans
+-description: Use when you have a spec or requirements for a multi-step task, before touching code
++description: Use when a multi-step change needs explicit sequencing, dependencies, or a handoff
+ ---
+ 
+ # Writing Plans
+ 
+-## Overview
++Write the smallest plan that makes the authorized work executable and verifiable. Prefer outcomes and contracts over a script for every keystroke. Do not write the implementation twice in a plan and then ask another model to transcribe it.
+ 
+-Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everything they need to know: which files to touch for each task, code, testing, docs they might need to check, how to test it. Give them the whole plan as bite-sized tasks. DRY. YAGNI. TDD. Frequent commits.
++For a small change, a short task list is sufficient. For substantial work, save a plan at docs/superpowers/plans/YYYY-MM-DD-topic.md, or the project's preferred location. Include:
+ 
+-Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
++- Goal, scope, and accepted design or requirements.
++- Files or components affected and dependencies between tasks.
++- Required behavior, interface contracts, edge cases, and acceptance criteria.
++- Meaningful verification and its independent oracle; commands when known.
++- Ownership only where work is actually delegated.
+ 
+-**Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
++Provide exact code only when an API contract or non-obvious constraint requires it. Avoid mandatory 2-5 minute steps, full implementation listings, and a separate commit or review for each task. Tasks should produce coherent, independently testable results.
+ 
+-**Context:** If working in an isolated worktree, it should have been created via the `superpowers:using-git-worktrees` skill at execution time.
++Self-check coverage, ordering, and contradictions. Follow the project's independent document review policy and review budget without adding duplicate reviews. An already approved design does not need another approval just to start its plan.
+ 
+-**Save plans to:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
+-- (User preferences for plan location override this default)
++The parent may implement directly. Delegate only useful independent bounded work, accounting for briefing, rediscovery, and integration cost as well as model cost. Use executing-plans for continuation or subagent-driven-development when delegation is chosen. Do not ask the user to select an execution mechanism already authorized by the task.
+ 
+-## Scope Check
+-
+-If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
+-
+-## File Structure
+-
+-Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.
+-
+-- Design units with clear boundaries and well-defined interfaces. Each file should have one clear responsibility.
+-- You reason best about code you can hold in context at once, and your edits are more reliable when files are focused. Prefer smaller, focused files over large ones that do too much.
+-- Files that change together should live together. Split by responsibility, not by technical layer.
+-- In existing codebases, follow established patterns. If the codebase uses large files, don't unilaterally restructure - but if a file you're modifying has grown unwieldy, including a split in the plan is reasonable.
+-
+-This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently.
+-
+-## Task Right-Sizing
+-
+-A task is the smallest unit that carries its own test cycle and is worth a
+-fresh reviewer's gate. When drawing task boundaries: fold setup,
+-configuration, scaffolding, and documentation steps into the task whose
+-deliverable needs them; split only where a reviewer could meaningfully
+-reject one task while approving its neighbor. Each task ends with an
+-independently testable deliverable.
+-
+-## Bite-Sized Task Granularity
+-
+-**Each step is one action (2-5 minutes):**
+-- "Write the failing test" - step
+-- "Run it to make sure it fails" - step
+-- "Implement the minimal code to make the test pass" - step
+-- "Run the tests and make sure they pass" - step
+-- "Commit" - step
+-
+-## Plan Document Header
+-
+-**Every plan MUST start with this header:**
+-
+-```markdown
+-# [Feature Name] Implementation Plan
+-
+-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+-
+-**Goal:** [One sentence describing what this builds]
+-
+-**Architecture:** [2-3 sentences about approach]
+-
+-**Tech Stack:** [Key technologies/libraries]
+-
+-**Spec:** [path to the spec/design doc this plan implements — the plan
+-argues from the spec, so the spec travels with it; executors read both]
+-
+-## Global Constraints
+-
+-[The spec's project-wide requirements — version floors, dependency limits,
+-naming and copy rules, platform requirements — one line each, with exact
+-values copied verbatim from the spec. Every task's requirements implicitly
+-include this section.]
+-
+----
+-```
+-
+-## Task Structure
+-
+-````markdown
+-### Task N: [Component Name]
+-
+-**Files:**
+-- Create: `exact/path/to/file.py`
+-- Modify: `exact/path/to/existing.py:123-145`
+-- Test: `tests/exact/path/to/test.py`
+-
+-**Interfaces:**
+-- Consumes: [what this task uses from earlier tasks — exact signatures]
+-- Produces: [what later tasks rely on — exact function names, parameter
+-  and return types. A task's implementer sees only their own task; this
+-  block is how they learn the names and types neighboring tasks use.]
+-
+-- [ ] **Step 1: Write the failing test**
+-
+-```python
+-def test_specific_behavior():
+-    result = function(input)
+-    assert result == expected
+-```
+-
+-- [ ] **Step 2: Run test to verify it fails**
+-
+-Run: `pytest tests/path/test.py::test_name -v`
+-Expected: FAIL with "function not defined"
+-
+-- [ ] **Step 3: Write minimal implementation**
+-
+-```python
+-def function(input):
+-    return expected
+-```
+-
+-- [ ] **Step 4: Run test to verify it passes**
+-
+-Run: `pytest tests/path/test.py::test_name -v`
+-Expected: PASS
+-
+-- [ ] **Step 5: Commit**
+-
+-```bash
+-git add tests/path/test.py src/path/file.py
+-git commit -m "feat: add specific feature"
+-```
+-````
+-
+-## No Placeholders
+-
+-Every step must contain the actual content an engineer needs. These are **plan failures** — never write them:
+-- "TBD", "TODO", "implement later", "fill in details"
+-- "Add appropriate error handling" / "add validation" / "handle edge cases"
+-- "Write tests for the above" (without actual test code)
+-- "Similar to Task N" (repeat the code — the engineer may be reading tasks out of order)
+-- Steps that describe what to do without showing how (code blocks required for code steps)
+-- References to types, functions, or methods not defined in any task
+-
+-## Self-Review
+-
+-After writing the complete plan, look at the spec with fresh eyes and check the plan against it. This is a checklist you run yourself — not a subagent dispatch.
+-
+-**1. Spec coverage:** Skim each section/requirement in the spec. Can you point to a task that implements it? List any gaps.
+-
+-**2. Placeholder scan:** Search your plan for red flags — any of the patterns from the "No Placeholders" section above. Fix them.
+-
+-**3. Type consistency:** Do the types, method signatures, and property names you used in later tasks match what you defined in earlier tasks? A function called `clearLayers()` in Task 3 but `clearFullLayers()` in Task 7 is a bug.
+-
+-If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
+-
+-## Execution Handoff
+-
+-After saving the plan, offer execution choice:
+-
+-**"Plan complete and saved to `docs/superpowers/plans/<filename>.md`. Two execution options:**
+-
+-**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
+-
+-**2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
+-
+-**Which approach?"**
+-
+-**If Subagent-Driven chosen:**
+-- **REQUIRED SUB-SKILL:** Use superpowers:subagent-driven-development
+-- Fresh subagent per task + two-stage review
+-
+-**If Inline Execution chosen:**
+-- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
+-- Batch execution with checkpoints for review
++The final change still passes the project's independent quality-check and relevant verification.
+diff --git a/executing-plans/SKILL.md b/executing-plans/SKILL.md
+index b51d97d..eb8199a 100644
+--- a/executing-plans/SKILL.md
++++ b/executing-plans/SKILL.md
+@@ -1,64 +1,16 @@
+ ---
+ name: executing-plans
+-description: Use when you have a written implementation plan to execute in a separate session with review checkpoints
++description: Use when continuing implementation from an existing plan
+ ---
+ 
+ # Executing Plans
+ 
+-## Overview
++Read the plan and current progress, then confirm its assumptions against the repository. Preserve existing decisions and completed work. Resolve routine gaps locally; ask only about missing consequential requirements or authorization.
+ 
+-Load plan, review critically, execute all tasks, report when complete.
++Use an existing isolated workspace or the project's workspace policy. The parent may execute tasks directly. Delegate independent bounded work only when the handoff and integration cost is worthwhile; tool availability alone is not a reason to switch workflows.
+ 
+-**Announce at start:** "I'm using the executing-plans skill to implement this plan."
++For each coherent task, implement the required behavior and run appropriate focused verification. Adjust mechanical steps when evidence warrants it while preserving scope and contracts. Track enough progress to survive interruption without reproducing tool logs by hand.
+ 
+-**Note:** Tell your human partner that Superpowers works much better with access to subagents (Claude Code, Codex CLI, Codex App, Copilot CLI, and Gemini CLI all qualify; see the per-platform tool refs in `../using-superpowers/references/`). If subagents are available, use superpowers:subagent-driven-development instead of this skill.
++Investigate failures instead of merely stopping at the first failed command. Escalate when progress actually needs user input or a scope decision. Report material changes to the plan.
+ 
+-## The Process
+-
+-### Step 1: Load and Review Plan
+-1. Ensure an isolated workspace: use superpowers:using-git-worktrees to create one or verify the existing one
+-2. Read plan file
+-3. Review critically - identify any questions or concerns about the plan
+-4. If concerns: Raise them with your human partner before starting
+-5. If no concerns: Create todos for the plan items and proceed
+-
+-### Step 2: Execute Tasks
+-
+-For each task:
+-1. Mark as in_progress
+-2. Follow each step exactly (plan has bite-sized steps)
+-3. Run verifications as specified
+-4. Mark as completed
+-
+-### Step 3: Complete Development
+-
+-After all tasks complete and verified:
+-- Announce: "I'm using the finishing-a-development-branch skill to complete this work."
+-- **REQUIRED SUB-SKILL:** Use superpowers:finishing-a-development-branch
+-- Follow that skill to verify tests, present options, execute choice
+-
+-## When to Stop and Ask for Help
+-
+-**STOP executing immediately when:**
+-- Hit a blocker (missing dependency, test fails, instruction unclear)
+-- Plan has critical gaps preventing starting
+-- You don't understand an instruction
+-- Verification fails repeatedly
+-
+-**Ask for clarification rather than guessing.**
+-
+-## When to Revisit Earlier Steps
+-
+-**Return to Review (Step 1) when:**
+-- Partner updates the plan based on your feedback
+-- Fundamental approach needs rethinking
+-
+-**Don't force through blockers** - stop and ask.
+-
+-## Remember
+-- Review plan critically first
+-- Follow plan steps exactly
+-- Don't skip verifications
+-- Reference skills when plan says to
+-- Stop when blocked, don't guess
+-- Never start implementation on main/master branch without explicit user consent
++Complete the project's independent quality-check once for the final change, using its review budget and required verification. Do not add per-task reviews or another final code reviewer. Integrate according to existing authorization and project branch policy; use finishing-a-development-branch when integration guidance is needed.
+diff --git a/subagent-driven-development/SKILL.md b/subagent-driven-development/SKILL.md
+index aac35b9..28b7954 100644
+--- a/subagent-driven-development/SKILL.md
++++ b/subagent-driven-development/SKILL.md
+@@ -1,568 +1,18 @@
+ ---
+ name: subagent-driven-development
+-description: Use when executing implementation plans with independent tasks in the current session
++description: Use when independent bounded tasks benefit from delegation during implementation
+ ---
+ 
+ # Subagent-Driven Development
+ 
+-Execute plan by dispatching a fresh implementer subagent per task, a task review (spec compliance + code quality) after each, and a broad whole-branch review at the end.
++Choose delegation by total effort: briefing, implementation, rediscovery, integration, and rework. The parent may implement or fix code directly. Do not require a particular implementation model or forbid the parent model from writing code. Select available models for task difficulty and use the runtime's actual tool contract.
+ 
+-**Why subagents:** You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
++Delegate only work with clear ownership, interfaces, acceptance criteria, and useful independence. Parallel tasks must not edit the same files or depend on unfinished shared state. Give each worker concise requirements, relevant source paths, the workspace, constraints, and expected verification; do not ask it to transcribe a complete implementation from a plan.
+ 
+-**Core principle:** Fresh subagent per task + task review (spec + quality) + broad final review = high quality, fast iteration
++Use [implementer-prompt.md](implementer-prompt.md) as an optional brief template. The controller integrates results, resolves dependencies, and can handle a small fix itself. Workers report evidence and uncertainties; they do not launch extra reviewers. Maintain a concise progress record only when it aids resumption, using existing runtime records where available.
+ 
+-**Narration:** between tool calls, narrate at most one short line — the
+-ledger and the tool results carry the record.
++Run appropriate tests while implementing. After integration, use the project's independent quality-check and its review budget. There is no mandatory task-by-task review, spec/quality double review, or additional whole-branch reviewer. A targeted investigation can still be requested when a concrete unresolved concern requires another perspective; account for it in the existing review budget.
+ 
+-**Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are the four named below, or all tasks complete. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
++The task-brief and workspace scripts remain optional utilities for larger handoffs. Legacy task review/re-review templates are optional formats for an explicitly selected quality-check investigation, not additional gates. Do not create their ledgers, snapshots, or packages unless the chosen workflow needs them.
+ 
+-**Rulings, not stalls.** A running plan does not wait on a human. Conflicts,
+-ambiguities, plan defects, a cap you would have asked to exceed — decide
+-them. The spec is the binding authority, the plan is its argument, and your
+-judgment settles what neither answers. Record every decision in the ledger as
+-`Ruling: <what you decided> — <why> — <what it costs if wrong>`, and keep
+-going. A wrong ruling costs rework your human partner can see and undo; a
+-session parked on a question costs their whole day and buys nothing.
+-
+-Four things stop you, and only these: an irreversible or destructive
+-operation; a security-sensitive action; a side effect outside this worktree
+-that norms say you ask about first (a merge, a push to a shared branch, a
+-publish); and a plan so broken that every path forward is a guess. For those,
+-stop and ask.
+-
+-## When to Use
+-
+-```dot
+-digraph when_to_use {
+-    "Have implementation plan?" [shape=diamond];
+-    "Tasks mostly independent?" [shape=diamond];
+-    "Stay in this session?" [shape=diamond];
+-    "subagent-driven-development" [shape=box];
+-    "executing-plans" [shape=box];
+-    "Manual execution or brainstorm first" [shape=box];
+-
+-    "Have implementation plan?" -> "Tasks mostly independent?" [label="yes"];
+-    "Have implementation plan?" -> "Manual execution or brainstorm first" [label="no"];
+-    "Tasks mostly independent?" -> "Stay in this session?" [label="yes"];
+-    "Tasks mostly independent?" -> "Manual execution or brainstorm first" [label="no - tightly coupled"];
+-    "Stay in this session?" -> "subagent-driven-development" [label="yes"];
+-    "Stay in this session?" -> "executing-plans" [label="no - parallel session"];
+-}
+-```
+-
+-**vs. Executing Plans (parallel session):**
+-- Same session (no context switch)
+-- Fresh subagent per task (no context pollution)
+-- Review after each task (spec compliance + code quality), broad review at the end
+-- Faster iteration (no human-in-loop between tasks)
+-
+-## The Process
+-
+-```dot
+-digraph process {
+-    rankdir=TB;
+-
+-    subgraph cluster_per_task {
+-        label="Per Task";
+-        "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
+-        "Implementer asks questions?" [shape=diamond];
+-        "Answer questions, provide context" [shape=box];
+-        "Implementer implements, tests, commits, self-reviews" [shape=box];
+-        "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)" [shape=box];
+-        "Spec ✅ and quality approved?" [shape=diamond];
+-        "Finding conflicts with plan text?" [shape=diamond];
+-        "Rule on the conflict, ledger the ruling" [shape=box];
+-        "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer, more capable model" [shape=box];
+-        "Dispatch scoped re-review (./re-review-prompt.md)" [shape=box];
+-        "All findings addressed?" [shape=diamond];
+-        "R = 5?" [shape=diamond];
+-        "Adjudicate each open finding" [shape=box];
+-        "Any load-bearing finding?" [shape=diamond];
+-        "Rule and continue; stop only if every path forward is a guess" [shape=box];
+-        "Park findings in ledger with rulings" [shape=box];
+-        "Append completion to ledger, mark todo complete" [shape=box];
+-    }
+-
+-    "Setup: worktree, ledger check, read plan, pre-flight review" [shape=box];
+-    "More tasks remain?" [shape=diamond];
+-    "Dispatch final code reviewer (../requesting-code-review/code-reviewer.md)" [shape=box];
+-    "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals" [shape=box];
+-    "Final review clean: delete this plan's workspace" [shape=box];
+-    "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
+-
+-    "Setup: worktree, ledger check, read plan, pre-flight review" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+-    "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer asks questions?";
+-    "Implementer asks questions?" -> "Answer questions, provide context" [label="yes"];
+-    "Answer questions, provide context" -> "Implementer implements, tests, commits, self-reviews";
+-    "Implementer asks questions?" -> "Implementer implements, tests, commits, self-reviews" [label="no"];
+-    "Implementer implements, tests, commits, self-reviews" -> "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)";
+-    "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)" -> "Spec ✅ and quality approved?";
+-    "Spec ✅ and quality approved?" -> "Append completion to ledger, mark todo complete" [label="yes"];
+-    "Spec ✅ and quality approved?" -> "Finding conflicts with plan text?" [label="no"];
+-    "Finding conflicts with plan text?" -> "Rule on the conflict, ledger the ruling" [label="yes"];
+-    "Rule on the conflict, ledger the ruling" -> "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer, more capable model";
+-    "Finding conflicts with plan text?" -> "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer, more capable model" [label="no"];
+-    "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer, more capable model" -> "Dispatch scoped re-review (./re-review-prompt.md)";
+-    "Dispatch scoped re-review (./re-review-prompt.md)" -> "All findings addressed?";
+-    "All findings addressed?" -> "Append completion to ledger, mark todo complete" [label="yes"];
+-    "All findings addressed?" -> "R = 5?" [label="no"];
+-    "R = 5?" -> "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer, more capable model" [label="no - next round"];
+-    "R = 5?" -> "Adjudicate each open finding" [label="yes - breaker trips"];
+-    "Adjudicate each open finding" -> "Any load-bearing finding?";
+-    "Any load-bearing finding?" -> "Rule and continue; stop only if every path forward is a guess" [label="yes"];
+-    "Any load-bearing finding?" -> "Park findings in ledger with rulings" [label="no"];
+-    "Park findings in ledger with rulings" -> "Append completion to ledger, mark todo complete";
+-    "Append completion to ledger, mark todo complete" -> "More tasks remain?";
+-    "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
+-    "More tasks remain?" -> "Dispatch final code reviewer (../requesting-code-review/code-reviewer.md)" [label="no"];
+-    "Dispatch final code reviewer (../requesting-code-review/code-reviewer.md)" -> "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals";
+-    "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals" -> "Final review clean: delete this plan's workspace";
+-    "Final review clean: delete this plan's workspace" -> "Use superpowers:finishing-a-development-branch";
+-}
+-```
+-
+-## Setup
+-
+-Ensure the work happens in an isolated workspace: use
+-superpowers:using-git-worktrees to create one or verify the existing one.
+-Never start implementation on a main/master branch without your human
+-partner's explicit consent.
+-
+-Conversation memory does not survive compaction. In real sessions,
+-controllers that lost their place have re-dispatched entire completed task
+-sequences — the single most expensive failure observed. Track progress in
+-a ledger file, not only in todos.
+-
+-- Each plan owns a workspace: at skill start, run this skill's
+-  `scripts/sdd-workspace PLAN_FILE` — it prints the plan's git-ignored
+-  directory (`<repo-root>/.superpowers/sdd/<plan-basename>/`), home to
+-  every artifact for THIS plan: ledger, briefs, reports, review packages.
+-  Another plan's directory is never yours to read or write.
+-- Check for this plan's ledger at `<workspace>/progress.md`. If its first
+-  line names your plan file, tasks with a `Task <N>: complete` line are DONE
+-  — do not re-dispatch them; resume at the first task without one. A task
+-  whose last line is a fix round is mid-loop: resume the loop at the next
+-  round. A ledger whose first line names a different plan file — or a stray
+-  ledger at the old flat path `.superpowers/sdd/progress.md` — is another
+-  plan's progress: leave it in place and start your own, fresh.
+-- Create the ledger with its identity as the first line:
+-  `# SDD ledger — plan: <plan file path>`.
+-- The ledger is your recovery map: the commits it names exist in git even
+-  when your context no longer remembers creating them. After compaction,
+-  trust the ledger and `git log` over your own recollection.
+-- `git clean -fdx` will destroy the workspace (it's git-ignored scratch); if
+-  that happens, recover from `git log`.
+-
+-Read the plan once, note its context and Global Constraints, and create a
+-todo per task. If the plan names a Spec, read that too: the spec is the
+-authority the plan argues from, and conflicts inside the plan resolve
+-against it. A plan with no reachable spec gets a ledger note saying so —
+-rulings made without one are provisional.
+-
+-Before dispatching Task 1, scan the plan once for conflicts, writing down
+-what you checked as you check it:
+-
+-- tasks that contradict each other or the plan's Global Constraints
+-- anything the plan explicitly mandates that the review rubric treats as a
+-  defect (a test that asserts nothing, verbatim duplication of a logic block)
+-
+-The scan's output is a table, not a verdict. One row for every pair of tasks
+-that share a file or an interface: the two tasks, what one produces against
+-what the other consumes, and what you found. One row for every task: whether
+-its own text agrees with itself — the tests it specifies against the code it
+-specifies, the files it creates against the files it later touches. "The scan
+-is clean" without those rows is not a scan you ran.
+-
+-Write the table to the ledger. Rule on everything you find before execution
+-begins — each finding against the plan text that mandates it — and record
+-each ruling in the ledger. If the scan is clean, proceed without comment.
+-Rule on each conflict it surfaces — the spec is the binding authority, the
+-plan is its argument — record the ruling beside its row, and dispatch
+-Task 1. The review loop remains the net for conflicts that only emerge from
+-implementation.
+-
+-## Model Selection
+-
+-Use the least powerful model that can handle each role to conserve cost and increase speed.
+-
+-**Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): use a fast, cheap model. Most implementation tasks are mechanical when the plan is well-specified.
+-
+-**Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): use a standard model.
+-
+-**Architecture and design tasks**: use the most capable available model.
+-The final whole-branch review is one of these — dispatch it on the most
+-capable available model, not the session default.
+-
+-**Review tasks**: choose the model with the same judgment, scaled to the
+-diff's size, complexity, and risk. A small mechanical diff does not need the
+-most capable model; a subtle concurrency change does. Scoped re-reviews of
+-small fix diffs take a cheap-to-mid tier.
+-
+-**Fix-loop escalation (rounds 4-5)**: use a model at least one tier above
+-the implementer that got stuck.
+-
+-**Always specify the model explicitly when dispatching a subagent.** An
+-omitted model inherits your session's model — often the most capable and
+-most expensive — which silently defeats this section.
+-
+-**Turn count beats token price.** Wall-clock and context cost scale with how
+-many turns a subagent takes, and the cheapest models routinely take 2-3× the
+-turns on multi-step work — costing more overall. Use a mid-tier model as the
+-floor for reviewers and for implementers working from prose descriptions.
+-When the task's plan text contains the complete code to write, the
+-implementation is transcription plus testing: use the cheapest tier for
+-that implementer. Single-file mechanical fixes also take the cheapest tier.
+-
+-**Task complexity signals (implementation tasks):**
+-- Touches 1-2 files with a complete spec → cheap model
+-- Touches multiple files with integration concerns → standard model
+-- Requires design judgment or broad codebase understanding → most capable model
+-
+-## The Task Loop
+-
+-**Batch small same-shape work.** When the plan lists several tasks that are
+-each a small, independent edit of the same kind — the same one-line fix,
+-constant change, or field addition repeated across files — do not dispatch
+-one subagent per task. Compose ONE dispatch brief listing every file and
+-its change, send the whole batch to a single subagent, and review its diff
+-as one unit. Reserve one-dispatch-per-task for work that needs its own
+-judgment, its own tests, or its own review surface.
+-
+-Everything you paste into a dispatch prompt — and everything a subagent
+-prints back — stays resident in your context for the rest of the session
+-and is re-read on every later turn. Hand artifacts over as files.
+-
+-**Waiting on dispatched subagents:** never poll a wait interface with
+-short timeouts, and never sit in one silent, open-ended wait either.
+-While you have local work — ledger updates, packaging the next review,
+-reading reports — keep working; child results arrive on their own.
+-When you are genuinely idle, wait in bounded stretches (five to ten
+-minutes, where your platform allows), and between stretches post one
+-line of status and reconcile your live children: list them, and chase
+-any that finished without reporting. A bounded stretch keeps nearly
+-all of a long wait's efficiency while guaranteeing a stuck or lost
+-child is noticed within minutes, not at the end of the session.
+-
+-### 1. Dispatch the implementer
+-
+-Record BASE (`git rev-parse HEAD`) before dispatching — the review package
+-and fix-round diffs need it.
+-
+-- **Task brief:** before dispatching an implementer, run this skill's
+-  `scripts/task-brief PLAN_FILE N` — it extracts the task's full text to a
+-  uniquely named file and prints the path. Compose the dispatch so the
+-  brief stays the single source of
+-  requirements. Your dispatch should contain: (1) one line on where this
+-  task fits in the project; (2) the brief path, introduced as "read this
+-  first — it is your requirements, with the exact values to use verbatim";
+-  (3) interfaces and decisions from earlier tasks that the brief cannot
+-  know; (4) your resolution of any ambiguity you noticed in the brief;
+-  (5) the report-file path and report contract. Exact values (numbers,
+-  magic strings, signatures, test cases) appear only in the brief. Never
+-  make a subagent read the whole plan file.
+-- **Report file:** name the implementer's report file after the brief
+-  (brief `…/task-N-brief.md` → report `…/task-N-report.md`) and put it in
+-  the dispatch prompt. The implementer writes the full report there and
+-  returns only status, commits, a one-line test summary, and concerns.
+-- A dispatch prompt describes one task, not the session's history. Do not
+-  paste accumulated prior-task summaries ("state after Tasks 1-3") into
+-  later dispatches — a real session's dispatch hit 42k chars of which 99%
+-  was pasted history. A fresh subagent needs its task, the interfaces it
+-  touches, and the global constraints. Nothing else.
+-- The dispatch carries the no-subagents contract (it is in the
+-  implementer template): the implementer never dispatches subagents —
+-  not helpers, and never a reviewer. Review arrives from you, after the
+-  report. In real sessions, every reviewer a worker spawned duplicated
+-  the task review the controller dispatched anyway — a full extra
+-  review seat per task.
+-- If an earlier task parked a finding in the area this task touches, carry
+-  a pointer to that ledger entry in the dispatch.
+-- Record the implementer's agent identity from the dispatch result —
+-  fix-loop rounds 1-3 resume this agent.
+-- Never dispatch multiple implementation subagents in parallel (conflicts).
+-
+-Template: [implementer-prompt.md](implementer-prompt.md)
+-
+-### 2. Handle the report
+-
+-Implementer subagents report one of four statuses. Handle each appropriately:
+-
+-**DONE:** Generate the review package (`scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path.
+-
+-**DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
+-
+-**NEEDS_CONTEXT:** The implementer needs information that wasn't provided. Provide the missing context and re-dispatch.
+-
+-**BLOCKED:** The implementer cannot complete the task. Assess the blocker:
+-1. If it's a context problem, provide more context and re-dispatch with the same model
+-2. If the task requires more reasoning, re-dispatch with a more capable model
+-3. If the task is too large, break it into smaller pieces
+-4. If the plan itself is wrong, rule on the correction, ledger it, and re-dispatch with the ruling carried in the dispatch
+-
+-**Never** ignore an escalation or force the same model to retry without changes. If the implementer said it's stuck, something needs to change.
+-
+-If the implementer asks questions — before starting or mid-task — answer
+-clearly and completely, provide additional context if needed, and don't
+-rush it into implementation.
+-
+-### 3. Review the task
+-
+-Per-task reviews are task-scoped gates. The broad review happens once, at the
+-final whole-branch review. Never skip the task review, and never accept a
+-report missing either verdict — spec compliance AND task quality are both
+-required. Implementer self-review never replaces the task review; both are
+-needed.
+-
+-- Hand the reviewer its diff as a file: run this skill's
+-  `scripts/review-package PLAN_FILE BASE HEAD` and pass the reviewer the file path
+-  it prints (or, without bash: `git log --oneline`, `git diff --stat`,
+-  and `git diff -U10` for the range, redirected to one uniquely named
+-  file). The output never enters your own context, and the reviewer sees
+-  the commit list, stat summary, and full diff with context in one Read
+-  call. Use the BASE you recorded before dispatching the implementer —
+-  never `HEAD~1`, which silently truncates multi-commit tasks. Never
+-  dispatch a task reviewer without a diff file.
+-- **Reviewer inputs:** the task reviewer gets three paths — the same brief
+-  file, the report file, and the review package — plus the global
+-  constraints that bind the task.
+-- The global-constraints block you hand the reviewer is its attention
+-  lens. Copy the binding requirements verbatim from the plan's Global
+-  Constraints section or the spec: exact values, exact formats, and the
+-  stated relationships between components ("same layout as X", "matches
+-  Y"). The reviewer's template already carries the process rules (YAGNI,
+-  test hygiene, review method) — the constraints block is for what THIS
+-  project's spec demands.
+-- Do not add open-ended directives like "check all uses" or "run race tests
+-  if useful" without a concrete, task-specific reason
+-- Do not ask a reviewer to re-run tests the implementer already ran on the
+-  same code — the implementer's report carries the test evidence
+-- Do not pre-judge findings for the reviewer — never instruct a reviewer to
+-  ignore or not flag a specific issue. If you believe a finding would be a
+-  false positive, let the reviewer raise it and adjudicate it in the review
+-  loop. If the prompt you are writing contains "do not flag," "don't treat X
+-  as a defect," "at most Minor," or "the plan chose" — stop: you are
+-  pre-judging, usually to spare yourself a review loop.
+-The task reviewer may report "⚠️ Cannot verify from diff" items — requirements
+-that live in unchanged code or span tasks. These do not block the rest of the
+-review, but you must resolve each one yourself before marking the task
+-complete: you hold the plan and cross-task context the reviewer
+-lacks. If you confirm an item is a real gap, treat it as a failed spec
+-review — it enters the fix loop with the other findings.
+-
+-Template: [task-reviewer-prompt.md](task-reviewer-prompt.md)
+-
+-### 4. The fix loop
+-
+-The loop triggers when the review reports spec ❌, any Critical or Important
+-finding, or a ⚠️ item you confirmed as a real gap.
+-
+-Before the loop starts, two routes leave it immediately:
+-
+-- Record Minor findings in the progress ledger as you go
+-  (`Task <N>: minor (deferred): <one-liner>`), and point the final
+-  whole-branch review at that list so it can triage which must be fixed
+-  before merge. A roll-up nobody reads is a silent discard. Minor findings
+-  never enter the loop.
+-- A finding labeled plan-mandated — or any finding that conflicts with
+-  what the plan's text requires — is yours to rule on: weigh the finding
+-  against the plan text, decide with the spec as the binding authority, and
+-  ledger the ruling before you act on it. Do not dismiss the finding because
+-  the plan mandates it, and do not dispatch a fix that contradicts the plan
+-  without a recorded ruling.
+-Everything else enters the loop. A fix round is one fix dispatch plus one
+-scoped re-review. Five rounds maximum per task:
+-
+-**Rounds 1-3 — resume the original implementer.** Send it the open findings
+-verbatim. Its context is intact: it knows the task, the code, and its own
+-choices. If your harness cannot send another message to a live subagent,
+-dispatch a fresh implementer carrying the brief path, the report-file path,
+-and the findings — the report file is the persistent memory either way.
+-
+-**Rounds 4-5 — dispatch a fresh implementer on a more capable model** (per
+-Model Selection), with the brief path, the report-file path, the open
+-findings, and this framing: "A prior implementer attempted this task
+-[N] times; you own it now. Read the report file for what was tried." A loop
+-that survives three resumes usually means the implementer cannot see its
+-own problem — fresh eyes and a capability bump in one move.
+-
+-**Every round, either way:** the implementer fixes, re-runs the tests
+-covering the amended code, appends its fix report to the same report file,
+-and returns the short contract. Before re-dispatching the reviewer, confirm
+-the fix report contains the covering tests, the command run, and the
+-output; dispatch the re-review once all three are present. Name the
+-covering test files in the fix message — a one-line fix does not need the
+-whole suite.
+-
+-**The re-review is scoped.** Run `scripts/review-package PLAN_FILE FIX_BASE HEAD`
+-where FIX_BASE is the head the previous review saw, and dispatch
+-[re-review-prompt.md](re-review-prompt.md) with the findings list, the
+-brief, the report file, and the printed diff path. The re-reviewer verdicts
+-each finding ADDRESSED or NOT ADDRESSED and flags new breakage in the fix
+-diff only. New Critical/Important breakage in the fix diff joins the open
+-findings list. Out-of-scope observations go to the ledger as deferred
+-minors — they never extend the loop.
+-
+-**After each round,** append to the ledger:
+-`Task <N>: fix round <R>/5 (<X> addressed, <Y> open — <finding one-liners>; commits <a7>..<b7>)`
+-
+-Never fix findings yourself in the controller session — your context stays
+-clean for coordination, and controller fixes skip review.
+-
+-**The breaker.** When round 5's re-review still leaves findings open, stop
+-dispatching. Adjudicate each open finding yourself — you hold the plan and
+-the cross-task context the reviewer lacks:
+-
+-- **The reviewer is wrong, or the point is contestable:** park it —
+-  `Task <N>: parked — <finding> — Ruling: <why the code stands>`. The final
+-  review sees both sides.
+-- **Real, but nothing downstream builds on it:** park it the same way, with
+-  a ruling that says it's real and deferred.
+-- **Real and load-bearing** — a later task builds on it, or it reveals a
+-  plan defect: rule on the smallest change that unblocks the dependent work,
+-  ledger it as `Task <N>: Ruling: <finding> — <what you decided and why>`,
+-  and carry it into the next task's dispatch. Parking a structural failure
+-  silently lets every dependent task build on it. Stop only when the defect
+-  leaves every path forward a guess.
+-
+-Adjudicate only at the cap. Adjudicating earlier to end a loop is
+-pre-judging with a different name. Every adjudication is a ledger entry —
+-a silent discard is forbidden.
+-
+-### 5. Complete the task
+-
+-When the review comes back clean — or every open finding is parked with a
+-ruling at the cap — append the completion line to the ledger in the same
+-message as your other bookkeeping:
+-
+-- `Task <N>: complete (commits <base7>..<head7>, review clean)`
+-- `Task <N>: complete (commits <base7>..<head7>, <K> parked)` after a
+-  tripped breaker
+-
+-Then mark the todo complete and move on. Never move to the next task while
+-the review has open Critical/Important issues that are neither fixed nor
+-parked-with-ruling at the cap.
+-
+-## Final Review
+-
+-The final whole-branch review gets a package too: run
+-`scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = the commit the
+-branch started from, e.g. `git merge-base main HEAD`) and include the
+-printed path in the final review dispatch, so the final reviewer reads
+-one file instead of re-deriving the branch diff with git commands. Dispatch
+-on the most capable available model (see Model Selection), using
+-superpowers:requesting-code-review's
+-[code-reviewer.md](../requesting-code-review/code-reviewer.md). Point it at
+-the ledger's deferred-minor and parked lines so it can triage which must be
+-fixed before merge.
+-
+-If the final whole-branch review returns findings, dispatch ONE fix subagent
+-with the complete findings list — not one fixer per finding.
+-Per-finding fixers each rebuild context and re-run suites; a real
+-session's final-review fix wave cost more than all its tasks combined.
+-Then run exactly one scoped re-review of the fix wave
+-(`scripts/review-package PLAN_FILE FIX_BASE HEAD` over the fix range,
+-[re-review-prompt.md](re-review-prompt.md)).
+-Adjudicate any residual findings as in the task loop's breaker: park with
+-rulings, or rule on the load-bearing ones and ledger what you decided. Only
+-the four classes above stop you here. There is no second fix wave —
+-residual load-bearing findings surface to your human partner when
+-finishing-a-development-branch presents the options.
+-
+-## Finish
+-
+-Before you delete anything, collect every ledger line containing `Ruling:` —
+-preflight rulings, parked findings, breaker adjudications, all of them — into
+-your final message under "Rulings I made", in the order you made them, each
+-with what it costs if wrong. The list is exhaustive: if the ledger holds a
+-ruling, the list holds it. That list is the only place the decisions you
+-took on your human partner's behalf reach them — they read it and rework
+-whatever you got wrong. A ruling that dies with the workspace was a decision
+-made in secret.
+-
+-When the final whole-branch review is clean and its fixes are merged,
+-delete this plan's workspace (`rm -rf <workspace>`) — the git history is
+-the record now. Sibling directories belong to other plans; leave them
+-alone.
+-
+-Use superpowers:finishing-a-development-branch.
+-
+-## Common Rationalizations
+-
+-| Excuse | Reality |
+-|--------|---------|
+-| "Close enough on spec compliance" | Reviewer found spec gaps = not done. Fix or hit the cap and adjudicate — those are the only exits. |
+-| "I'll fix it myself, dispatching is overhead" | Controller fixes pollute your context and skip review. Resume the implementer. |
+-| "One more round will converge" | Past the cap, rounds don't converge — the failure is structural. Adjudicate and route. |
+-| "The reviewer will just find something new anyway" | Scoped re-reviews verify fixes; they cannot wander. New findings on untouched code go to the ledger, not the loop. |
+-| "This finding is obviously wrong, I'll drop it" | You adjudicate only at the cap, and every ruling is a ledger entry. Silent discards are forbidden. |
+-| "The fix was small, skip the re-review" | Unreviewed fixes are how regressions land. Every round ends with a scoped re-review. |
+-| "Reviews slow the loop down" | The loop without reviews is just unverified churn. Reviews are the loop's brakes and steering. |
+-| "Ledger bookkeeping is overhead" | The ledger is what survives compaction. Controllers without one have re-dispatched entire completed task sequences. |
+-| "The implementer spawned its own reviewer — free extra assurance" | It's a duplicate seat reviewing the same diff; the task review is the gate. A worker-spawned reviewer is a defect to flag, not rigor. |
+-
+-## Example Workflow
+-
+-```
+-You: I'm using Subagent-Driven Development to execute this plan.
+-
+-[Setup: worktree verified]
+-[Read plan file once: docs/superpowers/plans/feature-plan.md]
+-[Resolve workspace: scripts/sdd-workspace docs/superpowers/plans/feature-plan.md — no ledger inside, fresh start]
+-[Create todos for all tasks]
+-
+-Task 1: Hook installation script
+-
+-[Run task-brief for Task 1; dispatch implementer with brief + report paths + context]
+-
+-Implementer: "Before I begin - should the hook be installed at user or system level?"
+-
+-You: "User level (~/.config/superpowers/hooks/)"
+-
+-Implementer: [Later]
+-  - Implemented install-hook command
+-  - Added tests, 5/5 passing
+-  - Self-review: Found I missed --force flag, added it
+-  - Committed
+-
+-[Run review-package PLAN_FILE BASE HEAD; dispatch task reviewer with the printed path]
+-Task reviewer: Spec ✅ - all requirements met, nothing extra.
+-  Strengths: Good test coverage, clean. Issues: None. Task quality: Approved.
+-
+-[Ledger: Task 1: complete (commits a1b2c3d..d4e5f6a, review clean)]
+-
+-Task 2: Recovery modes
+-
+-[Run task-brief for Task 2; dispatch implementer with brief + report paths + context]
+-
+-Implementer: [No questions]
+-  - Added verify/repair modes
+-  - 8/8 tests passing
+-  - Committed
+-
+-[Run review-package PLAN_FILE BASE HEAD; dispatch task reviewer with the printed path]
+-Task reviewer: Spec ❌:
+-  - Missing: Progress reporting (spec says "report every 100 items")
+-  Issues (Important): Magic number (100)
+-
+-[Fix round 1: resume the implementer with both findings]
+-Implementer: Added progress reporting, extracted PROGRESS_INTERVAL constant.
+-  Re-ran test/recovery.test.js — 10/10 passing. Fix report appended.
+-
+-[Run review-package PLAN_FILE FIX_BASE HEAD; dispatch scoped re-review]
+-Re-reviewer: Missing progress reporting — ADDRESSED (src/recovery.js:41).
+-  Magic number — ADDRESSED (src/recovery.js:7). New breakage: none.
+-  Verdict: all findings addressed.
+-
+-[Ledger: Task 2: fix round 1/5 (2 addressed, 0 open; commits d4e5f6a..b7c8d9e)]
+-[Ledger: Task 2: complete (commits d4e5f6a..b7c8d9e, review clean)]
+-
+-...
+-
+-[After all tasks]
+-[Run review-package PLAN_FILE MERGE_BASE HEAD; dispatch final code-reviewer, most capable model]
+-Final reviewer: All requirements met. Deferred minors triaged: none block merge.
+-
+-[Delete this plan's workspace — the record now lives in git]
+-
+-Done! Using superpowers:finishing-a-development-branch.
+-```
++Before completion, verify the integrated result and report what changed, test evidence, and material limitations. Continue integration within existing authorization and project branch policy.
+diff --git a/subagent-driven-development/implementer-prompt.md b/subagent-driven-development/implementer-prompt.md
+index 5c8ecd6..a51b1e0 100644
+--- a/subagent-driven-development/implementer-prompt.md
++++ b/subagent-driven-development/implementer-prompt.md
+@@ -1,154 +1,13 @@
+-# Implementer Subagent Prompt Template
++# Implementer Brief
+ 
+-Use this template when dispatching an implementer subagent.
++Use for an independently delegated task.
+ 
+-```
+-Subagent (general-purpose):
+-  description: "Implement Task N: [task name]"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
+-  prompt: |
+-    You are implementing Task N: [task name]
++- Workspace and file ownership: [paths]
++- Required behavior and acceptance criteria: [requirements]
++- Relevant context and dependencies: [references]
++- Verification and independent expected results: [checks]
++- Constraints and existing decisions: [constraints]
+ 
+-    ## Task Description
++Implement the task, resolve routine choices from the code and requirements, and ask the controller only about consequential missing information. Do not expand scope or edit another worker's files. Commit only if instructed.
+ 
+-    Read your task brief first: [BRIEF_FILE]
+-    It contains the full task text from the plan.
+-
+-    ## Context
+-
+-    [Scene-setting: where this fits, dependencies, architectural context]
+-
+-    ## Before You Begin
+-
+-    If you have questions about:
+-    - The requirements or acceptance criteria
+-    - The approach or implementation strategy
+-    - Dependencies or assumptions
+-    - Anything unclear in the task description
+-
+-    **Ask them now.** Raise any concerns before starting work.
+-
+-    ## Your Job
+-
+-    Once you're clear on requirements:
+-    1. Implement exactly what the task specifies
+-    2. Write tests (following TDD if task says to)
+-    3. Verify implementation works
+-    4. Commit your work
+-    5. Self-review (see below)
+-    6. Report back
+-
+-    Work from: [directory]
+-
+-    **While you work:** If you encounter something unexpected or unclear, **ask questions**.
+-    It's always OK to pause and clarify. Don't guess or make assumptions.
+-
+-    While iterating, run the focused test for what you're changing; run the
+-    full suite once before committing, not after every edit.
+-
+-    ## You Do Not Dispatch Subagents
+-
+-    Do all of this task's work yourself. Never spawn a subagent to
+-    implement part of the task, and above all never spawn a reviewer to
+-    check your work. Self-review (below) means reading your own diff.
+-    Review is the controller's job: after you report, it dispatches a
+-    fresh reviewer against your diff. A reviewer you spawn duplicates
+-    that review at full cost, and its approval counts for nothing in
+-    the process. If you catch yourself thinking "an independent review
+-    would strengthen my report" — that review is already scheduled.
+-    Report instead.
+-
+-    ## Code Organization
+-
+-    You reason best about code you can hold in context at once, and your edits are more
+-    reliable when files are focused. Keep this in mind:
+-    - Follow the file structure defined in the plan
+-    - Each file should have one clear responsibility with a well-defined interface
+-    - If a file you're creating is growing beyond the plan's intent, stop and report
+-      it as DONE_WITH_CONCERNS — don't split files on your own without plan guidance
+-    - If an existing file you're modifying is already large or tangled, work carefully
+-      and note it as a concern in your report
+-    - In existing codebases, follow established patterns. Improve code you're touching
+-      the way a good developer would, but don't restructure things outside your task.
+-
+-    ## When You're in Over Your Head
+-
+-    It is always OK to stop and say "this is too hard for me." Bad work is worse than
+-    no work. You will not be penalized for escalating.
+-
+-    **STOP and escalate when:**
+-    - The task requires architectural decisions with multiple valid approaches
+-    - You need to understand code beyond what was provided and can't find clarity
+-    - You feel uncertain about whether your approach is correct
+-    - The task involves restructuring existing code in ways the plan didn't anticipate
+-    - You've been reading file after file trying to understand the system without progress
+-
+-    **How to escalate:** Report back with status BLOCKED or NEEDS_CONTEXT. Describe
+-    specifically what you're stuck on, what you've tried, and what kind of help you need.
+-    The controller can provide more context, re-dispatch with a more capable model,
+-    or break the task into smaller pieces.
+-
+-    ## Before Reporting Back: Self-Review
+-
+-    Review your work with fresh eyes. Ask yourself:
+-
+-    **Completeness:**
+-    - Did I fully implement everything in the spec?
+-    - Did I miss any requirements?
+-    - Are there edge cases I didn't handle?
+-
+-    **Quality:**
+-    - Is this my best work?
+-    - Are names clear and accurate (match what things do, not how they work)?
+-    - Is the code clean and maintainable?
+-
+-    **Discipline:**
+-    - Did I avoid overbuilding (YAGNI)?
+-    - Did I only build what was requested?
+-    - Did I follow existing patterns in the codebase?
+-
+-    **Testing:**
+-    - Do tests actually verify behavior (not just mock behavior)?
+-    - Did I follow TDD if required?
+-    - Are tests comprehensive?
+-    - Is the test output pristine (no stray warnings or noise)?
+-
+-    If you find issues during self-review, fix them now before reporting.
+-
+-    ## After Review Findings
+-
+-    If the task review finds issues, you will be resumed with the findings.
+-    Fix them, re-run the tests that cover the amended code, and append a fix
+-    report to your report file: what you changed, the covering tests you
+-    ran, the command, and the output. Reviewers will not re-run tests for
+-    you — your report is the test evidence. Then reply with the same short
+-    status contract as your first report.
+-
+-    ## Report Format
+-
+-    Write your full report to [REPORT_FILE]:
+-    - What you implemented (or what you attempted, if blocked)
+-    - What you tested and test results
+-    - **TDD Evidence** (if TDD was required for this task):
+-      - RED: command run, relevant failing output before implementation, and why the failure was expected
+-      - GREEN: command run and relevant passing output after implementation
+-    - Files changed
+-    - Self-review findings (if any)
+-    - Any issues or concerns
+-
+-    Then report back with ONLY (under 15 lines — the detail lives in the
+-    report file):
+-    - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+-    - Commits created (short SHA + subject)
+-    - One-line test summary (e.g. "14/14 passing, output pristine")
+-    - Your concerns, if any
+-    - The report file path
+-
+-    If BLOCKED or NEEDS_CONTEXT, put the specifics in the final message
+-    itself — the controller acts on it directly.
+-
+-    Use DONE_WITH_CONCERNS if you completed the work but have doubts about correctness.
+-    Use BLOCKED if you cannot complete the task. Use NEEDS_CONTEXT if you need
+-    information that wasn't provided. Never silently produce work you're unsure about.
+-```
++Run focused checks for your change and self-check the diff. Report changed files, observed results, and unresolved concerns. Reuse available execution evidence; a second hand-written report is optional. Do not spawn reviewers or create a per-task review loop: the controller arranges the integrated project's independent quality-check.
+diff --git a/requesting-code-review/SKILL.md b/requesting-code-review/SKILL.md
+index fa4f2f9..b36df67 100644
+--- a/requesting-code-review/SKILL.md
++++ b/requesting-code-review/SKILL.md
+@@ -1,95 +1,14 @@
+ ---
+ name: requesting-code-review
+-description: Use when completing tasks, implementing major features, or before merging to verify work meets requirements
++description: Use when arranging the project quality-check or investigating a concrete unresolved code concern
+ ---
+ 
+ # Requesting Code Review
+ 
+-Dispatch a code reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation — never your session's history.
++Use the project's quality-check as the independent final review, with its prescribed roles and review budget. Do not require a reviewer after every implementation task or add a whole-branch reviewer after quality-check has already covered the same change.
+ 
+-**Core principle:** Review early, review often.
++Give reviewers the actual changed files, requirements, independently established test expectations, and observed verification evidence. Use the current working-tree diff for uncommitted work, not only a stale commit range. Ask reviewers to check the specification and actual behavior independently rather than simply endorse the author's explanation.
+ 
+-## When to Request Review
++[code-reviewer.md](code-reviewer.md) is an optional review brief. Project policy determines review scope, blocking criteria, and budget. A separate targeted investigation needs a concrete unresolved concern and must not reset the budget.
+ 
+-**Mandatory:**
+-- After each task in subagent-driven development
+-- After completing major feature
+-- Before merge to main
+-
+-**Optional but valuable:**
+-- When stuck (fresh perspective)
+-- Before refactoring (baseline check)
+-- After fixing complex bug
+-
+-## How to Request
+-
+-**1. Get git SHAs:**
+-```bash
+-BASE_SHA=$(git rev-parse HEAD~1)  # or origin/main
+-HEAD_SHA=$(git rev-parse HEAD)
+-```
+-
+-**2. Dispatch code reviewer subagent:**
+-
+-Dispatch a `general-purpose` subagent, filling the template at [code-reviewer.md](code-reviewer.md)
+-
+-**Placeholders:**
+-- `{DESCRIPTION}` - Brief summary of what you built
+-- `{PLAN_OR_REQUIREMENTS}` - What it should do
+-- `{BASE_SHA}` - Starting commit
+-- `{HEAD_SHA}` - Ending commit
+-
+-**3. Act on feedback:**
+-- Fix Critical issues immediately
+-- Fix Important issues before proceeding
+-- Note Minor issues for later
+-- Push back if reviewer is wrong (with reasoning)
+-
+-## Example
+-
+-```
+-[Just completed Task 2: Add verification function]
+-
+-You: Let me request code review before proceeding.
+-
+-BASE_SHA=$(git log --oneline | grep "Task 1" | head -1 | awk '{print $1}')
+-HEAD_SHA=$(git rev-parse HEAD)
+-
+-[Dispatch code reviewer subagent]
+-  DESCRIPTION: Added verifyIndex() and repairIndex() with 4 issue types
+-  PLAN_OR_REQUIREMENTS: Task 2 from docs/superpowers/plans/deployment-plan.md
+-  BASE_SHA: a7981ec
+-  HEAD_SHA: 3df7661
+-
+-[Subagent returns]:
+-  Strengths: Clean architecture, real tests
+-  Issues:
+-    Important: Missing progress indicators
+-    Minor: Magic number (100) for reporting interval
+-  Assessment: Ready to proceed
+-
+-You: [Fix progress indicators]
+-[Continue to Task 3]
+-```
+-
+-## Common Rationalizations
+-
+-| Excuse | Reality |
+-|--------|---------|
+-| "I'll just review the diff myself instead of dispatching a reviewer" | You're the coordinator — reviewing the diff inline burns the context window you need to keep driving the work. Dispatch a reviewer subagent: the diff and the evaluation live in its context, and only the findings come back to you. |
+-| "The reviewer needs my whole session history to understand the change" | Hand it precisely crafted context, never your session's history. That keeps the reviewer on the work product, not your thought process. |
+-
+-## Red Flags
+-
+-**Never:**
+-- Skip review because "it's simple"
+-- Ignore Critical issues
+-- Proceed with unfixed Important issues
+-- Argue with valid technical feedback
+-
+-**If reviewer wrong:**
+-- Push back with technical reasoning
+-- Show code/tests that prove it works
+-- Request clarification
+-
+-See template at: [code-reviewer.md](code-reviewer.md)
++Evaluate findings against evidence. Fix confirmed blocking defects, record reasoned disagreement, and rerun checks affected by fixes. Preserve original detection sources when merging duplicate findings; represent no findings as an empty collection. Do not treat a reviewer approval as a substitute for execution evidence.
+diff --git a/finishing-a-development-branch/SKILL.md b/finishing-a-development-branch/SKILL.md
+index fa8aeca..1f4231f 100644
+--- a/finishing-a-development-branch/SKILL.md
++++ b/finishing-a-development-branch/SKILL.md
+@@ -1,225 +1,18 @@
+ ---
+ name: finishing-a-development-branch
+-description: Use when implementation is complete, all tests pass, and you need to decide how to integrate the work
++description: Use when verified implementation is ready for an integration decision or authorized integration
+ ---
+ 
+ # Finishing a Development Branch
+ 
+-## Overview
++Confirm the final change has completed the project's independent quality-check and required checks. Evidence must describe the current tree: rerun affected verification after material edits or integration changes, and report unresolved failures. Do not add another whole-branch review or repeat an unchanged successful test suite merely to follow this skill.
+ 
+-**Core principle:** Verify tests → Detect environment → Present options → Execute choice → Clean up.
++Determine the repository, branch, base, worktree ownership, and uncommitted changes with read-only Git commands. Verify the intended target from the plan, upstream, or conversation before integrating.
+ 
+-**Announce at start:** "I'm using the finishing-a-development-branch skill to complete this work."
++Follow the integration action already authorized by the user. Do not present an approval menu again when the user has requested a PR or another concrete action. If authorization or the target is missing, finish the reviewable result first, then ask the specific remaining question.
+ 
+-## Step 1: Verify Tests
++Keep the project's branch protections and quality gate. A local merge or main push is not a substitute for a required PR. Investigate rejected pushes; do not force-push or bypass a gate without explicit applicable authorization.
+ 
+-Run the project's full test suite (`npm test` / `cargo test` / `pytest` / `go test ./...`).
++When creating a PR, describe the problem, resulting behavior, and observed checks. Preserve the worktree for feedback. On an environment-owned worktree, use supported platform operations and leave cleanup to its owner.
+ 
+-**If tests fail**, report the failures and stop — the menu comes after a green suite:
+-
+-```
+-Tests failing (<N> failures). Must fix before completing:
+-
+-[Show failures]
+-```
+-
+-**If tests pass:** continue to Step 2.
+-
+-## Step 2: Detect Environment
+-
+-```bash
+-GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
+-GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
+-# Capture now, while still inside the workspace — Step 5 changes directory
+-# before cleanup (Step 6) needs this value
+-WORKTREE_PATH=$(git rev-parse --show-toplevel)
+-```
+-
+-This determines which menu to show and how cleanup works:
+-
+-| State | Menu | Cleanup |
+-|-------|------|---------|
+-| `GIT_DIR == GIT_COMMON` (normal repo) | Standard 3 options | No worktree to clean up |
+-| `GIT_DIR != GIT_COMMON`, named branch | Standard 3 options | Provenance-based (see Step 6) |
+-| `GIT_DIR != GIT_COMMON`, detached HEAD | Reduced 2 options (no merge) | Externally managed — leave in place |
+-
+-## Step 3: Determine Base Branch
+-
+-The base branch is whatever this work forked from — usually named in the
+-plan, the conversation, or the branch's upstream. If it is not already
+-known, ask: "This branch split from <your best guess> - is that correct?"
+-Confirm before merging: merging into the wrong base is expensive to undo.
+-
+-## Step 4: Present Options
+-
+-**Normal repo and named-branch worktree — present exactly these 3 options:**
+-
+-```
+-Implementation complete. What would you like to do?
+-
+-1. Merge back to <base-branch> locally
+-2. Push and create a Pull Request
+-3. Keep the branch as-is (I'll handle it later)
+-
+-Which option?
+-```
+-
+-**Detached HEAD — present exactly these 2 options:**
+-
+-```
+-Implementation complete. You're on a detached HEAD (externally managed workspace).
+-
+-1. Push as new branch and create a Pull Request
+-2. Keep as-is (I'll handle it later)
+-
+-Which option?
+-```
+-
+-Present the menu exactly as written — concise, with every option coming
+-from the list above. Discarding the work happens only in response to your
+-human partner explicitly asking for it (see "If your human partner asks to
+-discard the work" below). Wait for their answer; the integration decision
+-is theirs.
+-
+-## Step 5: Execute Choice
+-
+-### Option 1: Merge Locally
+-
+-```bash
+-# Get main repo root for CWD safety
+-MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+-cd "$MAIN_ROOT"
+-
+-# Merge first — verify success before removing anything
+-git checkout <base-branch>
+-git pull
+-git merge <feature-branch>
+-
+-# Verify tests on merged result
+-<test command>
+-```
+-
+-If tests fail on the merged result: stop, leave the worktree and branch in
+-place, and investigate — nothing has been pushed, so the merge is local
+-and recoverable.
+-
+-Once the merged result is green: clean up the worktree (Step 6), then
+-delete the branch:
+-
+-```bash
+-git branch -d <feature-branch>
+-```
+-
+-### Option 2: Push and Create PR
+-
+-```bash
+-git push -u origin <feature-branch>
+-# From a detached HEAD, name the new branch on the remote:
+-# git push origin HEAD:refs/heads/<new-branch>
+-```
+-
+-Then create the pull/merge request against <base-branch> with the forge's
+-tooling — its CLI if one is available, or the creation URL most forges
+-print when you push — following the repo's PR template and conventions if
+-present, and report the URL to your human partner.
+-
+-Keep the worktree — your human partner iterates on PR feedback there.
+-
+-### Option 3: Keep As-Is
+-
+-Report: "Keeping branch <name>. Worktree preserved at <path>."
+-
+-### If your human partner asks to discard the work
+-
+-This path exists only as a response to an explicit request to throw the
+-work away. Confirm first:
+-
+-```
+-This will permanently delete:
+-- Branch <name>
+-- All commits: <commit-list>
+-- Worktree at <path>
+-
+-Type 'discard' to confirm.
+-```
+-
+-Wait for that exact confirmation. When it arrives:
+-
+-```bash
+-MAIN_ROOT=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel)
+-cd "$MAIN_ROOT"
+-```
+-
+-Then clean up the worktree (Step 6) and force-delete the branch:
+-
+-```bash
+-git branch -D <feature-branch>
+-```
+-
+-## Step 6: Cleanup Workspace
+-
+-**Runs for Option 1 and confirmed discards.** Options 2 and 3 always
+-preserve the worktree. Both callers have already changed directory to the
+-main repo root — worktree removal must run from outside the worktree —
+-and use the `GIT_DIR`/`GIT_COMMON`/`WORKTREE_PATH` values captured in
+-Step 2, from before that directory change.
+-
+-**If `GIT_DIR == GIT_COMMON`:** Normal repo, no worktree to clean up. Done.
+-
+-**If `WORKTREE_PATH` is under `.worktrees/` or `worktrees/`:** Superpowers
+-created this worktree — we own cleanup:
+-
+-```bash
+-git worktree remove "$WORKTREE_PATH"
+-git worktree prune  # Self-healing: clean up any stale registrations
+-```
+-
+-**If removal is refused** (`contains modified or untracked files`): the
+-worktree holds files that exist nowhere else — uncommitted plans, notes,
+-or scratch work. Never `--force` on your own initiative. Show your human
+-partner what is at stake and ask:
+-
+-```bash
+-git -C "$WORKTREE_PATH" status --porcelain -uall
+-```
+-
+-```
+-Worktree removal refused — these files were never committed:
+-
+-<file list>
+-
+-1. Commit them to <branch> before cleanup
+-2. Move them into <main repo root>
+-3. Delete them (unrecoverable)
+-
+-Which?
+-```
+-
+-Carry out the choice, then remove the worktree.
+-
+-**Otherwise:** The host environment owns this workspace — leave it in
+-place. If your platform provides a workspace-exit tool, use it.
+-
+-## Quick Reference
+-
+-| Option | Merge | Push | Keep Worktree | Cleanup Branch |
+-|--------|-------|------|---------------|----------------|
+-| 1. Merge locally | yes | - | - | yes |
+-| 2. Create PR | - | yes | yes | - |
+-| 3. Keep as-is | - | - | yes | - |
+-| Discard (explicit request only) | - | - | - | yes (force) |
+-
+-## Common Rationalizations
+-
+-| Excuse | Reality |
+-|--------|---------|
+-| "Tests passed earlier this session" | Run the suite on the tree you are about to integrate. A green run only proves the tree it ran on. |
+-| "They obviously want it merged" | Integration is your human partner's decision. Present the menu and wait. |
+-| "They seem done with this feature — I'll offer to discard it" | The menu is complete as written. Discard happens only when your human partner asks for it in so many words. |
+-| "'Yeah, get rid of it' counts as confirmation" | Only the typed word `discard` authorizes deletion. |
+-| "The PR is up, so the worktree is clutter now" | PR feedback gets fixed in that worktree. It stays until the work lands. |
+-| "This other worktree looks stale — I'll clean it too" | Clean up only worktrees under `.worktrees/` or `worktrees/`. Everything else belongs to the host. |
+-| "Removal refused — `--force` is just finishing the cleanup" | The refusal means files exist only in that worktree. `--force` destroys them permanently. Show your human partner and ask. |
+-| "The merged-result failure is probably flaky" | A failing merged result stops everything. Branch and worktree stay put while you investigate. |
+-| "The base branch is obviously main" | Confirm the fork point or ask. Merging into the wrong base is expensive to undo. |
+-| "The push was rejected — force-push will fix it" | A rejected push means the remote moved. Investigate; force-push only on your human partner's explicit request. |
++Clean up only a worktree you created and only after its work is safely integrated or explicitly discarded. Check for uncommitted and ignored files before removal. Never force removal of files that exist nowhere else; resolve their disposition with the user. Do not infer permission to discard work from an integration request.
+diff --git a/subagent-driven-development/task-reviewer-prompt.md b/subagent-driven-development/task-reviewer-prompt.md
+index ce79694..06da502 100644
+--- a/subagent-driven-development/task-reviewer-prompt.md
++++ b/subagent-driven-development/task-reviewer-prompt.md
+@@ -1,207 +1,9 @@
+-# Task Reviewer Prompt Template
++# Targeted Reviewer Brief
+ 
+-Use this template when dispatching a task reviewer subagent. The reviewer
+-reads the task's diff once and returns two verdicts: spec compliance and
+-code quality.
++Optional format for a reviewer selected by the project's quality-check. This does not create a per-task gate or an extra review round.
+ 
+-**Purpose:** Verify one task's implementation matches its requirements (nothing
+-more, nothing less) and is well-built (clean, tested, maintainable)
++- Scope: [current diff and concrete concern]
++- Required behavior: [independent spec/reference]
++- Evidence: [actual checks and expected results]
+ 
+-```
+-Subagent (general-purpose):
+-  description: "Review Task N (spec + quality)"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
+-  prompt: |
+-    You are reviewing one task's implementation: first whether it matches its
+-    requirements, then whether it is well-built. This is a task-scoped gate,
+-    not a merge review — a broad whole-branch review happens separately after
+-    all tasks are complete.
+-
+-    ## What Was Requested
+-
+-    Read the task brief: [BRIEF_FILE]
+-
+-    Global constraints from the spec/design that bind this task:
+-    [GLOBAL_CONSTRAINTS]
+-
+-    ## What the Implementer Claims They Built
+-
+-    Read the implementer's report: [REPORT_FILE]
+-
+-    ## Diff Under Review
+-
+-    **Base:** [BASE_SHA]
+-    **Head:** [HEAD_SHA]
+-    **Diff file:** [DIFF_FILE]
+-
+-    Read the diff file once — it contains the commit list, a stat summary,
+-    and the full diff with surrounding context, and it is your view of the
+-    change. The diff's context lines ARE the changed files: do not Read a
+-    changed file separately unless a hunk you must judge is cut off
+-    mid-function — and say so in your report. Do not re-run git commands.
+-    If the diff file is missing, fetch the diff yourself:
+-    `git diff --stat [BASE_SHA]..[HEAD_SHA]` and `git diff [BASE_SHA]..[HEAD_SHA]`.
+-    Do not crawl the broader codebase. Inspect code outside the diff only
+-    to evaluate a concrete risk you can name — one focused check per named
+-    risk, and name both the risk and what you checked in your report.
+-    Cross-cutting changes are legitimate named risks: if the diff changes
+-    lock ordering, a function or API contract, or shared mutable state,
+-    checking the call sites is the right method.
+-
+-    Your review is read-only on this checkout. Do not mutate the working
+-    tree, the index, HEAD, or branch state in any way.
+-
+-    ## You Do Not Dispatch Subagents
+-
+-    Do all of this review yourself. Never spawn a subagent to review part
+-    of the diff, and never spawn another reviewer for a second opinion.
+-    This process already provides every review seat the work gets; a
+-    reviewer you spawn duplicates one of them at full cost, and its
+-    verdict counts for nothing. If the diff feels too large for one
+-    pass, review it in passes yourself and say so in your report.
+-
+-    ## Do Not Trust the Report
+-
+-    Treat the implementer's report as unverified claims about the code. It
+-    may be incomplete, inaccurate, or optimistic. Verify the claims against
+-    the diff. Design rationales in the report are claims too: "left it per
+-    YAGNI," "kept it simple deliberately," or any other justification is the
+-    implementer grading their own work. Judge the code on its merits — a
+-    stated rationale never downgrades a finding's severity.
+-
+-    ## Tests
+-
+-    The implementer already ran the tests and reported results with TDD
+-    evidence for exactly this code. Do not re-run the suite to confirm their
+-    report. Run a test only when reading the code raises a specific doubt
+-    that no existing run answers — and then a focused test, never a
+-    package-wide suite, race detector run, or repeated/high-count loop. If
+-    heavy validation seems warranted, recommend it in your report instead of
+-    running it. If you cannot run commands in this environment, name the
+-    test you would run.
+-
+-    Warnings or other noise in the implementer's reported test output are
+-    findings — test output should be pristine.
+-
+-    Evidence you cannot see is not evidence that doesn't exist. If the
+-    report or its test evidence looks truncated, or you cannot locate the
+-    results it claims, re-read the file at its stated path — and if it is
+-    genuinely missing or garbled, report that as a gap for the controller.
+-    Re-running the suite to regenerate what you failed to read is not
+-    verification; illegibility of the evidence is not invalidation of it.
+-
+-    ## Part 1: Spec Compliance
+-
+-    Compare the diff against What Was Requested:
+-
+-    - **Missing:** requirements they skipped, missed, or claimed without
+-      implementing
+-    - **Extra:** features that weren't requested, over-engineering, unneeded
+-      "nice to haves"
+-    - **Misunderstood:** right feature built the wrong way, wrong problem
+-      solved
+-
+-    If the brief lists several files each with its own change (a batched
+-    dispatch), check the diff against that list file by file: every listed
+-    file must have its corresponding hunk. A listed file the diff never
+-    touches is a Missing finding, no matter how clean the rest of the
+-    batch looks.
+-
+-    If a requirement cannot be verified from this diff alone (it lives in
+-    unchanged code or spans tasks), report it as a ⚠️ item instead of
+-    broadening your search.
+-
+-    ## Part 2: Code Quality
+-
+-    **Code quality:**
+-    - Clean separation of concerns?
+-    - Proper error handling?
+-    - DRY without premature abstraction?
+-    - Edge cases handled?
+-
+-    **Tests:**
+-    - Do the new and changed tests verify real behavior, not mocks?
+-    - Are the task's edge cases covered?
+-
+-    **Structure:**
+-    - Does each file have one clear responsibility with a well-defined interface?
+-    - Are units decomposed so they can be understood and tested independently?
+-    - Is the implementation following the file structure from the plan?
+-    - Did this change create new files that are already large, or
+-      significantly grow existing files? (Don't flag pre-existing file
+-      sizes — focus on what this change contributed.)
+-
+-    Your report should point at evidence: file:line references for every
+-    finding and for any check you would otherwise answer with a bare
+-    "yes." A tight report that cites lines gives the controller everything
+-    it needs.
+-
+-    Your final message is the report itself: begin directly with the
+-    spec-compliance verdict. Every line is a verdict, a finding with
+-    file:line, or a check you ran — no preamble, no process narration,
+-    no closing summary.
+-
+-    ## Calibration
+-
+-    Categorize issues by actual severity. Not everything is Critical.
+-    Important means this task cannot be trusted until it is fixed: incorrect
+-    or fragile behavior, a missed requirement, or maintainability damage you
+-    would block a merge over — verbatim duplication of a logic block,
+-    swallowed errors, tests that assert nothing. "Coverage could be broader"
+-    and polish suggestions are Minor.
+-    If the plan or brief explicitly mandates something this rubric calls a
+-    defect (a test that asserts nothing, verbatim duplication of a logic
+-    block), that IS a finding — report it as Important, labeled
+-    plan-mandated. The plan's authorship does not grade its own work; the
+-    human decides.
+-    Acknowledge what was done well before listing issues — accurate praise
+-    helps the implementer trust the rest of the feedback.
+-
+-    ## Output Format
+-
+-    ### Spec Compliance
+-
+-    - ✅ Spec compliant | ❌ Issues found: [what's missing/extra/misunderstood,
+-      with file:line references]
+-    - ⚠️ Cannot verify from diff: [requirements you could not verify from the
+-      diff alone, and what the controller should check — report alongside the
+-      ✅/❌ verdict for everything you could verify]
+-
+-    ### Strengths
+-    [What's well done? Be specific.]
+-
+-    ### Issues
+-
+-    #### Critical (Must Fix)
+-    #### Important (Should Fix)
+-    #### Minor (Nice to Have)
+-
+-    For each issue: file:line, what's wrong, why it matters, how to fix
+-    (if not obvious).
+-
+-    ### Assessment
+-
+-    **Task quality:** [Approved | Needs fixes]
+-
+-    **Reasoning:** [1-2 sentence technical assessment]
+-```
+-
+-**Placeholders:**
+-- `[MODEL]` — REQUIRED: reviewer model per SKILL.md Model Selection
+-- `[BRIEF_FILE]` — REQUIRED: the task brief file (`scripts/task-brief PLAN N`
+-  prints the path; same file the implementer worked from)
+-- `[GLOBAL_CONSTRAINTS]` — the binding requirements copied verbatim from
+-  the plan's Global Constraints section or the spec: exact values, formats,
+-  and stated relationships between components (not process rules — those
+-  are already in this template)
+-- `[REPORT_FILE]` — REQUIRED: the file the implementer wrote its detailed
+-  report to
+-- `[BASE_SHA]` — commit before this task
+-- `[HEAD_SHA]` — current commit
+-- `[DIFF_FILE]` — REQUIRED: the path the controller wrote the review
+-  package to (`scripts/review-package PLAN_FILE BASE HEAD` prints the unique
+-  path it wrote; the package never enters the controller's context)
+-
+-**Reviewer returns:** Spec Compliance verdict (✅/❌/⚠️), Strengths, Issues
+-(Critical/Important/Minor), Task quality verdict
++Inspect the relevant implementation and independent requirements. Verify suspected defects, distinguish blockers from suggestions, and report only actionable findings with location, severity, evidence, and source. Return an empty findings array if none. Follow the project's review budget.
+diff --git a/subagent-driven-development/re-review-prompt.md b/subagent-driven-development/re-review-prompt.md
+index ad74b10..8f768ce 100644
+--- a/subagent-driven-development/re-review-prompt.md
++++ b/subagent-driven-development/re-review-prompt.md
+@@ -1,115 +1,9 @@
+-# Scoped Re-Review Prompt Template
++# Scoped Fix Verification
+ 
+-Use this template when dispatching a re-review after a fix round. The
+-re-reviewer verifies the findings were addressed and checks the fix diff for
+-new breakage. It is not a fresh review — the full review already happened.
++Use only within the project's existing quality-check and review budget, when changed code or unresolved concerns justify another review. No automatic review after every task.
+ 
+-**Purpose:** Verify each finding from the previous review was addressed, and
+-that the fix itself broke nothing.
++- Original confirmed findings: [IDs and evidence]
++- Fix diff: [current files or commits]
++- Verification evidence: [checks]
+ 
+-```
+-Subagent (general-purpose):
+-  description: "Re-review Task N fix round R"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
+-  prompt: |
+-    You are re-reviewing one task's fix round. A previous review produced
+-    findings; an implementer has attempted to fix them. Your job is to
+-    verdict each finding and inspect the fix diff — nothing else.
+-
+-    ## The Task
+-
+-    Read the task brief: [BRIEF_FILE]
+-
+-    ## The Findings Under Verification
+-
+-    [FINDINGS]
+-
+-    ## The Fix
+-
+-    Read the implementer's report (fix reports are appended at the end):
+-    [REPORT_FILE]
+-
+-    **Fix base:** [FIX_BASE_SHA] (the head the previous review saw)
+-    **Head:** [HEAD_SHA]
+-    **Diff file:** [DIFF_FILE]
+-
+-    Read the diff file once — it contains the fix commits, a stat summary,
+-    and the fix diff with surrounding context. Do not re-run git commands.
+-    If the diff file is missing, fetch the diff yourself:
+-    `git diff --stat [FIX_BASE_SHA]..[HEAD_SHA]` and
+-    `git diff [FIX_BASE_SHA]..[HEAD_SHA]`.
+-
+-    Your review is read-only on this checkout. Do not mutate the working
+-    tree, the index, HEAD, or branch state in any way.
+-
+-    ## You Do Not Dispatch Subagents
+-
+-    Do all of this review yourself. Never spawn a subagent to review part
+-    of the diff, and never spawn another reviewer for a second opinion.
+-    This process already provides every review seat the work gets; a
+-    reviewer you spawn duplicates one of them at full cost, and its
+-    verdict counts for nothing. If the diff feels too large for one
+-    pass, review it in passes yourself and say so in your report.
+-
+-    ## Scope
+-
+-    Your scope is the findings list and the fix diff. Verdict every finding.
+-    Inspect the fix diff for new problems the fix itself introduced. Do NOT
+-    re-review code the fix did not touch: if you notice an issue entirely
+-    outside the fix diff, report it under Out-of-Scope Observations — it
+-    does not block this task and does not extend the loop. A broad
+-    whole-branch review happens after all tasks are complete.
+-
+-    ## Tests
+-
+-    The implementer re-ran the tests covering the amended code and appended
+-    the results to the report file. Treat the report as unverified claims:
+-    confirm the fix report names the covering tests and shows their output,
+-    and verify the claims against the diff. Do not re-run the suite to
+-    confirm their report. Run a test only when reading the code raises a
+-    specific doubt that no existing run answers — and then a focused test,
+-    never a package-wide suite.
+-
+-    ## Output Format
+-
+-    Your final message is the report itself: begin directly with the first
+-    finding's verdict. Every line is a verdict, a finding with file:line,
+-    or a check you ran — no preamble, no process narration.
+-
+-    ### Finding Verdicts
+-
+-    For each finding in The Findings Under Verification, in order:
+-    - **[finding one-liner]** — ADDRESSED | NOT ADDRESSED, with file:line
+-      evidence. "Attempted" is not addressed: the specific defect must no
+-      longer exist.
+-
+-    ### New Breakage in the Fix Diff
+-
+-    Anything the fix itself broke or introduced, with severity
+-    (Critical/Important/Minor) and file:line. "None" if clean.
+-
+-    ### Out-of-Scope Observations
+-
+-    Issues you noticed entirely outside the fix diff. Non-blocking; the
+-    controller ledgers these for the final review. "None" if none.
+-
+-    ### Verdict
+-
+-    **Fix round:** [All findings addressed, no new Critical/Important
+-    breakage | Findings remain open] — list the open ones.
+-```
+-
+-**Placeholders:**
+-- `[MODEL]` — REQUIRED: reviewer model per SKILL.md Model Selection; scoped
+-  re-reviews of small fix diffs take a cheap-to-mid tier
+-- `[BRIEF_FILE]` — the task brief file (same file the implementer worked from)
+-- `[FINDINGS]` — the Critical/Important findings and spec gaps from the
+-  previous review, copied verbatim, one per bullet
+-- `[REPORT_FILE]` — the implementer's report file (fix reports appended)
+-- `[FIX_BASE_SHA]` — the head the previous review saw
+-- `[HEAD_SHA]` — current commit
+-- `[DIFF_FILE]` — the path `scripts/review-package PLAN_FILE FIX_BASE HEAD` printed
+-
+-**Re-reviewer returns:** per-finding verdicts (ADDRESSED / NOT ADDRESSED),
+-new breakage in the fix diff, out-of-scope observations, and a round verdict.
++Check that each relevant defect was addressed and whether the fix introduced a related regression. Preserve finding IDs and original sources. Distinguish new findings from repeated findings. Do not restart a full review or reset the budget.
+diff --git a/writing-plans/plan-document-reviewer-prompt.md b/writing-plans/plan-document-reviewer-prompt.md
+index 1c12c1d..79052b6 100644
+--- a/writing-plans/plan-document-reviewer-prompt.md
++++ b/writing-plans/plan-document-reviewer-prompt.md
+@@ -1,49 +1,7 @@
+-# Plan Document Reviewer Prompt Template
++# Plan Review Brief
+ 
+-Use this template when dispatching a plan document reviewer subagent.
++Use within the project's independent document review policy and budget, without adding another review gate.
+ 
+-**Purpose:** Verify the plan is complete, matches the spec, and has proper task decomposition.
++Compare the plan with the accepted requirements. Check coverage, dependencies, ownership conflicts, interface contracts, and meaningful verification. A bounded task needs no full code listing or 2-5 minute script. Do not require fresh implementers, per-task reviews, or renewed approval of an already accepted design.
+ 
+-**Dispatch after:** The complete plan is written.
+-
+-```
+-Subagent (general-purpose):
+-  description: "Review plan document"
+-  prompt: |
+-    You are a plan document reviewer. Verify this plan is complete and ready for implementation.
+-
+-    **Plan to review:** [PLAN_FILE_PATH]
+-    **Spec for reference:** [SPEC_FILE_PATH]
+-
+-    ## What to Check
+-
+-    | Category | What to Look For |
+-    |----------|------------------|
+-    | Completeness | TODOs, placeholders, incomplete tasks, missing steps |
+-    | Spec Alignment | Plan covers spec requirements, no major scope creep |
+-    | Task Decomposition | Tasks have clear boundaries, steps are actionable |
+-    | Buildability | Could an engineer follow this plan without getting stuck? |
+-
+-    ## Calibration
+-
+-    **Only flag issues that would cause real problems during implementation.**
+-    An implementer building the wrong thing or getting stuck is an issue.
+-    Minor wording, stylistic preferences, and "nice to have" suggestions are not.
+-
+-    Approve unless there are serious gaps — missing requirements from the spec,
+-    contradictory steps, placeholder content, or tasks so vague they can't be acted on.
+-
+-    ## Output Format
+-
+-    ## Plan Review
+-
+-    **Status:** Approved | Issues Found
+-
+-    **Issues (if any):**
+-    - [Task X, Step Y]: [specific issue] - [why it matters for implementation]
+-
+-    **Recommendations (advisory, do not block approval):**
+-    - [suggestions for improvement]
+-```
+-
+-**Reviewer returns:** Status, Issues (if any), Recommendations
++Report concrete gaps and contradictions with evidence. Return no findings when the plan is sufficient to execute; cosmetic expansion is not a requirement.
+diff --git a/brainstorming/spec-document-reviewer-prompt.md b/brainstorming/spec-document-reviewer-prompt.md
+index 6099312..4a3797f 100644
+--- a/brainstorming/spec-document-reviewer-prompt.md
++++ b/brainstorming/spec-document-reviewer-prompt.md
+@@ -1,49 +1,5 @@
+-# Spec Document Reviewer Prompt Template
++# Spec Review Brief
+ 
+-Use this template when dispatching a spec document reviewer subagent.
++Use within the project's independent design review policy and review budget. Review scope, expected behavior, interfaces, failure modes, compatibility, and observable acceptance criteria. Compare against the user's actual requirements and existing behavior.
+ 
+-**Purpose:** Verify the spec is complete, consistent, and ready for implementation planning.
+-
+-**Dispatch after:** Spec document is written to docs/superpowers/specs/
+-
+-```
+-Subagent (general-purpose):
+-  description: "Review spec document"
+-  prompt: |
+-    You are a spec document reviewer. Verify this spec is complete and ready for planning.
+-
+-    **Spec to review:** [SPEC_FILE_PATH]
+-
+-    ## What to Check
+-
+-    | Category | What to Look For |
+-    |----------|------------------|
+-    | Completeness | TODOs, placeholders, "TBD", incomplete sections |
+-    | Consistency | Internal contradictions, conflicting requirements |
+-    | Clarity | Requirements ambiguous enough to cause someone to build the wrong thing |
+-    | Scope | Focused enough for a single plan — not covering multiple independent subsystems |
+-    | YAGNI | Unrequested features, over-engineering |
+-
+-    ## Calibration
+-
+-    **Only flag issues that would cause real problems during implementation planning.**
+-    A missing section, a contradiction, or a requirement so ambiguous it could be
+-    interpreted two different ways — those are issues. Minor wording improvements,
+-    stylistic preferences, and "sections less detailed than others" are not.
+-
+-    Approve unless there are serious gaps that would lead to a flawed plan.
+-
+-    ## Output Format
+-
+-    ## Spec Review
+-
+-    **Status:** Approved | Issues Found
+-
+-    **Issues (if any):**
+-    - [Section X]: [specific issue] - [why it matters for planning]
+-
+-    **Recommendations (advisory, do not block approval):**
+-    - [suggestions for improvement]
+-```
+-
+-**Reviewer returns:** Status, Issues (if any), Recommendations
++Report concrete omissions or contradictions. Do not reopen accepted decisions without new evidence, require unrelated features, or add a separate user approval round. A sufficient bounded design need not be expanded into an architectural spec.
+diff --git a/using-superpowers/references/codex-tools.md b/using-superpowers/references/codex-tools.md
+index e4488fb..ddb9c83 100644
+--- a/using-superpowers/references/codex-tools.md
++++ b/using-superpowers/references/codex-tools.md
+@@ -1,108 +1,9 @@
+-## Subagent dispatch requires multi-agent support
++# Codex Tool Adaptation
+ 
+-Add to your Codex config (`~/.codex/config.toml`):
++Use the tools and model names actually available in the current session. Their live descriptions and system/developer instructions override examples in skills. Do not require a machine configuration change merely to execute an authorized task.
+ 
+-```toml
+-[features]
+-multi_agent = true
+-```
++Delegate only when useful and permitted. Choose context scope intentionally; pass a bounded brief when full conversation history is unnecessary. Respect the tool's restrictions on model/effort overrides instead of assuming every fork supports them.
+ 
+-This enables the multi-agent tools that skills like
+-`dispatching-parallel-agents` and `subagent-driven-development` use.
+-Which tools you get depends on the multi-agent version your model
+-preset selects (current presets run V2; older ones run V1). Trust your
+-actual tool list over any table — including this one — when they
+-disagree.
++While workers run, continue independent local work. When idle, use the available mailbox/wait mechanism with durations that preserve the required user progress updates. Follow the actual runtime's worker lifecycle rather than assuming close/resume operations exist.
+ 
+-- **Spawning:** give children a clean context with
+-  `spawn_agent {fork_turns: "none"}`; the default `"all"` copies your
+-  entire transcript into the child. On Codex 0.145+, role files under
+-  `~/.codex/agents/` attach to isolated forks via `agent_type`.
+-  Full-history forks accept `model` and `reasoning_effort` overrides
+-  (only `agent_type` is refused there) — isolated forks are the SDD
+-  default for context hygiene, not because overrides require them.
+-- **Fix rounds:** resume the implementer with `followup_task` — it
+-  delivers your message, triggers a turn, and transparently reloads a
+-  child the harness evicted. Never dispatch a fresh implementer on the
+-  theory that a spawned agent cannot be messaged again; on V2 it
+-  always can.
+-- **Lifecycle:** V2 has no `close_agent`. Finished children are
+-  evicted automatically when slots are needed; leaving them unclosed
+-  costs nothing. Only V1 sessions have `close_agent` — there, close
+-  reviewers when their review returns, and close each implementer
+-  after its task's review passes.
+-- **Model names:** never copy a model name from a skill, table, or old
+-  session into `spawn_agent` without checking it against your current
+-  spawn allowlist — V2 accepts only V2-capable presets and hard-errors
+-  on the rest.
+-
+-## Waiting on children
+-
+-`wait_agent` is an event subscription, not a poll: a long wait wakes
+-the moment a child produces mailbox activity, with the same latency as
+-a short one. Short-timeout polling buys nothing and costs a tool call —
+-and a context rebill — per poll. In measured sessions, roughly
+-two-thirds of all wait calls were short polls that timed out.
+-
+-- While you still have local work, do not wait at all. A completed
+-  child's final answer is pushed into your mailbox and arrives with
+-  your next turn.
+-- When you are genuinely idle with children outstanding, wait in
+-  bounded stretches: `wait_agent` with `timeout_ms` 300000-600000
+-  (5-10 minutes). After each stretch — wake or timeout — post one
+-  status line, run `list_agents`, and chase any child that finished
+-  without reporting. Never stack polls shorter than five minutes; the
+-  event subscription wakes a bounded stretch just as fast as a short
+-  one.
+-- Completion mail cannot wake an idle controller (it is delivered
+-  without triggering a turn); covering that idle window is
+-  `wait_agent`'s only job. A stretch that times out with no activity
+-  is your cue to reconcile, not to shorten the next stretch.
+-
+-## Model routing on spawns
+-
+-Every `spawn_agent` you issue — including when you are yourself a
+-spawned child running a fan-out — sets `model` AND `reasoning_effort`
+-explicitly, per the Model Selection rules of the skill you are
+-executing. Setting `model` alone is a trap: the child's effort
+-silently resets to that model's default, not to yours.
+-
+-Ask your human partner to add a machine-level backstop to
+-`~/.codex/config.toml` so any spawn that slips through still routes to
+-a deliberate tier instead of silently inheriting the session's most
+-expensive model:
+-
+-```toml
+-[agents]
+-default_subagent_model = "<a mid-tier model from your spawn allowlist>"
+-default_subagent_reasoning_effort = "medium"
+-```
+-
+-## Environment Detection
+-
+-Skills that create worktrees or finish branches should detect their
+-environment with read-only git commands before proceeding:
+-
+-```bash
+-GIT_DIR=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
+-GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
+-BRANCH=$(git branch --show-current)
+-```
+-
+-- `GIT_DIR != GIT_COMMON` → already in a linked worktree (skip creation)
+-- `BRANCH` empty → detached HEAD (cannot branch/push/PR from sandbox)
+-
+-See `using-git-worktrees` Step 0 and `finishing-a-development-branch`
+-Step 1 for how each skill uses these signals.
+-
+-## Codex App Finishing
+-
+-When the sandbox blocks branch/push operations (detached HEAD in an
+-externally managed worktree), the agent commits all work and informs
+-the user to use the App's native controls:
+-
+-- **"Create branch"** — names the branch, then commit/push/PR via App UI
+-- **"Hand off to local"** — transfers work to the user's local checkout
+-
+-The agent can still run tests, stage files, and output suggested branch
+-names, commit messages, and PR descriptions for the user to copy.
++Detect repository and worktree state before branch operations. Detached HEAD alone does not establish a permission restriction: use the platform's available authorized operations. Preserve externally managed workspaces. Follow project branch protections and existing user authorization for integration.
+diff --git a/using-git-worktrees/SKILL.md b/using-git-worktrees/SKILL.md
+index 1381dac..189d3d6 100644
+--- a/using-git-worktrees/SKILL.md
++++ b/using-git-worktrees/SKILL.md
+@@ -38,11 +38,7 @@ Report with branch state:
+ 
+ **If `GIT_DIR == GIT_COMMON` (or in a submodule):** You are in a normal repo checkout.
+ 
+-Has the user already indicated their worktree preference in your instructions? If not, ask for consent before creating a worktree:
+-
+-> "Would you like me to set up an isolated worktree? It protects your current branch from changes."
+-
+-Honor any existing declared preference without asking. If the user declines consent, work in place and skip to Step 2.
++Follow the user's existing workspace preference and project policy. Create an isolated worktree when useful within the authorized task; do not ask again for an already authorized workspace action. If an explicit preference is to work in place, honor it and skip to Step 2.
+ 
+ ## Step 1: Create Isolated Workspace
+ 
+@@ -50,7 +46,7 @@ Honor any existing declared preference without asking. If the user declines cons
+ 
+ ### 1a. Native Worktree Tools (preferred)
+ 
+-The user has asked for an isolated workspace (Step 0 consent). Do you already have a way to create a worktree? It might be a tool with a name like `EnterWorktree`, `WorktreeCreate`, a `/worktree` command, or a `--worktree` flag. If you do, use it and skip to Step 2.
++An isolated workspace is appropriate under Step 0. Do you already have a way to create a worktree? It might be a tool with a name like `EnterWorktree`, `WorktreeCreate`, a `/worktree` command, or a `--worktree` flag. If you do, use it and skip to Step 2.
+ 
+ Native tools handle directory placement, branch creation, and cleanup automatically. Using `git worktree add` when you have a native tool creates phantom state your harness can't see or manage.
+ 
+@@ -127,7 +123,7 @@ Run tests to ensure workspace starts clean:
+ npm test / cargo test / pytest / go test ./...
+ ```
+ 
+-**If tests fail:** Report failures, ask whether to proceed or investigate.
++**If tests fail:** Investigate and distinguish baseline failures from the proposed change. Report material limitations; ask only when progress requires missing information or a scope decision.
+ 
+ **If tests pass:** Report ready.
+ 
+@@ -153,7 +149,7 @@ Ready to implement <feature-name>
+ | Neither exists | Check instruction file, then default `.worktrees/` |
+ | Directory not ignored | Add to .gitignore + commit |
+ | Permission error on create | Sandbox fallback, work in place |
+-| Tests fail during baseline | Report failures + ask |
++| Tests fail during baseline | Investigate and record baseline limitations |
+ | No package.json/Cargo.toml | Skip dependency install |
+ 
+ ## Common Rationalizations
+diff --git a/dispatching-parallel-agents/SKILL.md b/dispatching-parallel-agents/SKILL.md
+index 3fa091b..4678ff3 100644
+--- a/dispatching-parallel-agents/SKILL.md
++++ b/dispatching-parallel-agents/SKILL.md
+@@ -1,17 +1,17 @@
+ ---
+ name: dispatching-parallel-agents
+-description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
++description: Use when independent tasks benefit from parallel work without shared state or sequential dependencies
+ ---
+ 
+ # Dispatching Parallel Agents
+ 
+ ## Overview
+ 
+-You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
++You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. Provide the context they need, using a bounded brief when full session history is unnecessary. This also preserves your own context for coordination work.
+ 
+-When you have multiple unrelated failures (different test files, different subsystems, different bugs), investigating them sequentially wastes time. Each investigation is independent and can happen in parallel.
++Multiple unrelated failures can benefit from concurrent investigation. Compare the expected benefit with briefing, rediscovery, and integration costs; the parent may investigate directly when that is simpler.
+ 
+-**Core principle:** Dispatch one agent per independent problem domain. Let them work concurrently.
++**Core principle:** When delegation is worthwhile, give each worker an independent bounded problem and avoid shared mutations.
+ 
+ ## When to Use
+ 

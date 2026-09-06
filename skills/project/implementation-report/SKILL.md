@@ -95,7 +95,7 @@ git diff origin/main...HEAD
 - 品質チェックサイクル数: N回（N回目で高/中指摘ゼロ達成 / 打ち切り事由: なし / cycle_limit / stagnation / 追加サイクル: N回）（`total_cycles` / `cycle_abort_reason` / `cycle_extensions`）
 - E2Eテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、ユーザー判断 executed / declined / added_only / not_proposed（`e2e.recommendation` / `e2e.user_decision`）。`declined` の場合は見送り理由（`e2e.decline_reason`）を明記する。結果: pass / fail / skipped、検出した問題（`e2e.result` / `e2e.issues`）。新規シナリオがある場合は `e2e.new_scenarios` の各件（シナリオ名と判断: added_and_run / added_only / declined）を明記する
 - ドキュメント更新: updated / not_required（`documentation.status`、updated の場合は対象ファイル）
-- self-improvement: applied / skipped / not_required（`self_improvement.status`）
+- self-improvement: 実施した場合のみ `self_improvement.status` を記載。未実施なら省略（通常の完了条件ではない）
 
 ### ゲート上書き・承認
 - ゲートパラメータ上書き: なし / [キー: 値]（理由: [理由]）（`gate_parameter_overrides`）

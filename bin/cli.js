@@ -158,6 +158,7 @@ yargs(hideBin(process.argv))
         return;
       }
       console.log(`context: ${result.contextPath}`);
+      if (result.measurementPath) console.log(`measurements: ${result.measurementPath} (helper timing and on-disk inventory; not runtime token usage)`);
       console.log(`changed files: ${result.names.length} (+ ${result.untracked.length} untracked), diff ${result.diffLines} lines${result.diffInline ? ' (inline)' : ' -> diff.patch'}`);
       console.log(`snapshot: ${result.snapshotDir} (${result.snapshotCopied.length} files${result.snapshotSkipped.length ? `, ${result.snapshotSkipped.length} not copied` : ''})${result.replacedSnapshot ? ' - replaced the previous snapshot of this cycle' : ''}`);
       if (result.fixDiff) {
@@ -173,6 +174,40 @@ yargs(hideBin(process.argv))
       }
       console.log(`integrity: ${result.integrityOk ? 'ok' : 'MISMATCH - name-only list and diff headers differ'}`);
       if (!result.integrityOk) process.exitCode = 1;
+    }
+  )
+  .command(
+    'harness-inventory',
+    'Read-only inventory of installed harness files and optional distributor baseline',
+    (yargs) => yargs
+      .option('dir', { type: 'string', describe: 'Consumer directory', default: process.cwd() })
+      .option('baseline', { type: 'string', describe: 'Unpacked distributor for comparison (caller must verify its version)' }),
+    (argv) => {
+      try {
+        const { inventoryHarness } = require('../lib/harness-diagnostics');
+        console.log(JSON.stringify(inventoryHarness({ projectDir: argv.dir, baselineDir: argv.baseline }), null, 2));
+      } catch (error) {
+        console.error(`Error: ${error.message}`);
+        process.exitCode = 1;
+      }
+    }
+  )
+  .command(
+    'quality-report',
+    'Normalize historical quality report findings to stdout without modifying the input',
+    (yargs) => yargs.option('input', { type: 'string', demandOption: true, describe: 'Quality report JSON file' }),
+    (argv) => {
+      try {
+        const fs = require('node:fs');
+        const { normalizeQualityReport } = require('../lib/quality-report');
+        const input = JSON.parse(fs.readFileSync(argv.input, 'utf8').replace(/^\uFEFF/, ''));
+        const { report, warnings } = normalizeQualityReport(input);
+        console.log(JSON.stringify(report, null, 2));
+        for (const warning of warnings) console.error(`warning: ${warning}`);
+      } catch (error) {
+        console.error(`Error: ${error.message}`);
+        process.exitCode = 1;
+      }
     }
   )
   .command(
@@ -196,7 +231,7 @@ yargs(hideBin(process.argv))
       }
     }
   )
-  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, or review-budget')
+  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, quality-report, or review-budget')
   .strict()
   .help()
   .version()

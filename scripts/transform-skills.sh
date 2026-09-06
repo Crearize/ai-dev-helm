@@ -42,8 +42,8 @@ for skill in "${SKILLS[@]}"; do
     skill_dest="$DEST/$skill"
 
     if [ ! -d "$skill_src" ]; then
-        echo "  Warning: Skill not found: $skill"
-        continue
+        echo "::error::Required upstream skill not found: $skill" >&2
+        exit 1
     fi
 
     # Remove the previous copy so files deleted upstream don't linger
@@ -88,5 +88,25 @@ done
 # rendering in some Markdown viewers. Widen the outer fences after copying.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 find "$DEST" -name '*.md' -print0 | xargs -0 "$SCRIPT_DIR/fix-nested-fences.sh"
+
+# Policy lives in the loaded skill bodies, not a competing instruction layer.
+# Zero fuzz prevents silently retaining changed upstream instructions. Check
+# each patch before applying it and identify the failed patch in CI output.
+PATCH_DIR="$SCRIPT_DIR/skill-patches"
+shopt -s nullglob
+PATCHES=("$PATCH_DIR"/*.patch)
+if [ "${#PATCHES[@]}" -eq 0 ]; then
+    echo "::error::No harness policy patches found in $PATCH_DIR" >&2
+    exit 1
+fi
+for policy_patch in "${PATCHES[@]}"; do
+    patch_name="$(basename "$policy_patch")"
+    if ! patch --dry-run --batch --forward --fuzz=0 -p1 -d "$DEST" < "$policy_patch"; then
+        echo "::error::Harness skill patch failed: $patch_name. Reconcile upstream changes before syncing." >&2
+        exit 1
+    fi
+    patch --batch --forward --fuzz=0 -p1 -d "$DEST" < "$policy_patch"
+    echo "  Applied policy patch: $patch_name"
+done
 
 echo "Done. Transformed ${#SKILLS[@]} skills."

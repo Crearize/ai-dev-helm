@@ -20,7 +20,7 @@ This file defines project-specific rules for Cursor.
 - 1. One Issue, one branch.
 - 2. Design review is normally one round - only a serious problem or a large design gets more. This review is why per-task review is unnecessary. User confirmation is batched: one message of questions, then one approval of the whole design.
 - 3. The plan may be reviewed, but no user confirmation is required after that review (a design exists at this point).
-- 4-6. Implementation runs on a lower-tier model once a design and plan exist, picked per task; no in-development reviews (design-intent conformance is checked at step 7).
+- 4-6. Choose parent implementation or bounded delegation by complexity and total effort; final quality review remains consolidated.
 - 7. quality-check runs mechanical checks (build, tests, static checks) first; the review roster (integrated reviewer, falsification QA on code changes, at most one specialist) runs only after they pass, sized by the change content.
 - 8. The hook only blocks direct pushes/merges into main (or the trunk equivalent); mutation/E2E runs are proposed separately by quality-check Step 5 (`test-recommendation`), not by the hook.
 - Passing is judged from review and quality-check results - self-reported completion needs evidence attached.
@@ -36,7 +36,7 @@ Ask the user only when:
 
 1. The answer cannot be determined after investigation
 2. An unexpected situation causes a loop or prevents reliable progress
-3. Design is complete and implementation approval is required (once, at design completion, with the whole design presented in one message - not per section, not again after the spec is written, and not again after the plan review)
+3. A substantive design decision needs authorization that has not already been given in the conversation
 
 Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
 
@@ -44,43 +44,20 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 
 ### Design Confirmation Rules
 
-User confirmation during design (`.cursor/skills/superpowers/brainstorming/SKILL.md`) is consolidated into as few round trips as possible: **one batched message of questions, then one approval of the whole design.** These rules override the skill's instructions to ask one question at a time, to offer the visual companion in its own message, to ask for approval after each design section, and to ask the user to review the written spec. Everything else in the skill stays (project exploration, 2-3 approaches with trade-offs, the spec-document reviewer loop, the hand-off to `.cursor/skills/superpowers/writing-plans/SKILL.md`).
-
-1. **Clarifying questions are batched** - After exploring the project context, put every open question into ONE message: scope decomposition of a multi-subsystem request, purpose, constraints, success criteria, and the visual-companion offer when it applies. Prefer multiple choice and state a recommended default for each item, so the user can answer with a single "all defaults". A second round is allowed only for questions that arise from the answers to the first.
-2. **The design is presented in full and approved once** - Present the 2-3 approaches with trade-offs and your recommendation together with every design section (architecture, components, data flow, error handling, testing) in ONE message, then ask for approval once. Do not stop after each section. When the user requests changes, re-present the revised design as a whole and ask once more.
-3. **The written spec is not a second gate** - After the approved design is written to `docs/superpowers/specs/` and the spec-document reviewer loop passes (Review Consolidation rule 2), report the file path and read and follow `.cursor/skills/superpowers/writing-plans/SKILL.md` without asking the user again. The approval in rule 2 is the only user gate before implementation (Autonomy Principles).
+Explore existing context first. Batch questions whose answers are still needed, and present substantive design choices together. Use authorization already given in the conversation; do not ask again after writing the spec or reviewing the plan. Scale design and planning detail to the uncertainty and impact of the change. The shipped brainstorming and writing-plans skills implement this workflow.
 
 ### Subagent Model Selection
 
-<!-- Note: unlike CLAUDE.md, this file intentionally has no "Plan Execution Rules"
-     section. Cursor has no Task-tool equivalent for subagent-driven plan execution,
-     so execution method is not specified here. Do not "fix" this asymmetry when
-     syncing templates. -->
+Use `documents/development/harness-runtime.md` for the shared model table, live tool parameter names and review reservations. This table describes delegation; it does not prohibit implementation by the current parent model, including Fable or Astra. Preserve intentional project-specific model choices when upgrading. Quality reviewers retain the required capability and check independent specifications and actual behavior.
 
-Cursor can choose the model per subagent invocation. **When dispatching subagents, switch the model according to the nature of the request instead of always using the same one:**
+### Execution and Review
 
-| Task Type | Model Choice | Examples |
-|-----------|--------------|----------|
-| Initial planning / design framing | Fable if available, otherwise Claude Opus 5 or GPT-6 Astra | First-pass requirements decomposition, architecture option framing, implementation strategy design |
-| Codebase exploration / context gathering | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | Understanding project structure in Phase 1, finding related implementations, tracing dependencies |
-| Simple mechanical search | Claude Sonnet 5 (or a comparable fast model, excluding Claude Haiku) | File/symbol lookup, listing usages |
-| Implementation / concrete work | Claude Sonnet 5 (default; Claude Opus 5 only for tasks the plan marks as judgment-heavy) | Phase 2/3 implementation, test writing, refactoring |
-| Design / plan review (spec-document and plan-document reviewers) | Fable if available, otherwise Claude Opus 5 | Reviewing the design doc or implementation plan itself |
-| Pure documentation review (README / `documents/` wording, no design judgment) | Claude Sonnet 5 | Reviewing README or `documents/` prose with no design decision involved |
-| Quality / architecture review, quality-check reviewers | Claude Opus 5 first; GPT-6 Astra high as cross-vendor alternative | quality-check review roster (Phase 5: integrated reviewer, falsification QA, specialist, verification reviewer), code review, security analysis, architecture critique |
+1. Choose direct implementation or bounded delegation by total effort: planning, handoff, repeated exploration, integration and rework. A capable parent may implement small or medium tasks directly. Delegate independent work when parallelism or context isolation helps; delegation is not a completion requirement.
+2. Keep plans proportional: scope, affected contracts, independent test oracles and validation. Do not write the implementation twice as detailed plan code and then a transcription task. Local plan files under `docs/superpowers/plans/` are not committed; clean them up after merge.
+3. During implementation, use self-checks and tests. Final quality review belongs to `quality-check`; do not add per-task reviewer loops or a second whole-branch review. Design/plan document reviews follow quality-policy §5.5. Review depth follows risk and uncertainty; the current review roster is retained pending comparison.
+4. Respect user budgets. Estimate agent use when delegating; report a material overrun against the agreed budget. Resume interrupted agents after inspecting their committed/uncommitted work and restating ownership. Do not restore, stash or clean another task's files.
+5. Verify external platform limits against official documentation when the design relies on them.
 
-This table takes precedence over any model-selection guidance inside individual skills (e.g. the "Model Selection" section of subagent-driven-development). When in doubt between two tiers, choose the more capable model, but keep Fable reserved for the initial planning/design pass. If Fable is unavailable, use Claude Opus 5 or GPT-6 Astra for planning/design. Implementation work should NOT run on Fable. Do not use Claude Haiku for any tier. Claude Sonnet 5 is the default for implementation, exploration/search, and pure documentation reviews - never for design/plan reviews, quality-check reviewers, or planning. Design/plan reviews run on Fable (fallback Claude Opus 5). Per-task reviewers are not dispatched at all (Review Consolidation rule 1). For quality, architecture and security reviews and the quality-check reviewers, prefer Claude Opus 5, with GPT-6 Astra high when cross-vendor diversity is useful; never downgrade those to Sonnet. Do not use Fable for quality-check reviewers or pure documentation reviews.
-
-### Review Consolidation
-
-Review loops exist at exactly two points (quality policy §5.5): **document creation** (spec / plan documents) and the **final quality-check gate** (Phase 5). **Phase 5 is never relaxed**: it is the final `quality-check` gate itself, where quality policy §5 and the completion criteria in the `quality-check` skill apply (every High/Medium consolidated finding addressed; the skill holds the full definition - read it there).
-
-1. **No in-development reviews** - While implementing (Phases 2-4), do NOT run per-task or per-implementation review rounds with review agents. **This overrides both review stages in `.cursor/skills/superpowers/subagent-driven-development/SKILL.md`: the per-task two-stage review loop and the final whole-branch code review at plan end** (as the model table above overrides that skill's Model Selection section) - the whole-branch review covers the same full diff that Phase 5's quality-check already reviews, so running it would be a duplicate. The implementer's self-review (run the tests, verify the diff against the task/spec text) is the only in-development check. Quality assurance happens once, at Phase 5.
-2. **Document reviews stay** - Design and plan reviews (Fable, fallback Claude Opus 5) stay: normally one round; extra rounds only for high findings or large documents, with the cap in quality-policy §5.5. **After the plan review, do not ask the user for confirmation - start implementation.** Designs that change which exceptions are caught vs. propagated follow the caller-trace item in quality-policy §5.5.
-3. **Budget escalation** - State an expected agent-invocation count up front and escalate to the user when the work is projected to exceed it.
-4. **Do not reinstate per-task reviews** - If Phase 5 produces many findings, route the causes instead: mechanically detectable issues to the lint layer, design-level issues into the spec/plan review checklists.
-5. **Platform constraints are confirmed first** - Designs or verifications that rely on a platform constraint (rate limits, execution time caps, size limits) MUST confirm the constraint against official documentation before work starts - never assume a limit from memory.
-6. **Interrupted subagents are resumed, not re-dispatched** - Separate committed from uncommitted work first (`git log --oneline` / `git status --short`), restate file ownership to the resumed agent (the prohibition on `git checkout` / `restore` / `stash` / `clean` on files it doesn't own), and record the interruption in `_notes` (see the `quality-check` skill's subagent-interruption resume procedure).
 
 ### Shell Command Rules (Windows / PowerShell)
 
@@ -119,7 +96,7 @@ When the execution shell is PowerShell (default on Windows), bash idioms fail. F
 - Run frontend linting, formatting, build (after running the `lint-scaffolding` skill, `lint:all` is the registered static check command and `quality-check` Step 2 runs it as the deterministic check layer)
 - Run the review roster via `quality-check`, which owns a single outer cycle (static checks -> tests -> review roster -> consolidated-findings fixes; the roster is sized by change content (Step 1 roster table in the quality-check skill): the integrated reviewer always, falsification QA on any code change, at most one specialist (Security > Requirements > Performance); docs-only = the integrated reviewer alone, unless gate control-plane files, harness config files, CI workflows or dependency files changed (then Security joins); the coordinator writes one shared context pack per cycle that every reviewer reads; mechanical checks (static checks, tests) must pass in that cycle before reviewers run; normally 1 cycle; cycles 2+ verify fixes with a single verification reviewer (no revert to the full roster; a re-verification after new High findings counts as a new cycle)). The falsification QA works falsification-first: hunt for inputs that prove the implementation wrong, rather than confirming the tests look sufficient
 - After the cycle completes, run the additional-test proposal (test-recommendation skill: heuristics recommend mutation/E2E runs with rationale, the user decides, approved runs execute; declines are recorded and never block - except an executed E2E that fails must be fixed)
-- Run `self-improvement` before merge completion (the gate applies to merges into main, not feature-branch pushes)
+- `self-improvement` is optional and does not block merge completion.
 - **The gate stops accidental pushes/merges to main; deliberate evasion is out of scope by design** (enumerated forms live in the hook's own header)
 - Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely, except a diff that changes gate parameters (the `Quality Gate Overrides` keys below) or touches a gate control-plane file - the hook enforces this carve-out and blocks such diffs with `Gate control-plane changed:`. **The complete unconditional-block list, the full gate-control-plane file set, and fail-open scope live in the `quality-check` skill's "最重要ルール" section (`hook の完全な契約`) - read the full list there, it is not restated here.** Trunk names are fixed to `main` / `master` - other trunk names are not gated by the hook and rely on the `permissions.deny` layer and convention. Syncing the current trunk from its own remote needs no flag: exactly `git pull`, `git pull origin <trunk>`, or `git merge origin/<trunk>` with no other options (using the trunk's own name, e.g. the `master` form on a `master` checkout). Even on a feature branch, a line containing a candidate word (merge/pull/rebase/refspec-omitted push) can still be blocked by an unconditional-block condition (intentional over-detection; run e.g. `git fetch && git rebase origin/main` as separate commands - splitting across newlines does not help either, since `git commit` followed by a refspec-omitted `git push` is still one tool call). If the session's working directory is not the worktree, a merge into that worktree's main is invisible to this hook (`-C` / `cd` is unconditionally blocked though); if the session's working directory is the worktree, that main is gated normally. The only correct procedure for merging into a `main` checked out in a git worktree is to run quality-check to completion in a session whose working directory is that worktree, creating the flag inside the worktree, then merge from there. If main advanced independently after the flag was issued, the merged main (feature + main combined) is unverified: the merge may succeed but the push to main is blocked - re-run `quality-check` on the merged main, then push
 - Thresholds, cycle caps and budgets live in `documents/development/quality-policy.md` - read them there instead of restating numbers here
@@ -133,7 +110,7 @@ When the execution shell is PowerShell (default on Windows), bash idioms fail. F
 | Specialist (at most one: Security > Requirements > Performance) | Security: auth, input/output handling, secrets and crypto, serialization, external URLs, uploads, CORS/CSP, sensitive logging, config/Dockerfile/CI, dependencies incl. lockfile-only updates; gate control plane, harness config, CI workflows or dependency files trigger Security even in a docs-only diff. Requirements: feature-level diff with an Issue, spec or design doc. Performance: queries, loops, caching, bundles, hot paths | Single-concern deep dive with its review guide; concerns not dispatched become emphasized concerns for the integrated reviewer |
 | Verification Reviewer | Cycles 2+ (joined by Falsification QA when the fix diff touches production code under a security trigger) | Checks the fix diff against the consolidated findings list and hunts new High findings |
 
-Roles are dispatched with the model in the Subagent Model Selection table above; the roster is sized by change content (Step 1 roster table in the quality-check skill) and cycles 2+ use only the verification reviewer.
+Roles use the shared model table in `documents/development/harness-runtime.md`; the roster follows Step 1 of quality-check, and subsequent cycles follow its verification-review rules.
 
 <!-- Quality Gate Overrides (optional). Uncomment the key if you want to change it and
      write your value. The default is deliberately NOT written here - it lives in
@@ -165,7 +142,7 @@ Skills are installed under `.cursor/skills/` (symlink to `skills/`). Cursor does
 | Before completion / merge | `.cursor/skills/superpowers/verification-before-completion/SKILL.md` |
 | Pre-push quality check | `.cursor/skills/project/quality-check/SKILL.md` |
 | Additional-test proposal (mutation / E2E), standalone or via quality-check Step 5 | `.cursor/skills/project/test-recommendation/SKILL.md` |
-| Harness improvement before completion | `.cursor/skills/project/self-improvement/SKILL.md` |
+| Recurring process issue or explicit improvement task | `.cursor/skills/project/self-improvement/SKILL.md` |
 | Parallel worktree development | `.cursor/skills/project/worktree-parallel/SKILL.md` |
 
 Other project skills (server-startup, branch-workflow, backend/frontend-development, database-migration, `lint-scaffolding` (wire deterministic checks (lint/static analysis) and maintain the coverage map), browser-agent, feature-documentation, log-design, generate-docs, implementation-report) live under `.cursor/skills/project/`.

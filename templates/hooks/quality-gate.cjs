@@ -27,7 +27,9 @@
 //      this stage. No candidate -> allow immediately.
 //   2. With a candidate, evaluate the ctx-independent part of rule 2 (items
 //      1-5). A hit blocks ahead of everything else - exemptions never
-//      override it.
+//      override it. The sole deferred mover check is a plain, single-line
+//      `git commit ... && git push [remote]` without a refspec: it needs the
+//      current branch, and only a resolved feature branch allows it.
 //   3. Resolve ctx (current branch, flag, diffs). A resolution failure blocks
 //      (rule 5). If ctx proves the candidates are not gated (e.g. `git merge`
 //      on a feature branch) -> allow. Then evaluate rule 2 item 6
@@ -78,6 +80,10 @@
 //   switch, cherry-pick, rebase, revert, am, bisect, update-ref,
 //   stash pop|apply) are judged over the WHOLE command, newlines included;
 //   `fetch` and `branch -f|-d|-D|--force` are judged per line.
+//   The commit/push exception above excludes redirects, expansions, global
+//   git options, other commands and other separators. All other mover checks
+//   still precede branch resolution, including rebase and update-ref forms
+//   that can change which branch is current.
 // Rule 3 (pass): `.quality-check-passed` at the repo root with `commit` an
 //   abbreviated prefix of (or equal to) HEAD (`branch` is diagnostic only), or
 //   `commit` an ancestor of HEAD whose `commit..HEAD` diff is harness files
@@ -127,7 +133,8 @@
 // 1-5 are evaluated before the branch is known, so they also block on a
 // feature branch; a detached HEAD is an UNRESOLVED branch, so a line with a
 // candidate blocks there; and `git push --force` with no refspec blocks
-// anywhere, because "no refspec" is a candidate.
+// anywhere, because "no refspec" is a candidate. The plain commit/push form
+// described above is the only exception to the feature-branch over-detection.
 //
 // This is a static check for a cooperating agent, not a sandbox. It is aimed at
 // the accidental operation (see the threat model above); nothing here can see
@@ -643,6 +650,7 @@ function pushCandidate(inv) {
   return {
     kind: 'push',
     mainOnly: mainCount === 0 && !unreadable,
+    omittedRefspec: specs === 0,
     inv,
     hard,
     mainSpecs,
@@ -830,7 +838,7 @@ function isHardPushFlag(f) {
 // Rule 2, items 1-5: no ctx is touched, so these also block on a feature
 // branch (deliberate over-detection, see the header). `commandMover` is the
 // whole command's HEAD mover, computed once by the caller.
-function staticRules(a, commandMover) {
+function staticRules(a, commandMover, deferCommit = false) {
   if (a.cands.length === 0) return null;
   for (const c of a.cands) {
     if (c.kind !== 'push') continue;
@@ -839,7 +847,7 @@ function staticRules(a, commandMover) {
     }
   }
   const mover = moverOf(a.invocations, 'line') || commandMover;
-  if (mover) {
+  if (mover && !deferCommit) {
     return deny('2', `Split this into separate commands: git ${mover} and a gated push/merge in one call are not allowed.`);
   }
   if (a.relocation) {
@@ -910,7 +918,7 @@ function rule3Flag(ctx, baseControl) {
 }
 
 // Everything that needs ctx. Always returns a decision.
-function contextRules(a, ctx) {
+function contextRules(a, ctx, deferCommit = false) {
   const branch = ctx.branch;
   if (!branch) {
     // Includes a detached HEAD: an unresolved branch with a candidate blocks.
@@ -918,6 +926,9 @@ function contextRules(a, ctx) {
   }
   const gated = a.cands.filter((c) => !c.mainOnly || isMainBranch(branch));
   if (gated.length === 0) return allow();
+  if (deferCommit) {
+    return deny('2', 'Split this into separate commands: git commit and a gated push/merge in one call are not allowed.');
+  }
 
   const reverse = reverseRefspec(gated, branch); // Rule 2 item 6, ahead of every exemption.
   if (reverse) return reverse;
@@ -1006,6 +1017,27 @@ function countInvocations(lines) {
 // git call failed is recorded on `ctx.state` by the getters themselves, never
 // by classify, and is read only by `main()`, which turns the single "not inside
 // a git repository" case into a fail-open.
+// Recognize one intentionally small spelling, not a general shell program.
+// In particular, a redirect can overwrite .git/HEAD and a preceding command
+// can change the branch or repository before the push. Tokenization discards
+// redirect targets and separators, so raw syntax must constrain this exception
+// as well as the analyzed invocations. Unsupported spellings retain the old
+// split-command requirement.
+function isPlainCommitPush(text, analyzed) {
+  if (/[\r\n\\;|()<>]/.test(text)) return false;
+  const parts = text.trim().split('&&');
+  if (parts.length !== 2 || parts.some((part) => part.includes('&'))) return false;
+  if (!/^git[ \t]+commit(?:[ \t]|$)/.test(parts[0])) return false;
+  if (!/^[ \t]*git[ \t]+push(?:[ \t]+[A-Za-z0-9_./:@][A-Za-z0-9_./:@-]*)?[ \t]*$/.test(parts[1])) return false;
+  if (analyzed.length !== 1) return false;
+  const a = analyzed[0];
+  if (a.line.segments.length !== 2 || a.invocations.length !== 2 || a.cands.length !== 1) return false;
+  const [commit, push] = a.invocations;
+  return commit.sub === 'commit' && push.sub === 'push'
+    && commit.globals.length === 0 && push.globals.length === 0
+    && a.cands[0].kind === 'push' && a.cands[0].omittedRefspec;
+}
+
 function classify(command, ctx) {
   const text = String(command || '');
   if (Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) {
@@ -1019,13 +1051,14 @@ function classify(command, ctx) {
   // The HEAD movers are judged over the whole command, so this answer is the
   // same for every line: compute it once.
   const commandMover = moverOf(all, 'command');
+  const deferCommit = commandMover === 'commit' && isPlainCommitPush(text, analyzed);
   for (const a of analyzed) {
-    const verdict = staticRules(a, commandMover);
+    const verdict = staticRules(a, commandMover, deferCommit);
     if (verdict) return verdict;
   }
   for (const a of analyzed) {
     if (a.cands.length === 0) continue;
-    const verdict = contextRules(a, ctx);
+    const verdict = contextRules(a, ctx, deferCommit);
     if (verdict.decision === 'block') return verdict;
   }
   return allow();
@@ -1209,7 +1242,9 @@ function main() {
     let command;
     let cwd = process.cwd();
     try {
-      const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      // Windows producers may prefix JSON with a UTF-8 BOM. Strip only that
+      // leading marker so valid payloads do not enter the malformed fail-open.
+      const payload = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
       const raw = payload && payload.tool_input ? payload.tool_input.command : undefined;
       if (typeof raw !== 'string') throw new Error('tool_input.command is not a string');
       command = raw;

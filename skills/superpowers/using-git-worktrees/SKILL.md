@@ -38,11 +38,7 @@ Report with branch state:
 
 **If `GIT_DIR == GIT_COMMON` (or in a submodule):** You are in a normal repo checkout.
 
-Has the user already indicated their worktree preference in your instructions? If not, ask for consent before creating a worktree:
-
-> "Would you like me to set up an isolated worktree? It protects your current branch from changes."
-
-Honor any existing declared preference without asking. If the user declines consent, work in place and skip to Step 2.
+Follow the user's existing workspace preference and project policy. Create an isolated worktree when useful within the authorized task; do not ask again for an already authorized workspace action. If an explicit preference is to work in place, honor it and skip to Step 2.
 
 ## Step 1: Create Isolated Workspace
 
@@ -50,7 +46,7 @@ Honor any existing declared preference without asking. If the user declines cons
 
 ### 1a. Native Worktree Tools (preferred)
 
-The user has asked for an isolated workspace (Step 0 consent). Do you already have a way to create a worktree? It might be a tool with a name like `EnterWorktree`, `WorktreeCreate`, a `/worktree` command, or a `--worktree` flag. If you do, use it and skip to Step 2.
+An isolated workspace is appropriate under Step 0. Do you already have a way to create a worktree? It might be a tool with a name like `EnterWorktree`, `WorktreeCreate`, a `/worktree` command, or a `--worktree` flag. If you do, use it and skip to Step 2.
 
 Native tools handle directory placement, branch creation, and cleanup automatically. Using `git worktree add` when you have a native tool creates phantom state your harness can't see or manage.
 
@@ -127,7 +123,7 @@ Run tests to ensure workspace starts clean:
 npm test / cargo test / pytest / go test ./...
 ```
 
-**If tests fail:** Report failures, ask whether to proceed or investigate.
+**If tests fail:** Investigate and distinguish baseline failures from the proposed change. Report material limitations; ask only when progress requires missing information or a scope decision.
 
 **If tests pass:** Report ready.
 
@@ -153,7 +149,7 @@ Ready to implement <feature-name>
 | Neither exists | Check instruction file, then default `.worktrees/` |
 | Directory not ignored | Add to .gitignore + commit |
 | Permission error on create | Sandbox fallback, work in place |
-| Tests fail during baseline | Report failures + ask |
+| Tests fail during baseline | Investigate and record baseline limitations |
 | No package.json/Cargo.toml | Skip dependency install |
 
 ## Common Rationalizations
