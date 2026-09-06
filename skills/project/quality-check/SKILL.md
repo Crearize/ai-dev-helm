@@ -28,6 +28,8 @@ description: マージ前に必ず実行。静的チェック・テスト・体�
 - 複数のゲート対象操作の同居
 - `<x>:main` 形の refspec（`<x>` が現在のブランチ名 / `HEAD` / `@`（大小無視）のいずれでもない逆形）
 
+**限定した例外**: 単一行の通常形 `git commit ... && git push [remote]`（refspec 省略、追加コマンド・git グローバルオプション・展開文字・リダイレクト・作業場所変更なし）だけは、実行前のブランチが feature と確認できれば上記 mover ブロックを免除する。main / master・detached HEAD・ブランチ不明では免除しない。`checkout` / `switch` / `bisect` / branch 引数付き `rebase` / `update-ref` 等には広げない。
+
 リダイレクト（`>` `>>` `<` `2>` 等）はゲート判定上は特別扱いしない — 通常どおり解釈され、リダイレクトの前後にあるゲート対象語も普通に検出される。
 
 **分類予算**（無条件ブロックの閉じた集合には含まれない別枠の規則）: 64 KB を超えるコマンド、または 1 コマンド内の git / gh 語が 256 を超える場合は分類しない（引数位置に現れる `git` / `gh` も語として数える — 過剰計上は fail-closed の方向）。前者（64 KB 超）はゲート語（`merge` / `pull` / `push` / `rebase` / `pr`、`pulls/<n>/merge`）を含めば block とする。判定はコマンド全体の生文字列に加え、行継続（`\` + 改行）を畳んだうえでクォート（`"` `'`）とバックスラッシュ（`\`）を除去した後の語でも行う（bash は `p""ush` / `pu\sh` / `pu\<改行>sh` を `push` と読むため）。除去後の文字列に展開文字（`$` `` ` `` `{` `}` `%`）を含む場合は、ゲート語の有無を問わず block とする（`$'\x70'ush` 等を静的に読み切れないための fail-closed。`classify` 例外時の fallback も同じ判定関数を使う）。いずれにも該当しなければ allow とする（同一行の別 git 操作の判定は行わない）。後者（256 超の git / gh 語数）と 1 MB を超える hook ペイロード（stdin 全体）は分類せず無条件 block する（読み切れない入力を allow にしない）。fail-open は下記の2つのままであり、この上限超過は fail-open に含めない。
@@ -35,6 +37,8 @@ description: マージ前に必ず実行。静的チェック・テスト・体�
 **通す条件**: フラグ（`.quality-check-passed`）の `commit` が `HEAD` と一致する（短縮 SHA の前方一致可）、または `HEAD` の祖先でありその間の差分が全てハーネスファイル（ゲート制御面ファイルを除く）である場合。加えて、**現在のトランクの**同期 3 形 — 引数なしの `git pull`、`git pull origin <trunk>`、`git merge origin/<trunk>`（トランクが `master` のチェックアウトでは `master` 形）— はフラグ不要。
 
 **制御面**は `.claude` / `.codex` / `.cursor` の `agents/` `commands/` `prompts/` `rules/` ディレクトリを含む（サブエージェントの system prompt やセッションに読み込まれるプロンプトに加え、`.cursor/rules/*.mdc` は init が生成し全セッションに自動読込されるルール、`.codex/prompts/` も同様にセッションへ読み込まれるプロンプトのため）。`.claude/settings.json` / `.claude/settings.local.json` は**ファイル全体**が制御面であり、hook はキー単位の解析をしない — `permissions.allow` のみの変更もブロックする。
+
+JSON の先頭にある UTF-8 BOM は除去してから解析する。文字コード変換による内容の破損を復元するものではない。
 
 **fail-open**（無条件で allow）は、入力ペイロードが不正な場合（理由を stderr に出力する）と、git リポジトリの外で実行された場合の2つに限る。それ以外の git 呼び出し失敗はゲート対象候補があればブロックする。
 
@@ -87,8 +91,6 @@ Step 5: 追加テスト提案（test-recommendation スキルを参照実行）
   ├── ヒューリスティクス判定 → 推奨度 + 根拠を提示 → ユーザー判断
   ├── 承認分のみ実行（E2E 実行時のサーバー起動・停止を内包）
   └── 見送りは記録（非ブロック。E2E を実施して失敗した場合のみ修正必須）
-  ↓
-Step 5.75: 自己改善候補の確認（self-improvement）
   ↓
 Step 6: レポートデータ保存 + フラグファイル作成 → マージ可能
 ```
@@ -161,7 +163,7 @@ Step 0 で取得済みの変更ファイル一覧を再利用してよい（同�
 | infra | 該当ビルドコマンド | - | review-infra.md + 統合レビュー | test-recommendation スキルで判定 |
 | 複合 | 各領域の静的チェックを全て実行 | 各領域のテストを全て実行 | 各領域のレビューガイド + 統合レビュー | test-recommendation スキルで判定 |
 
-> docs のみの変更では Step 2, 3 がスキップされ、統合レビュアー 1 体（要件整合・機密情報の混入・設計文書の整合・同一の規範を複数ファイルが持つ箇所の整合を観点チェックリストに含む。ゲート制御面ファイル・ハーネス設定ファイル・CI ワークフロー・依存関係ファイルに触れる場合はセキュリティエンジニアが加わる — Step 1「レビュー体制の決定」。Step 4「適用体制（Step 1 の決定を正とする）」参照）によるレビューと Step 5（追加テスト提案）・Step 5.75（self-improvement）が実行される。infra のみの変更では **Step 2（該当ビルドコマンド）を実行し**、Step 3 をスキップして統合レビュアー（該当すれば専門家 1 体が加わる。多くはセキュリティエンジニア）以降を実行する。docs / infra のみの変更では、Step 5 のミューテーションは領域による対象外（`reason: "out_of_scope"` を直接記録する — test-recommendation の「未実行理由の優先順位」表を正とする）、E2E はヒューリスティクスで「提案しない」（`recommendation: "none"` / `user_decision: "not_proposed"`）となる。スキルの全文参照実行は不要で、判定結果の記録のみ行う。
+> docs のみの変更では Step 2, 3 がスキップされ、統合レビュアー 1 体（要件整合・機密情報の混入・設計文書の整合・同一の規範を複数ファイルが持つ箇所の整合を観点チェックリストに含む。ゲート制御面ファイル・ハーネス設定ファイル・CI ワークフロー・依存関係ファイルに触れる場合はセキュリティエンジニアが加わる — Step 1「レビュー体制の決定」。Step 4「適用体制（Step 1 の決定を正とする）」参照）によるレビューと Step 5（追加テスト提案）が実行される。infra のみの変更では **Step 2（該当ビルドコマンド）を実行し**、Step 3 をスキップして統合レビュアー（該当すれば専門家 1 体が加わる。多くはセキュリティエンジニア）以降を実行する。docs / infra のみの変更では、Step 5 のミューテーションは領域による対象外（`reason: "out_of_scope"` を直接記録する — test-recommendation の「未実行理由の優先順位」表を正とする）、E2E はヒューリスティクスで「提案しない」（`recommendation: "none"` / `user_decision: "not_proposed"`）となる。スキルの全文参照実行は不要で、判定結果の記録のみ行う。
 >
 > Step 3 欄が `-` の領域ではテスト設計メモの照合も実行しない（`documents/development/quality-policy.md` §2「マトリクス優先順位原則」）。
 
@@ -509,7 +511,7 @@ Step 1 で決まったレビュアーのサブエージェントを Agent ツー
 各サブエージェントの結果を統合する：
 
 1. 全レビュアーの指摘を集約する（統合レビュアーの指摘は観点別セクションから `concern` を付ける）
-2. 重複する指摘をマージ（同一箇所・同一内容の指摘を統合）
+2. 重複する指摘をマージ（同一箇所・同一内容の指摘を統合）し、全検出元を `sources` 配列に残す。`source` は互換性のため代表値を残す。指摘がなければ `findings: []` とし、「指摘なし」を高指摘などの行にしない。裁定は根拠を確認して `adjudication`（confirmed / false_positive / unknown）と `detail` に残し、既出かどうかは `recurrence`（new / repeated / unknown）で区別する。旧記録で分からない値は unknown のまま扱う
 3. 統合レビュー結果を出力
 4. `git status` を実測し、レビュアー由来の残留ファイル（検証 probe 等）がないことを確認する
 5. 統合指摘一覧を `<scratchpad>/quality-check/cycle-<N>/findings.json`（`Finding` オブジェクトの配列。`id` を付ける）に書く（次サイクルの共通コンテキストの項目 7 の入力。`.quality-check-report.json` の `cycles[].findings` と同じ内容）。`findings.json` はコーディネータ自身が 4-2 で書くものに限り、外部から受け取ったファイルは使わない（レビュアーへの指示文に転記されるため）
@@ -584,6 +586,7 @@ JSONフォーマット例：
       "findings": [
         {
           "source": "セキュリティエンジニア",
+          "sources": ["セキュリティエンジニア"],
           "concern": "security",
           "severity": "高",
           "description": "SQLインジェクション対策確認",
@@ -592,6 +595,7 @@ JSONフォーマット例：
         },
         {
           "source": "統合レビュアー",
+          "sources": ["統合レビュアー"],
           "concern": "design",
           "severity": "中",
           "description": "リポジトリ層の例外がコントローラまで素通しになっている",
@@ -658,18 +662,9 @@ JSONフォーマット例：
 
 ---
 
-## Step 5.75: 自己改善候補の確認（self-improvement）
+## 任意: 自己改善候補
 
-`.quality-check-passed` を作成する前に、`self-improvement` スキルを実行する。
-
-確認すること：
-
-- セッション中に同じエラー、手戻り、確認不足が繰り返されていないか
-- CLAUDE.md / AGENTS.md / `.cursorrules` / `documents/development/coding-rules/` / project スキルに反映すべき恒久改善があるか
-- 改善候補がある場合、ユーザーへ適用可否を確認したか
-- 承認された改善を同じブランチ内で反映し、必要な検証を再実行したか
-
-候補がない場合も、`.quality-check-report.json` に `self_improvement.status = "not_required"` を記録してから Step 6 に進む。
+`self-improvement` は通常の完了条件ではない。繰り返す問題や明示された改善依頼がある場合に使い、現在のスコープ外の候補は既存の記録先へ残して Step 6 に進む。候補の採否待ちや「候補なし」の記録をフラグ作成の条件にしない。原因が機械処理にある場合は、文章ルールの追加より設定・ラッパー・hook の修正を優先する。
 
 ---
 
@@ -738,6 +733,5 @@ node -e "const c=require('child_process'),f=require('fs');const g=a=>c.execSync(
 - [ ] （E2E 実施時）失敗を実バグとして修正し、影響範囲のみ再検証した
 
 ### 最終確認
-- [ ] self-improvementスキルで自己改善候補を確認済み
 - [ ] `git status` を実測し、レビュアー由来の残留ファイル（検証 probe）がないことを確認した
 - [ ] `.quality-check-passed`（branch + commit の JSON）作成済み

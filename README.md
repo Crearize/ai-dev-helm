@@ -303,7 +303,7 @@ Select options (space-separated): 1 2 3
 | **generate-docs** | ドキュメント生成 | コードベースから API・アーキテクチャ等のドキュメントを生成する |
 | **lint-scaffolding** | Lint 資産の配線 | init が配置した `lint/` 資産（ast-grep / ESLint / Checkstyle / ミューテーション設定）の採否判断と配線、カバレッジマップ作成 |
 | **log-design** | ログ設計 | ログ出力の設計・レビュー時の観点 |
-| **self-improvement** | 自己改善ハーネス | 作業完了前に改善候補を抽出し、承認されたルール・スキル改善を同じブランチで反映 |
+| **self-improvement** | 任意の運用改善 | 繰り返す問題を必要時に記録。原因箇所の修正と既存ルールの削除・統合を優先し、通常の完了条件にはしない |
 | **implementation-report** | 実装レポート | PR 作成時の実装レポート生成 |
 
 ### スキルの仕組み
@@ -375,8 +375,6 @@ Step 1: 変更領域の判定（git diff でbackend/frontend/docs/infraを自動
   ↓
 Step 5: 追加テスト提案（test-recommendation スキル。ミューテーション / E2E の推奨度 + 根拠を提示 → ユーザー判断 → 承認分のみ実行。E2E 実行時のサーバー起動・停止を内包）
   ↓
-Step 5.75: 自己改善候補の確認
-  ↓
 Step 6: レポート保存 + フラグファイル作成（commit 紐付け JSON）→ マージ可能
 ```
 
@@ -417,7 +415,7 @@ Claude Code の Task ツールの `model` パラメータは短縮エイリア�
 
 Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
 
-計画の実行はハーネスを問わず**サブエージェント駆動（subagent-driven-development）がデフォルト**です。メインセッション（Fable / GPT-6 Astra）は計画・オーケストレーションに専念し、実装タスクは Sonnet 5 等の下位モデルのサブエージェントに委譲することで、Fable のトークン消費を計画・設計に集中させます。インライン実行（executing-plans）はユーザーが明示的に指示した場合のみ使用します。
+計画の実行は、**親の直接実装と必要な委譲から選べます**。Fable / GPT-6 Astra も直接実装でき、独立した作業の並列化やコンテキスト分離に利益がある場合にサブエージェントを使います。計画・引き継ぎ・再探索・統合・手戻りを含む総労力で判断し、実装方法を選ぶためだけの確認は追加しません。
 
 ### サイクルルール
 
@@ -438,7 +436,7 @@ Codex には `.codex/agents/helm-*.toml` と、指定漏れ時の Terra / medium
 
 ### 自己改善ハーネス
 
-Step 5.75 では、`self-improvement` スキルによりセッション中の改善候補を確認します。改善候補がある場合はユーザーに適用可否を確認し、承認された変更だけを同じブランチ内で `CLAUDE.md` / `AGENTS.md` / `.cursorrules` / `documents/development/coding-rules/` / project スキルへ反映します。候補の有無と判断結果は `.quality-check-report.json` に保存されます。
+自己改善は通常の完了条件から外しています。明示された改善依頼や繰り返す問題があるときに `self-improvement` を使い、現在のスコープ外の候補は記録して通常タスクを完了します。配布物の不具合は設定・ラッパー・hook 等の原因箇所で修正し、必要な製品固有ルールを維持します。
 
 ### レポート出力
 
@@ -472,7 +470,8 @@ Step 5.75 では、`self-improvement` スキルによりセッション中の改
 - **分類予算**: 64 KB を超えるコマンド、または 1 コマンド内の git/gh 語が 256 を超える場合は分類しません（引数位置に現れる `git`/`gh` も語として数えます — 過剰計上は fail-closed の方向）。前者（64 KB 超）はゲート語（`merge`/`pull`/`push`/`rebase`/`pr`、`pulls/<n>/merge`）を**コマンド全体**（行継続 `\`+改行を畳み、クォート `"`/`'` とバックスラッシュ `\` を除去した後の語でも判定）に含めば block、含まず展開文字（`$` `` ` `` `{` `}` `%`）も含まなければ allow です（同一行の別操作の判定は行いません）。除去後の文字列に展開文字を含む場合はゲート語の有無を問わず block します（`$'\x70'ush` 等を静的に読み切れない形への fail-closed）。後者（256 超の git/gh 語数）と 1 MB を超える hook ペイロード（stdin 全体）は分類せず無条件 block します（読み切れない入力を allow にはしません）
 - **通す条件**: フラグは quality-check 通過時の `commit`（repo ルートの `.quality-check-passed`、`{branch, commit}`、消費されない）を記録した JSON で、`commit` が `HEAD` と一致する場合（短縮 SHA の前方一致可。`branch` は診断用）、または `HEAD` の祖先で `commit..HEAD` の差分が全てハーネスファイル（制御面 carve-out・`Quality Gate Overrides` / `mutation_budget_minutes` の文字列変更 carve-out を除く。有効・コメントアウトの解析はせず、含まれていれば免除しません）である場合に通ります。**現在のトランク**自身のリモートからの同期は、引数なしの `git pull` / `git pull origin <trunk>` / `git merge origin/<trunk>` の3形（トランクが `master` のチェックアウトでは `master` 形）に完全一致する場合に限りフラグ不要です
 - 変更差分全体がハーネスファイルのみのブランチは、フラグ無しでもマージできます（ただしゲートパラメータ（`Quality Gate Overrides` のキー）の変更、またはゲート制御面ファイル（quality-check スキル・スキーマ・レビューガイド・hook 実体/登録ファイル・`.claude`/`.codex`/`.cursor` の `agents/`/`commands/`/`prompts/`/`rules/` ディレクトリ・`.codex/config.toml`・`mcp.json`・`.claude/settings.json`/`.claude/settings.local.json` 等）への変更を含む差分はこのカーブアウトにより免除されず、フラグが必要です。ゲート制御面ファイルに触れる追加コミットはハーネスファイルであってもフラグを無効化し、hook が `Gate control-plane changed:` でブロックします。`.claude/settings.json` / `.claude/settings.local.json` は**ファイル全体**が制御面です — hook はキー単位の解析をしないため、`permissions.allow` のみの変更もブロックします
-- **fail-open**（無条件で allow）は入力ペイロード不正（理由は stderr に出力されます）・git リポジトリ外の2つのみです。それ以外の git 呼び出し失敗はブロックされます
+- **限定した例外**: 単一行の通常形 `git commit ... && git push [remote]`（refspec 省略、追加コマンド・git グローバルオプション・展開文字・リダイレクト・作業場所変更なし）だけは、feature ブランチと確認できれば mover ブロックを免除します。main / master・detached HEAD・ブランチ不明では免除しません。`checkout` / `switch` / `bisect` / branch 引数付き `rebase` / `update-ref` 等には広げません
+- **fail-open**（無条件で allow）は入力ペイロード不正（理由は stderr に出力されます）・git リポジトリ外の2つのみです。JSON 先頭の UTF-8 BOM は除去して解析します。それ以外の git 呼び出し失敗はブロックされます
 - **トランク名は `main` / `master` 固定**です。他のトランク名を使うプロダクトは hook のゲート対象外で、`permissions.deny` 層と規約で担保します
 - **worktree 上の main**（#116）: セッションの作業ディレクトリが worktree でない場合、その worktree 内の main へのマージはこの hook からは見えません（`-C`/`cd` を使う形は無条件ブロックされます）。セッションの作業ディレクトリが worktree なら、その main は通常どおりゲートされます。hook はセッションの作業ディレクトリのリポジトリを基準に評価し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読みます。正規の手順は「その worktree を作業ディレクトリとするセッションで quality-check を完走し、フラグをその worktree に作成してからそこで merge する」の1つだけです。統括側の別ディレクトリで先にフラグを作ってからマージする手順は成立しません
 - **意図的な過検出**: フラグ不要な feature ブランチへの push であっても、候補語（`merge`/`pull`/`rebase`/refspec 省略の `push`/refspec に展開文字を含む `push`（例 `git push origin feat/$TICKET`））を含む行は、同一行の別 git 操作・`-C`/`cd`・展開文字・hard flag の各条件でブロックされることがあります。`git fetch && git rebase origin/main` のような行は分けて実行してください。改行で分けても、`git commit` と refspec 省略の `git push` は1回の tool 呼び出しなのでブロックされます（refspec を明示するか、別の tool 呼び出しに分けてください）
@@ -789,15 +788,15 @@ Cursor を選択した場合、スタック固有のコーディングルール�
 
 ### 設計思想（必読）
 
-本ハーネスの設計思想（複数の AI モデル・ツールで動作し単一モデルに依存しない、1 Issue+ブランチ、設計レビューは基本 1 回、設計の確認は一括（質問は 1 通・全節を一括提示して承認 1 回）、計画レビュー後のユーザー確認は不要、実装は下位モデル・開発中レビューなし、機械的チェックの後に内容で決めた体制レビュー（統合レビュアー＋反証型 QA＋専門家最大 1 体）、hook は main への直接 push/merge を止めるだけでミューテーション/E2E の提案は quality-check Step 5 が担う、通過判定は根拠付き）は `documents/development/development-policy.md` §1.0 を正とします。各テンプレート（`CLAUDE.md` / `AGENTS.md` / `.cursorrules`）には「Development Philosophy（必読）」節としてこの要約が載ります。
+本ハーネスの設計思想は `documents/development/development-policy.md` §1.0 を正とします。複数モデル・ツールで使える品質原則を維持し、実装方法は親または委譲から選びます。設計の質問はまとめ、既存の承認は維持します。開発中のレビューループを加えず、機械チェック通過後の最終 quality-check で根拠に基づいて判断します。自己改善は通常の完了条件に含めません。
 
 ### SuperPowers 適用ルール
 
-- **1% でも該当する可能性があればスキルを適用する** のが基本原則
-- 「簡単だから」「先にコードを読みたい」はスキップの理由にならない
-- 複数スキルが該当する場合: プロセススキル（brainstorming, debugging）→ 実装スキルの順
+- 適用条件が作業に合うスキル、またはユーザーが指定したスキルを読む
+- 設計と計画は影響・不確実性に合わせた深さにする。親による直接実装も選べる
+- 実装方法にかかわらず、独立したテスト期待値と必要な品質チェックを維持する
 
-シナリオとスキルの対応表が定義されており、例えば「新機能の前には必ず brainstorming」「バグ調査には systematic-debugging」のように、状況に応じた適切なスキルが自動的に選択されます。
+スキルの適用条件から、未確定の設計には brainstorming、原因調査には systematic-debugging などを選びます。配布する superpowers 本文にも同じ方針を適用し、同期時に patch の競合を検出します。既存導入先への反映は [更新ガイド](shared/documents/harness-upgrade.md) を参照してください。
 
 ### クリティカルルールのレベル分け
 

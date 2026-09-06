@@ -12,7 +12,7 @@
 | `cycle_extensions` | `CycleExtension[]` | フェーズ2必須 [^lifecycle] | 上限到達・停滞後にユーザー承認で追加サイクルを実施した記録。なければ空配列（§ CycleExtension オブジェクト 参照） |
 | `e2e` | `E2E` | 必須 | Step 5（`test-recommendation` スキル）による E2E テストの提案・実行結果（quality-policy.md §2）。旧トップレベル `e2e_result` / `e2e_issues` を置き換える（§ E2E オブジェクト 参照） |
 | `documentation` | `Documentation` | 必須 | `feature-documentation` スキルの実行状況（Step 0） |
-| `self_improvement` | `SelfImprovement` | 必須 | `self-improvement` スキルの実行状況（Step 5.75） |
+| `self_improvement` | `SelfImprovement` | 任意 | 自己改善を実施した場合の記録。未実施なら省略でき、完了・通過条件にしない。旧レポートの値は保持する |
 | `risk_level` | `"high" \| "medium" \| "low"` | フェーズ2必須 [^lifecycle] | Step 1 で判定したリスクレベル。判定基準は `quality-policy.md` §1、レベル別のゲート強度は同 §2 を参照 |
 | `lint_cycles` | `number \| null` | フェーズ2必須 [^lifecycle] | 全サイクルを通じた Step 2 の AI 修正パスの累計（1パス = 静的チェックコマンド（`lint-scaffolding` 導入済みプロダクトでは `lint:all`、未導入では CLAUDE.md に登録されたコマンド）の実行 → AI による修正。各サイクルで最大1パス — quality-policy.md §5）。決定的自動修正のみで完結したパスは含めない。**Step 2 を実行しない領域（docs のみの変更等）では `null`** — `0`（実行したが AI 修正が不要だった）とは区別する。infra のみの変更では Step 2（該当ビルドコマンド）を実行する（`quality-check` SKILL.md 変更領域別ステップ適用テーブル） |
 | `lint_abort_reason` | `"oscillation" \| null` | フェーズ2必須 [^lifecycle] | Step 2 の打ち切り事由。`oscillation`: 同一ルール×同一ファイルの違反が確認パスで再発（振動検出 — ルール自体が不適切な可能性）。該当なし、および `lint_cycles` が `null`（Step 2 未実行）の場合は `null`。確認パスで残った違反は統合指摘（高）として `cycles[].findings` に `source: "lint"` で記録する |
@@ -36,7 +36,7 @@
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | `cycle_number` | `number` | 必須 | サイクル番号（1始まり） |
-| `findings` | `Finding[]` | 必須 | このサイクルで検出された指摘事項 |
+| `findings` | `Finding[]` | 必須 | このサイクルで検出された指摘事項。指摘がなければ `[]`。「指摘なし」を severity 付きの行にしない |
 | `review_mode` | `"full" \| "verification"` | 任意 | レビュー体制の種別。`full`: Step 1「レビュー体制の決定」による選択（統合レビュアー ＋（コード変更時）QAエンジニア（ファルシフィケーション型）＋（該当時）専門家 1 体）/ `verification`: サイクル2以降、直前サイクルで Step 4 を実行し高/中指摘が出た場合の、検証レビュアー 1 体による修正差分レビュー（`quality-check` SKILL.md 4-3「サイクルと `review_mode`」）。`full` の Step 4 がそのブランチでまだ一度も実行されていない場合（直前サイクルが Step 2〜3 の残存で Step 4 を実行せず終了した場合を含む）、次サイクルは必ず `full` として決定表から選び直す。省略時は `full` 扱い |
 | `personas` | `string[]` | 任意 | このサイクルで起動したレビュアー名一覧。値は `quality-check` SKILL.md Step 4「役割定義」の名称（`統合レビュアー` / `QAエンジニア（ファルシフィケーション型）` / `セキュリティエンジニア` / `要件・仕様整合性レビュアー` / `パフォーマンスエンジニア` / `検証レビュアー`）に完全一致させる（`review_mode` が `verification` の場合は必須。`full` で Step 4 を実行したサイクルも必須）。`review_mode` が `verification` で前サイクルの残存指摘が非レビュアー由来のみ（レビュアーの高/中指摘が0件）**かつ前サイクルの修正差分がテスト・フォーマット・セキュリティに無関係な設定のみ（production コード非該当）**の場合に Step 4 をスキップし、検証対象なしとして `personas: []`（空配列）を記録する（ゲート制御面ファイル、セキュリティ起動条件に該当する設定、ハーネス設定ファイル（ゲートパラメータの上書きを含む）、静的チェック・ミューテーション計測範囲・実行時間バジェットを緩める設定に触れる修正差分はこの条件でもスキップ不可 — 検証レビュアー 1 体（セキュリティを重点観点）で検証レビューを行う）。修正差分が production コード（Step 1「コード変更」からテストコードを除いたもの。コメント・空白のみは非該当だが、静的チェック・型チェック・ミューテーション計測の抑止コメントとコメントアウトの解除は production コード該当 — `quality-check` SKILL.md 4-3）に及ぶ場合はスキップせず、検証レビュアー 1 体（セキュリティ・反証を重点観点として明示）で検証レビューを行い、さらに Step 1 のセキュリティエンジニア起動条件に該当する場合は `QAエンジニア（ファルシフィケーション型）` を併走させて両方を記録する（`quality-check` SKILL.md 4-3 を正とする）。Step 2〜3 の残存で Step 4 を実行せず終了したサイクルも `personas: []`（`review_mode: "full"` と組み合わせて「Step 4 未実行」を意味する） |
 | `persona_selection_basis` | `{ persona: string, applied: boolean, basis: string }[]` | 任意 | Step 1「レビュー体制の決定」の根拠。統合レビュアー・QAエンジニア（ファルシフィケーション型）・専門家 3 種（セキュリティエンジニア / 要件・仕様整合性レビュアー / パフォーマンスエンジニア）の 5 行全件を含め、`applied: false` の行には理由を `basis` に書く（起動条件に該当したが優先順位で見送った専門家のみ「優先順位により未起動（統合レビュアーの重点観点に昇格）」と書き、該当しない専門家は非該当の理由を書く。QA・専門家の行の `basis` は変更ファイル一覧のパスまたは差分中のシンボルを 1 つ以上引用し、`applied: false` の行は確認した起動条件の項目名を挙げる — 引用も項目名もない一語の `basis` は不可。`quality-check` SKILL.md Step 1「レビュー体制の決定」）。`review_mode: "full"` で Step 4 を実行したサイクルでは必須。`verification`、および Step 4 未実行（`personas: []`）のサイクルでは省略可。**`persona` は `quality-check` SKILL.md Step 4「役割定義」表の名称と完全一致させる**（専門家は括弧内の個別名を用いる）。`applied: true` の行の集合は同サイクルの `personas` と一致しなければならない |
@@ -44,10 +44,17 @@
 
 ### Finding オブジェクト
 
+統合で検出元を失わないよう、新規レポートでは `sources` に全検出者を保存する。`source` は既存ツールとの互換性のため代表値として残す。根拠を確認して採否を裁定し、`action: "対応済"` だけから「実在した欠陥」と推定しない。過去記録の欠落は `unknown` とし、集計では未判定を分母・内訳に明示する。
+
+`ai-dev-helm quality-report --input <report.json>` は正規化結果を標準出力へ返す。元ファイルを変更せず、欠落した検出者の名前や裁定根拠は復元しない。同一箇所というだけで異なる問題を自動統合しない。
+
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | `source` | `string` | 必須 | 指摘元。レビュアー名（例: "統合レビュアー"、"セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合の持ち越し不足分）。レビュアー名は `quality-check` SKILL.md Step 4「役割定義」表の名称と完全一致させる（`persona` と同じ）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの提案ベース工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
 | `severity` | `"高" \| "中" \| "低"` | 必須 | 優先度 |
+| `sources` | `string[]` | 必須（新規） | この問題を検出した全ての元レビュアー・工程。統合時は配列の和集合を取り、代表の `source` も含める。旧記録は存在する情報だけで補う |
+| `adjudication` | `"confirmed" \| "false_positive" \| "unknown"` | 任意 | 根拠に照らした裁定。未判定・旧記録の欠落は `unknown`。確認した根拠は既存の `detail` に短く記す |
+| `recurrence` | `"new" \| "repeated" \| "unknown"` | 任意 | 新規検出か既出の再掲か。同じ `id` の既出指摘は `repeated`、履歴が不明なら `unknown`。件数だけから推定しない |
 | `description` | `string` | 必須 | 指摘内容の概要 |
 | `action` | `"対応済" \| "未対応" \| "対象外"` | 必須 | 対応状況 |
 | `detail` | `string` | 任意 | 対応の詳細説明 |
@@ -227,6 +234,7 @@ quality-policy.md §2「上書きの契約」に基づき、プロダクトの�
       "findings": [
         {
           "source": "統合レビュアー",
+          "sources": ["統合レビュアー"],
           "concern": "security",
           "severity": "高",
           "description": "SQLインジェクション対策確認",
@@ -288,6 +296,7 @@ High リスクの backend 変更で、`test-recommendation` スキル（Step 5�
         {
           "id": "cycle1-qa-01",
           "source": "QAエンジニア（ファルシフィケーション型）",
+          "sources": ["QAエンジニア（ファルシフィケーション型）"],
           "concern": "falsification",
           "severity": "中",
           "description": "失効済みトークンでの更新拒否を証明する入力が未検証",

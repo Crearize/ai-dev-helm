@@ -70,12 +70,24 @@ jobs:
             /tmp/superpowers/skills \
             skills/superpowers
 
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.needed == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify policy patch reproduction and drift failure
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          npm ci
+          npx vitest run lib/skill-transform.test.js
+
       - name: Verify transformed skills
         if: steps.check.outputs.needed == 'true'
         run: |
           SKILL_COUNT=$(find skills/superpowers -name "SKILL.md" | wc -l)
-          if [ "$SKILL_COUNT" -eq 0 ]; then
-            echo "::error::No skills found after transformation"
+          if [ "$SKILL_COUNT" -ne 14 ]; then
+            echo "::error::Expected 14 skills after transformation, got $SKILL_COUNT"
             exit 1
           fi
           echo "Verified: $SKILL_COUNT skills found"
@@ -99,6 +111,8 @@ jobs:
             **更新**: v${{ steps.current.outputs.version }} → v${{ steps.latest.outputs.version }}
 
             [リリースノート](https://github.com/obra/superpowers/releases/tag/v${{ steps.latest.outputs.version }})を確認してください。
+
+            ハーネス方針の patch を変換後の本文に適用し、再生成と意図的な上流競合の検証を実行しています。patch が適用できない同期は Actions で停止し、この PR は作成されません。
 
             このPRは `fix(superpowers):` コミットとしてマージされ、release-please が自動で patch リリースに含めます。
           branch: chore/sync-superpowers

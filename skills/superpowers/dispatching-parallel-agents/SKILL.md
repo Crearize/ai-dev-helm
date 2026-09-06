@@ -1,17 +1,17 @@
 ---
 name: dispatching-parallel-agents
-description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
+description: Use when independent tasks benefit from parallel work without shared state or sequential dependencies
 ---
 
 # Dispatching Parallel Agents
 
 ## Overview
 
-You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
+You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. Provide the context they need, using a bounded brief when full session history is unnecessary. This also preserves your own context for coordination work.
 
-When you have multiple unrelated failures (different test files, different subsystems, different bugs), investigating them sequentially wastes time. Each investigation is independent and can happen in parallel.
+Multiple unrelated failures can benefit from concurrent investigation. Compare the expected benefit with briefing, rediscovery, and integration costs; the parent may investigate directly when that is simpler.
 
-**Core principle:** Dispatch one agent per independent problem domain. Let them work concurrently.
+**Core principle:** When delegation is worthwhile, give each worker an independent bounded problem and avoid shared mutations.
 
 ## When to Use
 

@@ -12,13 +12,7 @@ See: https://developers.openai.com/codex/guides/agents-md
 
 ## SuperPowers Operating Rules
 
-**SuperPowers Skills must be applied in every case.**
-
-### Basic Principles
-
-1. **Skill check at conversation start** - Skills live under `.codex/skills/`. If a SuperPowers skill is even 1% applicable, read its `SKILL.md` and follow it.
-2. **No skipping skills** - "It's simple" or "Let me read code first" are not valid reasons to skip
-3. **Process skills first** - When multiple skills apply: process skills (brainstorming, debugging) -> implementation skills
+Use skills when their applicability conditions match the work or the user requests them. Read the relevant skill before applying it. A simple, understood change can use a short plan; a routine question does not require a development workflow. Preserve required verification and independent test expectations regardless of the execution method.
 
 ### Development Philosophy (must read)
 
@@ -26,7 +20,7 @@ See: https://developers.openai.com/codex/guides/agents-md
 - 1. One Issue, one branch.
 - 2. Design review is normally one round - only a serious problem or a large design gets more. This review is why per-task review is unnecessary. User confirmation is batched: one message of questions, then one approval of the whole design.
 - 3. The plan may be reviewed, but no user confirmation is required after that review (a design exists at this point).
-- 4-6. Implementation runs on a lower-tier model once a design and plan exist, picked per task; no in-development reviews (design-intent conformance is checked at step 7).
+- 4-6. Choose parent implementation or delegation according to complexity and total effort; no in-development reviewer loops (design-intent conformance is checked at step 7).
 - 7. quality-check runs mechanical checks (build, tests, static checks) first; the review roster (integrated reviewer, falsification QA on code changes, at most one specialist) runs only after they pass, sized by the change content.
 - 8. The quality-gate hook blocks direct pushes/merges into main (or the trunk equivalent); a separate review-budget hook limits review rounds only; mutation/E2E runs are proposed separately by quality-check Step 5 (`test-recommendation`), not by the hook.
 - Passing is judged from review and quality-check results - self-reported completion needs evidence attached.
@@ -34,13 +28,13 @@ See: https://developers.openai.com/codex/guides/agents-md
 
 Full text: `documents/development/development-policy.md` §1.0.
 
-### Required Skills
+### Skills by Applicability
 
 | Scenario | Skill Path | Notes |
 |----------|------------|-------|
 | Before new feature/change | `.codex/skills/superpowers/brainstorming/SKILL.md` | Explore requirements first |
 | Multi-step implementation planning | `.codex/skills/superpowers/writing-plans/SKILL.md` | Plan before code |
-| Plan execution | `.codex/skills/superpowers/subagent-driven-development/SKILL.md` | Subagent-driven by default |
+| Plan execution | `.codex/skills/superpowers/subagent-driven-development/SKILL.md` | For independent delegated tasks |
 | Bug / test failure investigation | `.codex/skills/superpowers/systematic-debugging/SKILL.md` | Debug before fix |
 | Test design before implementation (High/Medium risk) | `.codex/skills/project/test-design/SKILL.md` | Test oracles + falsification items before code (quality policy §4) |
 | Testing implementation | `.codex/skills/superpowers/test-driven-development/SKILL.md` | TDD |
@@ -50,55 +44,23 @@ Full text: `documents/development/development-policy.md` §1.0.
 | 2+ independent tasks | `.codex/skills/superpowers/dispatching-parallel-agents/SKILL.md` | Parallel agents for efficiency |
 | Feature isolation needed | `.codex/skills/superpowers/using-git-worktrees/SKILL.md` | Worktree isolation |
 | Parallel worktree development | `.codex/skills/project/worktree-parallel/SKILL.md` | Worktree placement, ports, env setup, cleanup |
-| Before push / merge completion | `.codex/skills/project/self-improvement/SKILL.md` | Apply approved harness improvements before completion |
+| Recurring process issue or explicit improvement task | `.codex/skills/project/self-improvement/SKILL.md` | Optional; not a completion gate |
 
 ### Design Confirmation Rules
 
-User confirmation during design (`.codex/skills/superpowers/brainstorming/SKILL.md`) is consolidated into as few round trips as possible: **one batched message of questions, then one approval of the whole design.** These rules override the skill's instructions to ask one question at a time, to offer the visual companion in its own message, to ask for approval after each design section, and to ask the user to review the written spec. Everything else in the skill stays (project exploration, 2-3 approaches with trade-offs, the spec-document reviewer loop, the hand-off to `.codex/skills/superpowers/writing-plans/SKILL.md`).
-
-1. **Clarifying questions are batched** - After exploring the project context, put every open question into ONE message: scope decomposition of a multi-subsystem request, purpose, constraints, success criteria, and the visual-companion offer when it applies. Prefer multiple choice and state a recommended default for each item, so the user can answer with a single "all defaults". A second round is allowed only for questions that arise from the answers to the first.
-2. **The design is presented in full and approved once** - Present the 2-3 approaches with trade-offs and your recommendation together with every design section (architecture, components, data flow, error handling, testing) in ONE message, then ask for approval once. Do not stop after each section. When the user requests changes, re-present the revised design as a whole and ask once more.
-3. **The written spec is not a second gate** - After the approved design is written to `docs/superpowers/specs/` and the spec-document reviewer loop passes (Plan Execution Rule 5), report the file path and read and follow `.codex/skills/superpowers/writing-plans/SKILL.md` without asking the user again. The approval in rule 2 is the only user gate before implementation (Autonomy Principles).
+Explore existing context first. Batch questions whose answers are still needed, and present substantive design choices together. Use authorization already given in the conversation; do not ask again after writing the spec or reviewing the plan. Scale design and planning detail to the uncertainty and impact of the change. The shipped brainstorming and writing-plans skills implement this workflow.
 
 ### Plan Execution Rules
 
-1. **Subagent-driven execution by default** - Execute plans by spawning a fresh subagent per task (see `.codex/skills/superpowers/subagent-driven-development/SKILL.md`). Use inline execution (`executing-plans`) only when the user explicitly requests it.
-2. **Plan files are not committed** - `docs/superpowers/plans/*.md` must NOT be committed.
-3. **Plan file lifecycle** - Kept locally during implementation, deleted after PR merge.
-
-**Review consolidation** (quality policy §5.5 - review loops exist at exactly two points: document creation and the merge gate):
-
-4. **No in-development reviews** - During plan execution (subagent or inline), do NOT spawn spec-conformance or quality reviewers for individual tasks. This overrides **both** review stages in the subagent-driven-development skill: the per-task two-stage review loop **and the final whole-branch code review at plan end** (including its fix-dispatch / scoped re-review follow-up) - the latter covers the same full diff that the merge-gate quality-check Step 4 already reviews, so running it would be a duplicate. The implementer's self-review (run the tests, verify the diff against the task text) is the only per-task check; the orchestrating session spot-checks the diff and moves on. Quality assurance happens once, at the merge-gate quality-check.
-5. **Document reviews stay** - Design and plan reviews (`gpt-6-astra` / `high`) stay: normally one round; extra rounds only for high findings or large documents, with the cap in quality-policy §5.5. **After the plan review, do not ask the user for confirmation - start implementation.** Designs that change which exceptions are caught vs. propagated follow the caller-trace item in quality-policy §5.5.
-6. **Subagent budget in the plan** - Every implementation plan states an expected subagent-dispatch count (target and cap); escalate to the user when the run is projected to exceed it.
-7. **The merge gate is not relaxed** - The final quality-check gate (Step 4) keeps its own rule that every High/Medium finding is addressed. If the gate produces many findings, do not reinstate per-task reviews; route the causes instead (mechanically detectable issues to the lint layer, design-level issues into the spec/plan review checklists).
-8. **Platform constraints are confirmed first** - Designs or verifications that rely on a platform constraint (rate limits, execution time caps, size limits) MUST confirm the constraint against official documentation before work starts - never assume a limit from memory.
-9. **Interrupted subagents are resumed, not re-dispatched** - Separate committed from uncommitted work first (`git log --oneline` / `git status --short`), restate file ownership to the resumed agent (the prohibition on `git checkout` / `restore` / `stash` / `clean` on files it doesn't own), and record the interruption in `_notes` (see the `quality-check` skill's subagent-interruption resume procedure).
+1. Choose direct implementation or bounded delegation by total effort: planning, handoff, repeated exploration, integration and rework. A capable parent may implement small or medium tasks directly. Delegate independent work when parallelism or context isolation helps; delegation is not a completion requirement.
+2. Keep plans proportional: scope, affected contracts, independent test oracles and validation. Do not write the implementation twice as detailed plan code and then a transcription task. Local plan files under `docs/superpowers/plans/` are not committed; clean them up after merge.
+3. During implementation, use self-checks and tests. Final quality review belongs to `quality-check`; do not add per-task reviewer loops or a second whole-branch review. Design/plan document reviews follow quality-policy §5.5. Review depth follows risk and uncertainty; the current review roster is retained pending comparison.
+4. Respect user budgets. Estimate agent use when delegating; report a material overrun against the agreed budget. Resume interrupted agents after inspecting their committed/uncommitted work and restating ownership. Do not restore, stash or clean another task's files.
+5. Verify external platform limits against official documentation when the design relies on them.
 
 ### Subagent Model Selection
 
-**When spawning subagents, always specify `model` and the spawn tool's `reasoning_effort` explicitly (TOML uses `model_reasoning_effort`) based on the nature of the task. Do not rely on inheriting the parent session settings.**
-
-**This table takes precedence over any model-selection guidance inside individual skills** (e.g. the "Model Selection" section of `.codex/skills/superpowers/subagent-driven-development/SKILL.md`, which assumes a cheapest-model-per-role strategy). When they conflict, follow this table.
-
-| Task Type | Model | Reasoning Effort | Examples |
-|-----------|-------|------------------|----------|
-| Initial planning / design framing | `gpt-6-astra` | `high` | First-pass requirements decomposition, architecture option framing, implementation strategy design |
-| Codebase exploration / context gathering | `gpt-5.6-luna` | `medium` | Understanding project structure during planning, read-heavy scans, finding related implementations |
-| Simple mechanical search | `gpt-5.6-luna` | `low` | File/symbol lookup, listing usages, collecting file paths |
-| Implementation / concrete work | `gpt-5.6-terra` (alternative: `gpt-5.6-sol` with lowered effort) | `medium` | Task-by-task implementation subagents, test writing, refactoring, migrations |
-| Design / plan review (spec-document and plan-document reviewers) | `gpt-6-astra` | `high` | Reviewing the design doc or implementation plan itself |
-| Pure documentation review (README / `documents/` wording, no design judgment) | `gpt-5.6-luna` | `medium` | Reviewing README or `documents/` prose with no design decision involved |
-| Quality / architecture review, quality-check reviewers | `gpt-6-astra` | `high` | quality-check review roster (integrated reviewer, falsification QA, specialist, verification reviewer), code review, architecture critique, security analysis |
-
-Rules:
-
-1. **Planning/design subagents** -> `gpt-6-astra` with `high` effort. This is the Codex-side counterpart of Fable in Claude Code.
-2. **Exploration subagents** (read-only research during planning) -> `gpt-5.6-luna` with `medium` effort. Speed matters more than depth; results are distilled back to the main session.
-3. **Implementation subagents** (task executors in subagent-driven execution) -> `gpt-5.6-terra`, or `gpt-5.6-sol` with `model_reasoning_effort` lowered to `medium`/`low` (a design and a plan exist; implementation is mechanical). Do not spend high-effort frontier models on routine implementation. **Exception**: for tasks the plan explicitly marks as judgment-heavy, use `gpt-6-astra` / `high` (full effort, not lowered) - the Codex-side counterpart of Claude Code's "opus only for judgment-heavy tasks" carve-out.
-4. **Review subagents are split by review type** (quality policy §5.5, model tiering): design/plan reviews run on `gpt-6-astra` / `high` (the same tier as the author); pure documentation reviews (no design judgment) run on `gpt-5.6-luna` / `medium`. **The quality-check reviewers** (integrated reviewer, falsification QA, specialist, verification reviewer) run on `gpt-6-astra` with `high` effort, because that review directly gates push/merge. Per-task reviewers are not spawned at all (Plan Execution Rule 4). Never downgrade the quality-check reviewers to an exploration model.
-5. `init` installs `helm-designer`, `helm-implementer`, `helm-explorer`, and `helm-reviewer` under `.codex/agents/`. Use `agent_type` when supported; otherwise pass the model and effort directly. Check the live model allowlist first. Model-specific delegation uses `fork_turns: "none"` or a minimal partial history, not an unsupported full-history override. See `documents/development/harness-runtime.md`.
-6. When in doubt between two tiers, choose the more capable model.
+Use `documents/development/harness-runtime.md` for the shared model table, live tool parameter names and review reservations. This table describes delegation; it does not prohibit implementation by the current parent model, including Fable or Astra. Preserve intentional project-specific model choices when upgrading. Quality reviewers retain the required capability and check independent specifications and actual behavior.
 
 ---
 
@@ -142,7 +104,7 @@ Codex enforces this via a `PreToolUse` hook (configured in `.codex/hooks.json`).
 - Harness-only diffs skip the gate and the quality check entirely (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`). **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths, and neither is a diff touching **gate control-plane files** (the `quality-check` skill and its schemas, `test-recommendation`, the hook body/registration and its `.codex`/`.cursor` copies, `.claude`/`.codex`/`.cursor` `agents/`/`commands/`/`prompts/`/`rules/` directories, `.codex/config.toml`, the MCP registration files, and `.claude/settings.json` / `.claude/settings.local.json` in their entirety - the full set is defined once in the `quality-check` skill's "ハーネスのみ変更の免除" section). These must go through quality-check; the hook enforces the same carve-out and blocks such diffs with `Gate control-plane changed:`.
 - **Trunk names are fixed to `main` / `master`**; products using another trunk name are not gated by the hook and rely on the `permissions.deny` layer and convention.
 - **Worktree main** (#116): if the session's working directory is not the worktree, a merge into that worktree's main is invisible to this hook (using `-C` / `cd` is unconditionally blocked though). If the session's working directory is the worktree, that main is gated normally. The hook evaluates in the session's working directory and reads the flag from that repository root (a worktree's own root when the session's working directory is a worktree). The only correct procedure for merging into a `main` checked out in a git worktree is to run quality-check to completion in a session whose working directory is that worktree, creating the flag inside the worktree, then merge from there.
-- Even on a feature branch, a line containing a candidate word (`merge`/`pull`/`rebase`/refspec-omitted `push`) can still be blocked by an unconditional-block condition (see the skill) - this is intentional over-detection; run e.g. `git fetch && git rebase origin/main` as separate commands. Splitting across newlines does not help either: `git commit` followed by a refspec-omitted `git push` is still one tool call, so it is still blocked (spell out the refspec, or issue them as separate tool calls).
+- Candidate operations combined with other commands can still trigger unconditional blocks. A single-line plain `git commit ... && git push [remote]` with omitted refspec is allowed on a feature branch only, without expansion, relocation, redirection or extra commands. Other combinations keep the conservative rule; see the skill for the exact contract.
 - If main advanced independently after the flag was issued, the merged main is unverified - re-run quality-check on it before pushing.
 
 <!-- Quality Gate Overrides (optional). Uncomment the key if you want to change it and
@@ -172,7 +134,7 @@ Codex enforces this via a `PreToolUse` hook (configured in `.codex/hooks.json`).
 - The coordinator writes one shared context pack per cycle (diff, changed files, Step 2-3 results, review guides); reviewers read it instead of re-deriving it
 - Normally 1 cycle; a second cycle only if High/Medium findings remain, as a verification review by a single verification reviewer (no revert to the full roster; a re-verification after new High findings counts as a new cycle)
 - Reviewers run only after build/static checks and tests pass in that cycle
-- Run `self-improvement` before creating `.quality-check-passed`
+- `self-improvement` is optional and does not delay `.quality-check-passed` or completion.
 
 ---
 
@@ -183,7 +145,7 @@ Codex enforces this via a `PreToolUse` hook (configured in `.codex/hooks.json`).
 1. **Create GitHub Issue** - `gh issue create` to get Issue number
 2. **Create branch** - `git checkout -b [type]/[description]-[issue-number]`
 3. **Include Issue/branch/PR in plans** - Phase 0: Issue/branch creation, final Phase: PR creation
-4. **Subagent-driven execution** - Execute plans via subagent-driven-development (a fresh subagent per task), not inline
+4. **Execution method** - Choose parent implementation or bounded delegation according to Plan Execution Rules; preserve the same final quality gate.
 5. **Run quality-check before merging into main** - Required before `gh pr merge`, `git merge` on main, or a direct push to main. Feature-branch pushes need no check
 
 ### Level 1: Must Follow
@@ -243,7 +205,7 @@ Ask the user only when:
 
 1. The answer cannot be determined after investigation
 2. An unexpected situation causes a loop or prevents reliable progress
-3. Design is complete and implementation approval is required (once, at design completion, with the whole design presented in one message - not per section, not again after the spec is written, and not again after the plan review)
+3. A substantive design decision needs authorization that has not already been given in the conversation
 
 Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
 
