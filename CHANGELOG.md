@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0](https://github.com/Crearize/ai-dev-helm/compare/v3.1.0...v3.2.0) (2026-10-01)
+
+
+### Added
+
+* **harness:** require design review before implementation and rebuild model table ([#153](https://github.com/Crearize/ai-dev-helm/issues/153)) ([#154](https://github.com/Crearize/ai-dev-helm/issues/154)) ([1d6843f](https://github.com/Crearize/ai-dev-helm/commit/1d6843f8ee03d8243afbb89196b1914723a2ec7d))
+* **harness:** 見た目・編集判断を要する制作のモデル行を追加し、制作時デザインレビューを最終品質レビューに含める ([#156](https://github.com/Crearize/ai-dev-helm/issues/156)) ([#157](https://github.com/Crearize/ai-dev-helm/issues/157)) ([71e0f1e](https://github.com/Crearize/ai-dev-helm/commit/71e0f1ec9c2ec23b13e858445b3999a5f9413cf9))
+
 ## [3.1.0](https://github.com/Crearize/ai-dev-helm/compare/v3.0.1...v3.1.0) (2026-09-06)
 
 
