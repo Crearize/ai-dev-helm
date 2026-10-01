@@ -11,5 +11,5 @@ sandbox_mode = "workspace-write"
 # Named role files in .codex/agents/ carry explicit model routing.
 [agents]
 enabled = true
-default_subagent_model = "gpt-5.6-terra"
+default_subagent_model = "gpt-6.1-sol"
 default_subagent_reasoning_effort = "medium"

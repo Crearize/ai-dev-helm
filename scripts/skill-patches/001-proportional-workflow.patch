@@ -1,5 +1,5 @@
 diff --git a/using-superpowers/SKILL.md b/using-superpowers/SKILL.md
-index 7ab2eb6..7567b0a 100644
+index 7ab2eb6..8b4449f 100644
 --- a/using-superpowers/SKILL.md
 +++ b/using-superpowers/SKILL.md
 @@ -1,63 +1,20 @@
@@ -23,7 +23,7 @@ index 7ab2eb6..7567b0a 100644
  
 -This is not negotiable. You cannot rationalize your way out of this.
 -</EXTREMELY-IMPORTANT>
-+Scale process to the work. A bounded change can be implemented by the parent with a short approach and appropriate verification. Use design and planning skills for unresolved requirements, architectural decisions, dependencies, or a useful handoff. Independent bounded tasks may be delegated when doing so reduces total effort; having subagent tools does not require using them.
++Scale process to the work, not the gate. Every implementation change passes the brainstorming Design Gate (design review, then user approval) before code is written, except the exemption defined there; fixes within an already approved design, such as quality-check findings, need no new gate; a bounded change keeps its design short and can then be implemented by the parent with appropriate verification. Use writing-plans for dependencies or a useful handoff. Independent bounded tasks may be delegated when doing so reduces total effort; having subagent tools does not require using them.
  
 -## The Rule
 +The project's quality-check remains the independent final quality gate. Skill workflows do not add per-task reviews or another whole-branch review on top of it. Keep the project's review budget, test oracles, and evidence requirements.
@@ -78,25 +78,25 @@ index 7ab2eb6..7567b0a 100644
 +- Antigravity: [references/antigravity-tools.md](references/antigravity-tools.md)
 +- Hermes: [references/hermes-tools.md](references/hermes-tools.md)
 diff --git a/brainstorming/SKILL.md b/brainstorming/SKILL.md
-index 8f996c6..32c3104 100644
+index 8f996c6..d9cc3a5 100644
 --- a/brainstorming/SKILL.md
 +++ b/brainstorming/SKILL.md
-@@ -1,250 +1,20 @@
+@@ -1,250 +1,36 @@
  ---
  name: brainstorming
 -description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
-+description: Use when requirements, tradeoffs, or architectural decisions need clarification before implementation
++description: Use before implementing any feature, behavior change, or refactor - settles requirements and design, then gets the design independently reviewed and approved by the user before code is written
  ---
  
  # Brainstorming Ideas Into Designs
  
 -Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
-+Read the relevant existing flow and the user's constraints. Identify the intended behavior, scope, and observable success criteria. Do not reopen decisions or approvals already given.
++Read the relevant existing flow and the user's constraints. Identify the intended behavior, scope, and observable success criteria. Do not reopen decisions already given.
  
 -Start by classifying how much process the request needs, then work
 -through your path: understand the context, refine the idea, present a
 -design, and get your human partner's approval.
-+- For a bounded, authorized change, describe the approach briefly and proceed once requirements are clear. A separate spec or approval round is unnecessary.
++- For a bounded change, a short design in chat is enough: approach, files touched, and tests.
 +- For exploratory work, state what the probe can establish and report its limitations. Do not turn a disposable experiment into a product change outside the authorized scope.
 +- For architectural work, compare the meaningful alternatives and document interfaces, data flow, failure behavior, compatibility, and verification. Split only where the work has independent deliverables.
  
@@ -107,16 +107,16 @@ index 8f996c6..32c3104 100644
 -to EVERY task on EVERY path below — the ceremony scales with the task;
 -the approval gate never does.
 -</HARD-GATE>
-+Bundle related clarification questions into a small set. Resolve routine implementation choices from the repository and conversation. When a consequential product decision or authorization is missing, ask and continue only independent work while waiting. Do not interpret elapsed time as approval.
++Bundle related clarification questions into one message. Resolve routine implementation choices from the repository and conversation. When a consequential product decision or authorization is missing, ask and continue only independent work while waiting. Do not interpret elapsed time as approval.
  
 -## Three Paths
-+Write a spec when it helps review or preserves decisions across sessions, normally at docs/superpowers/specs/YYYY-MM-DD-topic-design.md. Check for ambiguity, contradictions, and scope gaps. Follow the project's independent design review policy and budget; do not add another review merely because a skill also mentions it. Respect ignored/local-only documentation and do not force a commit.
++Write a spec when it helps review or preserves decisions across sessions, normally at docs/superpowers/specs/YYYY-MM-DD-topic-design.md. Check it for ambiguity, contradictions, and scope gaps before the design review. Respect ignored/local-only documentation and do not force a commit.
  
 -Before your first question, classify the request and say the
 -classification out loud — "this looks bounded, so I'll present a short
 -design here rather than write a spec" — so your human partner can
 -override it:
-+Use writing-plans when sequencing or handoff benefits from a plan; otherwise continue with implementation and appropriate tests. Preserve the independent final quality-check.
++## Design Gate
  
 -- **Spike** — a feasibility question ("can we...", "is it possible...",
 -  "quick and dirty is fine") whose output is an answer, not code you
@@ -138,22 +138,29 @@ index 8f996c6..32c3104 100644
 -  restructure how components fit together or alter interfaces others
 -  depend on. Follow the full process: questions, approaches, sectioned
 -  design, written spec, then the writing-plans skill.
--
++When the design is complete, complete these steps in order before writing any implementation code. The gate applies to bounded and architectural designs alike; only the length of the design scales.
+ 
 -When in doubt between two paths, take the heavier one. The ratchet is
 -one-way: hidden complexity discovered mid-task upgrades the path —
 -stop, say so, and step up. Nothing downgrades mid-task.
--
++1. **Reserve the review.** Run `node .claude/hooks/review-budget.cjs begin --phase design --roles document-reviewer` (`.codex` in a Codex-only project; without a distributed hook, such as Cursor only, `ai-dev-helm review-budget begin` with the same arguments; see `documents/development/harness-runtime.md`). Add `--limit 3` to this first reservation only when the design is known to be large (quality-policy §5.5). Place the returned marker line at the top of the reviewer prompt.
++2. **Request the design review.** Dispatch one reviewer named `document-reviewer` (Codex: `helm-doc-reviewer`) with the design-review model from `harness-runtime.md`. Give it [spec-document-reviewer-prompt.md](spec-document-reviewer-prompt.md), the design or spec path, the user's requirements, and the relevant existing code. Fix confirmed findings. Another round is allowed only within the reserved limit and when the review raised a High finding; otherwise report the remaining concern in step 3 rather than reserving again.
++3. **Ask the user to review the design.** Send one message with the design, the review findings and how each was resolved, and the decisions that need approval. Stop there. Start implementation only after the user explicitly approves. If the user requests changes, revise and present the design again; ask the user before any further review round.
+ 
 -## Anti-Pattern: "Too Simple To Need Approval"
--
++The only exemption is a typo fix or an obviously correct change of a few lines that involves no design choice; state what you will change before making it.
+ 
 -Every path ends with your human partner approving your intent before
 -implementation. A todo list, a single-function utility, a config
 -change — the design may be two sentences in chat, but you MUST present
 -it and get approval. "Simple" tasks are where unexamined assumptions
 -cause the most wasted work. What scales with simplicity is the
 -artifact, never the approval.
--
++None of these replaces the gate: your own self-check, a request to implement given before the design existed, a plan review, or the final quality-check. If the reservation is denied, report the reason and ask the user how to proceed.
+ 
 -## Red Flags
--
++Once the user approves, do not ask again when updating the spec or writing the plan.
+ 
 -| Thought | Reality |
 -|---------|---------|
 -| "This is too simple to need a design" | Simple means a short design, not no design. Two sentences in chat, then approval. |
@@ -163,9 +170,11 @@ index 8f996c6..32c3104 100644
 -| "The spike works, so I'll keep the code" | A spike's output is an answer. Keeping the code is a new request — classify it. |
 -| "It grew, but I'm almost done — no need to re-classify" | Hidden complexity upgrades the path mid-task. Stop and say so. |
 -| "They approved the spike, so the follow-up change is approved too" | Each task gets its own classification and its own approval. |
--
++## After Approval
+ 
 -## Checklist
--
++Update the spec, if any, with the approved decisions. Use writing-plans when sequencing or handoff benefits from a plan; otherwise continue with implementation and appropriate tests. Preserve the independent final quality-check.
+ 
 -Classify first, announce the path, then create a task for each item on
 -your path and complete them in order.
 -
@@ -342,7 +351,7 @@ index 8f996c6..32c3104 100644
 -`skills/superpowers/brainstorming/visual-companion.md`
 +For decisions that benefit from browser mockups, use the optional [visual companion](visual-companion.md). Follow the user's existing preference and the guide's browser launch instructions.
 diff --git a/writing-plans/SKILL.md b/writing-plans/SKILL.md
-index f74605b..7079293 100644
+index f74605b..3857f2e 100644
 --- a/writing-plans/SKILL.md
 +++ b/writing-plans/SKILL.md
 @@ -1,171 +1,24 @@
@@ -371,7 +380,7 @@ index f74605b..7079293 100644
 +Provide exact code only when an API contract or non-obvious constraint requires it. Avoid mandatory 2-5 minute steps, full implementation listings, and a separate commit or review for each task. Tasks should produce coherent, independently testable results.
  
 -**Context:** If working in an isolated worktree, it should have been created via the `superpowers:using-git-worktrees` skill at execution time.
-+Self-check coverage, ordering, and contradictions. Follow the project's independent document review policy and review budget without adding duplicate reviews. An already approved design does not need another approval just to start its plan.
++Start only after the brainstorming Design Gate has passed: the design was reviewed and the user approved it. Self-check coverage, ordering, and contradictions. For a substantial plan, request one plan review: reserve it with `review-budget begin --phase plan --roles document-reviewer` and give the reviewer [plan-document-reviewer-prompt.md](plan-document-reviewer-prompt.md). After the plan review, start implementation without asking the user again.
  
 -**Save plans to:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
 -- (User preferences for plan location override this default)
@@ -2039,19 +2048,18 @@ index ad74b10..8f768ce 100644
 -new breakage in the fix diff, out-of-scope observations, and a round verdict.
 +Check that each relevant defect was addressed and whether the fix introduced a related regression. Preserve finding IDs and original sources. Distinguish new findings from repeated findings. Do not restart a full review or reset the budget.
 diff --git a/writing-plans/plan-document-reviewer-prompt.md b/writing-plans/plan-document-reviewer-prompt.md
-index 1c12c1d..79052b6 100644
+index 1c12c1d..860811b 100644
 --- a/writing-plans/plan-document-reviewer-prompt.md
 +++ b/writing-plans/plan-document-reviewer-prompt.md
-@@ -1,49 +1,7 @@
+@@ -1,49 +1,5 @@
 -# Plan Document Reviewer Prompt Template
 +# Plan Review Brief
  
 -Use this template when dispatching a plan document reviewer subagent.
-+Use within the project's independent document review policy and budget, without adding another review gate.
++You are the plan reviewer. Compare the plan with the approved design and requirements. Check coverage, dependencies, ownership conflicts, interface contracts, and meaningful verification. A bounded task needs no full code listing or 2-5 minute script. Do not require fresh implementers, per-task reviews, or renewed approval of an already approved design.
  
 -**Purpose:** Verify the plan is complete, matches the spec, and has proper task decomposition.
-+Compare the plan with the accepted requirements. Check coverage, dependencies, ownership conflicts, interface contracts, and meaningful verification. A bounded task needs no full code listing or 2-5 minute script. Do not require fresh implementers, per-task reviews, or renewed approval of an already accepted design.
- 
+-
 -**Dispatch after:** The complete plan is written.
 -
 -```
@@ -2095,9 +2103,9 @@ index 1c12c1d..79052b6 100644
 -```
 -
 -**Reviewer returns:** Status, Issues (if any), Recommendations
-+Report concrete gaps and contradictions with evidence. Return no findings when the plan is sufficient to execute; cosmetic expansion is not a requirement.
++Report concrete gaps and contradictions with evidence and a severity (High / Medium / Low). Return no findings when the plan is sufficient to execute; cosmetic expansion is not a requirement.
 diff --git a/brainstorming/spec-document-reviewer-prompt.md b/brainstorming/spec-document-reviewer-prompt.md
-index 6099312..4a3797f 100644
+index 6099312..b7af7e8 100644
 --- a/brainstorming/spec-document-reviewer-prompt.md
 +++ b/brainstorming/spec-document-reviewer-prompt.md
 @@ -1,49 +1,5 @@
@@ -2105,7 +2113,7 @@ index 6099312..4a3797f 100644
 +# Spec Review Brief
  
 -Use this template when dispatching a spec document reviewer subagent.
-+Use within the project's independent design review policy and review budget. Review scope, expected behavior, interfaces, failure modes, compatibility, and observable acceptance criteria. Compare against the user's actual requirements and existing behavior.
++You are the design reviewer for the brainstorming Design Gate. Review scope, expected behavior, interfaces, failure modes, compatibility, and observable acceptance criteria. Compare against the user's actual requirements and existing behavior.
  
 -**Purpose:** Verify the spec is complete, consistent, and ready for implementation planning.
 -
@@ -2152,7 +2160,7 @@ index 6099312..4a3797f 100644
 -```
 -
 -**Reviewer returns:** Status, Issues (if any), Recommendations
-+Report concrete omissions or contradictions. Do not reopen accepted decisions without new evidence, require unrelated features, or add a separate user approval round. A sufficient bounded design need not be expanded into an architectural spec.
++Report concrete omissions or contradictions with evidence and a severity (High / Medium / Low). Do not reopen accepted decisions without new evidence or require unrelated features. A sufficient bounded design need not be expanded into an architectural spec. The author presents your findings to the user for approval.
 diff --git a/using-superpowers/references/codex-tools.md b/using-superpowers/references/codex-tools.md
 index e4488fb..ddb9c83 100644
 --- a/using-superpowers/references/codex-tools.md

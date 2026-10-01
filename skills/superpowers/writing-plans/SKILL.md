@@ -17,7 +17,7 @@ For a small change, a short task list is sufficient. For substantial work, save 
 
 Provide exact code only when an API contract or non-obvious constraint requires it. Avoid mandatory 2-5 minute steps, full implementation listings, and a separate commit or review for each task. Tasks should produce coherent, independently testable results.
 
-Self-check coverage, ordering, and contradictions. Follow the project's independent document review policy and review budget without adding duplicate reviews. An already approved design does not need another approval just to start its plan.
+Start only after the brainstorming Design Gate has passed: the design was reviewed and the user approved it. Self-check coverage, ordering, and contradictions. For a substantial plan, request one plan review: reserve it with `review-budget begin --phase plan --roles document-reviewer` and give the reviewer [plan-document-reviewer-prompt.md](plan-document-reviewer-prompt.md). After the plan review, start implementation without asking the user again.
 
 The parent may implement directly. Delegate only useful independent bounded work, accounting for briefing, rediscovery, and integration cost as well as model cost. Use executing-plans for continuation or subagent-driven-development when delegation is chosen. Do not ask the user to select an execution mechanism already authorized by the task.
 
