@@ -13,7 +13,7 @@ const TOKEN = /^HELM_REVIEW:([a-f0-9]{32}):([a-z-]+)\s*$/m;
 const DISPATCH = /^(Agent|Task|spawn_agent)$/;
 const FOLLOWUP = /^(followup_task|send_message|send_input|resume_agent)$/;
 const REVIEW_NAME = /(?:^|[\s_/:.-])(?:review(?:er)?|code-reviewer|document-reviewer|falsification-qa|security-engineer|requirements-analyst|performance-engineer)(?:$|[\s_/:.-])|レビュー/i;
-const REVIEW_DESCRIPTION = /^(?:(?:code|design|plan|requirements|verification)[ -])?review\b|^(?:コード|設計|計画|要件|検証)?レビュー/i;
+const REVIEW_DESCRIPTION = /^(?:(?:code|design|plan|requirements|verification)[ -])?review\b|^(?:コード|設計|計画|要件|検証|デザイン)?レビュー/i;
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const digest = (text) => crypto.createHash('sha256').update(text).digest('hex');
 

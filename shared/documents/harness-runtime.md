@@ -12,7 +12,8 @@
 
 - Claude は **Opus 5.5 / Sonnet 5.5 以降**だけを使う。Opus 5 以前・Sonnet 5 以前・Haiku は、どの作業にも使わない。性能・効率に加え、旧モデルの提供終了で設定が壊れることを避けるため。
 - Codex は **GPT-6 Luna を使わない**。最も軽い作業でも `gpt-6.1-sol` / `low` を下限とする。GPT-5.6 系（Sol / Terra / Luna）は移行期間中の旧世代であり、新しい設定に書かない。
-- 別名（`opus` / `sonnet`）が旧版に解決される環境（クラウド事業者側でのモデル固定、`ANTHROPIC_DEFAULT_OPUS_MODEL` 等の上書き）では、5.5 のモデル ID を明示する。
+- Cursor 独自のモデル（Composer 等）は表に載せず、使わない。Cursor では表の Claude モデルを名前で選ぶ。
+- Claude の別名（`opus` / `sonnet` / `fable`）は、Anthropic API ではその系列の最新版を指し、Claude Code の更新で追従する。別名が旧版に解決される環境（Bedrock 等のクラウド事業者経由、`ANTHROPIC_DEFAULT_OPUS_MODEL` 等の上書き、`availableModels` による制限）では、5.5 のモデル ID を明示する。Codex と Cursor は版を含むモデル名を直接指定するため、新しいモデルが出たらこの表を更新して配布する。
 
 ## Claude Code / Cursor のモデル選択
 
@@ -21,8 +22,9 @@
 | 設計・計画（メインセッション） | `opus`（Opus 5.5）。Opus を高 effort にしても足りない難所だけ `fable`（Fable 5.1） |
 | 設計・計画の文書レビュー | `opus` |
 | 設計済みの実装・テスト追加 | `sonnet`（Sonnet 5.5）。判断の難しい課題は `opus` |
+| 見た目・編集判断を要する成果物の制作（スライド・画像・UI の見た目、動画の切り抜き候補選定など） | `opus` |
 | 探索・設計判断のない文章確認 | `sonnet` |
-| 最終品質レビュー | `opus`、利用可能な環境では `gpt-6-astra` / `high` も可 |
+| 最終品質レビュー（制作時のデザインレビューを含む） | `opus`、利用可能な環境では `gpt-6-astra` / `high` も可 |
 
 Claude の Agent / Task は、その環境のツールが受け付けるモデル別名を明示します。Cursor では Claude Opus 5.5 / Claude Sonnet 5.5 を名前で選び、旧版を選びません。親モデルの実装可否をこの表で制限しません。
 
@@ -35,8 +37,9 @@ Claude の Agent / Task は、その環境のツールが受け付けるモデ�
 | 設計・計画・高度な判断（メインセッション） | `gpt-6.1-sol` / `high`。Sol で足りない難所だけ `gpt-6-astra` / `high` | `helm-designer` |
 | 設計・計画の文書レビュー | `gpt-6.1-sol` / `high` | `helm-doc-reviewer` |
 | 設計済みの実装・テスト追加 | `gpt-6.1-sol` / `medium` | `helm-implementer` |
+| 見た目・編集判断を要する成果物の制作 | `gpt-6.1-sol` / `high` | `helm-visual-producer` |
 | 探索・コンテキスト収集・設計判断のない文章確認 | `gpt-6.1-sol` / `low` | `helm-explorer` |
-| 最終品質レビュー | `gpt-6-astra` / `high` | `helm-reviewer` |
+| 最終品質レビュー（制作時のデザインレビューを含む） | `gpt-6-astra` / `high` | `helm-reviewer` |
 
 - 起動時に利用可能モデルの一覧を確認する。表のモデルが未提供なら、黙って他モデルへ変更せず制約と代替案を報告する。品質レビュー・設計を下位の設定へ落とさない。
 - 実際のツール定義を正とする。`spawn_agent` が `reasoning_effort` を受ける環境ではその名前を使う。設定 TOML のキーは `model_reasoning_effort`。`model` と effort の両方を指定する。
@@ -46,7 +49,7 @@ Claude の Agent / Task は、その環境のツールが受け付けるモデ�
 - 機能の有無はツール一覧で確認する。独立した課題を子へ渡し、親は別の統合作業を進める。子の出力を根拠・テスト結果と照合して統合する。子へ追加レビューや更なる委譲を一律に許可しない。
 - スキルは配布先 `.codex/skills` から読み込める。起動時のスキル一覧に現れることを確認し、現れない場合は AGENTS.md の明示パスで必要な SKILL.md を読む。未発見を読み込み済みとして扱わない。
 
-選定根拠（2026-10 時点の公開値）: GPT-6.1 Sol はエージェント型コーディング（DeepSWE 75.2 対 Astra 74.8）と総合指標（AA 指数 52 対 53）で Astra にほぼ並び、1 タスクあたりの費用は約 1/5〜1/7（DeepSWE で $0.65 対 $4.43）。出力トークン数は Astra の約 1.4 倍だが、単価差がそれを上回る。一方、不具合の原因究明（TroubleshootingBench 48.0 対 63.5）とセキュリティ（SEC-Bench Pro 78.8 対 85.4）は Astra が明確に上のため、最終品質レビューは Astra に残す。GPT-6.1 Astra は未公開。
+選定根拠（2026-10 時点の公開値）: GPT-6.1 Sol はエージェント型コーディング（DeepSWE 75.2 対 Astra 74.8）と総合指標（AA 指数 52 対 53）で Astra にほぼ並び、1 タスクあたりの費用は約 1/5〜1/7（DeepSWE で $0.65 対 $4.43）。出力トークン数は Astra の約 1.4 倍だが、単価差がそれを上回る。一方、不具合の原因究明（TroubleshootingBench 48.0 対 63.5）とセキュリティ（SEC-Bench Pro 78.8 対 85.4）は Astra が明確に上のため、最終品質レビューは Astra に残す。見た目の判断を伴う制作は、画面操作の評価（OSWorld 2.0: Sol 71.4 対 Astra 73.5）で差が小さいため Sol を high で使い、制作物のレビューは最終品質レビューと同じ Astra とする。制作を委ねるエージェントの名前や依頼文に「review」「レビュー」を含めない（review-budget がレビューとして数える）。GPT-6.1 Astra は未公開。
 
 下記レビュー制御は両ツール共通です。
 
