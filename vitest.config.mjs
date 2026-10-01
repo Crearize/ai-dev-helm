@@ -13,6 +13,8 @@ export default defineConfig({
     // .stryker-tmp is a full sandbox copy of the repo left behind by an
     // aborted local Stryker run; without the exclude its duplicated test
     // files would all run (and fail) inside the sandbox.
-    exclude: [...configDefaults.exclude, 'test/fixtures/**', '**/.stryker-tmp/**'],
+    // docs/superpowers/ and .worktrees/ are git-ignored local workspaces (plans, extracted
+    // release baselines, worktree checkouts); their copies of the suite must not run here.
+    exclude: [...configDefaults.exclude, 'test/fixtures/**', '**/.stryker-tmp/**', 'docs/superpowers/**', '.worktrees/**'],
   },
 });
