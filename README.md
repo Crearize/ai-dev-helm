@@ -268,7 +268,7 @@ Select options (space-separated): 1 2 3
 
 | スキル名 | 概要 | いつ使うか |
 |---------|------|-----------|
-| **brainstorming** | アイデアを設計に落とし込む | 新機能を作る前に要件・設計を探索する |
+| **brainstorming** | アイデアを設計に落とし込む | 実装の前に必ず使う。設計 → 設計レビュー → ユーザーへのレビュー依頼と承認（Design Gate） |
 | **writing-plans** | 実装計画を策定する | 設計完了後、コードに触る前に計画を書く |
 | **executing-plans** | 計画を実行する | 書いた計画に基づいてタスクを実行する |
 | **subagent-driven-development** | サブエージェントで並列実装 | 独立したタスクを並列に実行する |
@@ -403,19 +403,19 @@ Step 4 では、Step 1 で決めた体制がそれぞれ並列のサブエージ
 
 ### サブエージェントのモデル切り替え
 
-サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。計画・設計の初期方向付けと設計・計画のレビューは同じ最上位階層（Fable。利用できない場合や Codex 利用時は Claude Opus 5 または GPT-6 Astra high）で行います。実装などの具体的な作業は既定で Claude Sonnet 5 / GPT-5.6-Terra を使い、計画が「判断を要する」と明記したタスクのみ Claude Opus 5 / GPT-6 Astra high を使います。純粋なドキュメントレビュー（README・`documents/` の記述確認で設計判断を含まない）は Claude Sonnet 5 / GPT-5.6-Luna medium です。探索・コンテキスト収集には Claude Sonnet 5 / GPT-5.6-Luna medium を使用します。quality-check のレビュアー（統合レビュアー・QA・専門家・検証レビュアー）とコードレビューは Claude Opus 5 または GPT-6 Astra high で行います。Claude Haiku はどのフェーズでも使用しません。
+サブエージェント利用時は、依頼内容に応じて利用する AI モデルを切り替えます。2026-10 時点のベンチマークとトークン費用の比較で、Claude Opus 5.5 は Fable 5.1 を全項目で上回り単価は 4 割、GPT-6.1 Sol はコーディングで GPT-6 Astra に並び費用は約 1/5 でした。そのため計画・設計と文書レビューは Opus 5.5 / GPT-6.1 Sol で行い、Fable 5.1 / GPT-6 Astra は難所への格上げに限ります。最終品質レビューは、不具合の原因究明とセキュリティで差がある GPT-6 Astra を Codex で維持します。Claude は Opus / Sonnet 5.5 以降だけを使い、Haiku と旧版は使いません。Codex は GPT-6 Luna を使わず、最も軽い作業も `gpt-6.1-sol` / `low` とします。根拠の数値は [harness-runtime.md](shared/documents/harness-runtime.md) にあります。
 
-| ハーネス | 計画・設計 | 設計・計画のレビュー | 探索 | 実装 | 純粋な文書レビュー | quality-check レビュアー・コードレビュー |
-|---------|-----------|---------------------|------|------|-------------------|----------------------------------------|
-| Claude Code | `model: fable`（不可なら `opus`） | `model: fable`（不可なら `opus`） | `model: sonnet` | `model: sonnet`（判断タスクのみ `opus`） | `model: sonnet` | `model: opus` |
-| Codex | `gpt-6-astra` / `high` | `gpt-6-astra` / `high` | `gpt-5.6-luna` / `medium` | `gpt-5.6-terra`（判断タスクのみ `gpt-6-astra` high） | `gpt-5.6-luna` / `medium` | `gpt-6-astra` / `high` |
-| Cursor | Fable（不可なら Claude Opus 5） | Fable（不可なら Claude Opus 5） | Claude Sonnet 5 | Claude Sonnet 5（判断タスクのみ Claude Opus 5） | Claude Sonnet 5 | Claude Opus 5 |
+| ハーネス | 計画・設計 | 設計・計画のレビュー | 探索・純粋な文書確認 | 実装 | quality-check レビュアー・コードレビュー |
+|---------|-----------|---------------------|------|------|----------------------------------------|
+| Claude Code | `model: opus`（難所のみ `fable`） | `model: opus` | `model: sonnet` | `model: sonnet`（判断タスクのみ `opus`） | `model: opus` |
+| Codex | `gpt-6.1-sol` / `high`（難所のみ `gpt-6-astra`） | `gpt-6.1-sol` / `high` | `gpt-6.1-sol` / `low` | `gpt-6.1-sol` / `medium` | `gpt-6-astra` / `high` |
+| Cursor | Claude Opus 5.5（難所のみ Fable 5.1） | Claude Opus 5.5 | Claude Sonnet 5.5 | Claude Sonnet 5.5（判断タスクのみ Claude Opus 5.5） | Claude Opus 5.5 |
 
-Claude Code の Task ツールの `model` パラメータは短縮エイリアス（`fable` / `opus` / `sonnet` / `haiku`）のみを受理するため、テンプレートでは `claude-opus-5` などのフル ID ではなく短縮名で指定します。また、テンプレートのモデル表はスキル内のモデル選択ガイド（例: subagent-driven-development の Model Selection 節）より優先されます。
+Claude Code の Task ツールの `model` パラメータは短縮エイリアス（`fable` / `opus` / `sonnet` / `haiku`）のみを受理するため、テンプレートでは `claude-opus-5-5` などのフル ID ではなく短縮名で指定します。別名が旧版に解決される環境（クラウド事業者側での固定や `ANTHROPIC_DEFAULT_OPUS_MODEL` 等の上書き）では 5.5 のモデル ID を明示してください。また、テンプレートのモデル表はスキル内のモデル選択ガイド（例: subagent-driven-development の Model Selection 節）より優先されます。
 
-Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Fable / Opus など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
+Claude Code / Codex はサブエージェントごとのモデルをテンプレート（`CLAUDE.md` / `AGENTS.md`）で明示指定しています。Codex は OpenAI 系モデル専用のため、Opus / Sonnet など Claude 系モデルへの切り替え対象外です。Cursor は呼び出しごとに動的なモデル選択が可能なため、タスク種別に応じた選択基準を `.cursorrules` に定義しています。
 
-計画の実行は、**親の直接実装と必要な委譲から選べます**。Fable / GPT-6 Astra も直接実装でき、独立した作業の並列化やコンテキスト分離に利益がある場合にサブエージェントを使います。計画・引き継ぎ・再探索・統合・手戻りを含む総労力で判断し、実装方法を選ぶためだけの確認は追加しません。
+計画の実行は、**親の直接実装と必要な委譲から選べます**。親がどのモデルでも直接実装でき、独立した作業の並列化やコンテキスト分離に利益がある場合にサブエージェントを使います。計画・引き継ぎ・再探索・統合・手戻りを含む総労力で判断し、実装方法を選ぶためだけの確認は追加しません。
 
 ### サイクルルール
 
@@ -430,7 +430,7 @@ Claude Code / Codex はサブエージェントごとのモデルをテンプレ
 
 `init` は Claude Code / Codex に共通の `review-budget.cjs` と起動前フックを配布します。レビュー開始前に一巡を予約し、返されたロール別の起動情報を依頼文に付けます。回数は Git common directory に保存され、セッション再開やツール切り替えではリセットされません。起動情報の使い回しと上限超過を拒否し、実装・探索の起動は数えません。自動延長コマンドはありません。
 
-Codex には `.codex/agents/helm-*.toml` と、指定漏れ時の Terra / medium の既定を生成します。モデル指定は実行環境の利用可能一覧を正とし、Astra が利用できない環境で自動的に品質レビューを下位モデルへ落とすことはしません。再初期化は既存の独自指示を残して管理ブロックを更新します。
+Codex には `.codex/agents/helm-*.toml`（designer / doc-reviewer / implementer / explorer / reviewer）と、指定漏れ時の `gpt-6.1-sol` / medium の既定を生成します。旧版が配布したまま変更されていないエージェント定義と、旧既定値 `gpt-5.6-terra` は新しい値へ更新し、独自に変更したものは保持します。モデル指定は実行環境の利用可能一覧を正とし、Astra が利用できない環境で自動的に品質レビューを下位モデルへ落とすことはしません。再初期化は既存の独自指示を残して管理ブロックを更新します。
 
 詳細と起動例は [harness-runtime.md](shared/documents/harness-runtime.md)。レビューの別名への偽装、親自身の思考内レビュー、外部 CLI、無効化したフックや改ざんまで防ぐセキュリティ境界ではありません。フックを信頼・有効化した実行環境で使用してください。
 
@@ -487,7 +487,7 @@ Codex には `.codex/agents/helm-*.toml` と、指定漏れ時の Terra / medium
 `~/.claude/settings.json` に以下を安全にマージします。
 
 - **破壊的コマンドのブロック**: プロジェクトレベルと同じブロックリスト
-- **モデル設定**: `claude-fable-5`（メインセッションは計画・設計を担当。Fable が使えない場合は `claude-opus-5` を手動設定）
+- **モデル設定**: `claude-opus-5-5`（メインセッションは計画・設計を担当。Opus 5.5 より前のモデルは使わない）
 - **Effort Level**: `high`（環境変数で `max` も設定）
 - **思考モード**: 常時有効（`alwaysThinkingEnabled: true`）
 
@@ -503,8 +503,8 @@ Codex には `.codex/agents/helm-*.toml` と、指定漏れ時の Terra / medium
 
 ```
 Model version mismatch detected:
-  Current:  claude-opus-4-8
-  Template: claude-fable-5
+  Current:  claude-fable-5
+  Template: claude-opus-5-5
 Upgrade model? (y/N):
 ```
 
@@ -522,11 +522,11 @@ Cursor はコードベースでの設定が困難なため、推奨ルールを�
 
 `CODEX_HOME` が指定されていればその配下、なければ `~/.codex/config.toml` に以下を安全にマージします（TOML フォーマット）。
 
-- **モデル**: `gpt-6-astra`（既存設定は保持、`--upgrade-model` で強制上書き）
+- **モデル**: `gpt-6.1-sol`（既存設定は保持、`--upgrade-model` で強制上書き）
 - **推論レベル**: `model_reasoning_effort = "high"`
 - **承認ポリシー**: `approval_policy = "on-request"`
 - **サンドボックス**: `sandbox_mode = "read-only"`（プロジェクトごとに `workspace-write` 等へ昇格可能）
-- **サブエージェント既定**: `gpt-5.6-terra` / `medium`（既存値は保持）
+- **サブエージェント既定**: `gpt-6.1-sol` / `medium`（既存値は保持。旧既定値 `gpt-5.6-terra` のままなら更新）
 - **コマンド保護**: 対応する `rules/ai-dev-helm-safety.rules` を配布。接頭辞一致による保護であり、任意のシェル表記すべてを判定するものではありません
 
 変更前にバックアップを作成します。現行CLIが認識しない旧 `[[rules]]` は、旧配布内容と一致する項目だけ移行し、独自項目は削除せず手動移行の警告を出します。独自に変更したエージェント定義・安全ルールも保持します。
@@ -796,7 +796,7 @@ Cursor を選択した場合、スタック固有のコーディングルール�
 - 設計と計画は影響・不確実性に合わせた深さにする。親による直接実装も選べる
 - 実装方法にかかわらず、独立したテスト期待値と必要な品質チェックを維持する
 
-スキルの適用条件から、未確定の設計には brainstorming、原因調査には systematic-debugging などを選びます。配布する superpowers 本文にも同じ方針を適用し、同期時に patch の競合を検出します。既存導入先への反映は [更新ガイド](shared/documents/harness-upgrade.md) を参照してください。
+スキルの適用条件から、原因調査には systematic-debugging などを選びます。実装を伴う変更は、規模にかかわらず brainstorming の Design Gate（設計レビュー → ユーザーへのレビュー依頼と承認）を通してから実装します。免除は誤字と設計判断を含まない数行の明白な修正だけです。配布する superpowers 本文にも同じ方針を適用し、同期時に patch の競合を検出します。既存導入先への反映は [更新ガイド](shared/documents/harness-upgrade.md) を参照してください。
 
 ### クリティカルルールのレベル分け
 

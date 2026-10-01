@@ -1,5 +1,5 @@
 name = "helm-reviewer"
-description = "Reviews changes for correctness, risk, and missing verification."
+description = "Reviews the final change for correctness, risk, and missing verification (quality-check)."
 developer_instructions = "Review the assigned change independently. Report concrete findings with evidence; do not modify unrelated work."
 model = "gpt-6-astra"
 model_reasoning_effort = "high"

@@ -18,7 +18,7 @@ This file defines project-specific rules for Cursor.
 
 - Premise: runs across multiple AI models/tools, not tied to one. Quality is enforced by structure; tests can be trusted when they carry rationale (mutation testing is a tool for that, not mandatory).
 - 1. One Issue, one branch.
-- 2. Design review is normally one round - only a serious problem or a large design gets more. This review is why per-task review is unnecessary. User confirmation is batched: one message of questions, then one approval of the whole design.
+- 2. Every completed design gets an independent design review (normally one round - only a serious problem or a large design gets more), then the user reviews the design with the review results and approves it once before implementation starts. This review is why per-task review is unnecessary. Questions are batched into one message.
 - 3. The plan may be reviewed, but no user confirmation is required after that review (a design exists at this point).
 - 4-6. Choose parent implementation or bounded delegation by complexity and total effort; final quality review remains consolidated.
 - 7. quality-check runs mechanical checks (build, tests, static checks) first; the review roster (integrated reviewer, falsification QA on code changes, at most one specialist) runs only after they pass, sized by the change content.
@@ -44,11 +44,19 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 
 ### Design Confirmation Rules
 
-Explore existing context first. Batch questions whose answers are still needed, and present substantive design choices together. Use authorization already given in the conversation; do not ask again after writing the spec or reviewing the plan. Scale design and planning detail to the uncertainty and impact of the change. The shipped brainstorming and writing-plans skills implement this workflow.
+Explore existing context first and batch the questions that are still needed into one message. Scale design detail to the uncertainty and impact of the change, but not the gate below.
+
+**Design gate (required before any implementation code)** - when the design is complete:
+
+1. Reserve and request one independent design review: `node .claude/hooks/review-budget.cjs begin --phase design --roles document-reviewer` (or `npx @crearize/ai-dev-helm review-budget begin` with the same arguments when no hook is installed), a reviewer named `document-reviewer`, the design-review model from `documents/development/harness-runtime.md`.
+2. Send the user one message with the design, the review findings and how each was resolved.
+3. Stop until the user explicitly approves. A request to implement is not approval of a design that did not exist yet.
+
+This applies to bounded changes too; only typo fixes and obviously correct few-line changes with no design choice are exempt. After approval, do not ask again after writing the spec or reviewing the plan. The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
 
 ### Subagent Model Selection
 
-Use `documents/development/harness-runtime.md` for the shared model table, live tool parameter names and review reservations. This table describes delegation; it does not prohibit implementation by the current parent model, including Fable or Astra. Preserve intentional project-specific model choices when upgrading. Quality reviewers retain the required capability and check independent specifications and actual behavior.
+Use `documents/development/harness-runtime.md` for the shared model table, live tool parameter names and review reservations. This table describes delegation; it does not prohibit implementation by the current parent model. Use Claude Opus / Sonnet 5.5 or later only (never Haiku or older Claude models), and do not use GPT-6 Luna. Preserve intentional project-specific model choices when upgrading. Quality reviewers retain the required capability and check independent specifications and actual behavior.
 
 ### Execution and Review
 

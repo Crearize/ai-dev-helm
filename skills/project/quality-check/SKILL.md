@@ -301,9 +301,9 @@ Step 1「レビュー体制の決定」で決めた体制（統合レビュア�
 
 | ハーネス | モデル指定方法 |
 |---------|---------------|
-| Claude Code | Taskツールの `model` パラメータに `opus` を明示指定（短縮エイリアスのみ受理。`claude-opus-5` などのフルIDは不可） |
+| Claude Code | Taskツールの `model` パラメータに `opus`（Opus 5.5 以降）を明示指定（短縮エイリアスのみ受理。`claude-opus-5-5` などのフルIDは不可） |
 | Codex | サブエージェントに `model = "gpt-6-astra"` / `model_reasoning_effort = "high"` を明示指定 |
-| Cursor | サブエージェント起動時に Claude Opus 5 を優先指定。Codex GPT-6 Astra high はベンダー多様性のための代替肢（Fableはレビューでは使わない） |
+| Cursor | サブエージェント起動時に Claude Opus 5.5 を優先指定。Codex GPT-6 Astra high はベンダー多様性のための代替肢。Opus 5.5 より前の Claude・Haiku・GPT-6 Luna は使わない |
 
 ### レビュー対象ガイドライン
 

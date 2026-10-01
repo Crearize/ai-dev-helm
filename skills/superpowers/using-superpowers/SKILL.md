@@ -9,7 +9,7 @@ Use a skill when the user requests it or its workflow materially helps the task.
 
 User instructions and project policy take precedence. Reuse decisions and authorization already present in the conversation; do not restart an approved design or ask again merely because a skill was loaded. Ask only for information or authorization that is still needed.
 
-Scale process to the work. A bounded change can be implemented by the parent with a short approach and appropriate verification. Use design and planning skills for unresolved requirements, architectural decisions, dependencies, or a useful handoff. Independent bounded tasks may be delegated when doing so reduces total effort; having subagent tools does not require using them.
+Scale process to the work, not the gate. Every implementation change passes the brainstorming Design Gate (design review, then user approval) before code is written, except the exemption defined there; fixes within an already approved design, such as quality-check findings, need no new gate; a bounded change keeps its design short and can then be implemented by the parent with appropriate verification. Use writing-plans for dependencies or a useful handoff. Independent bounded tasks may be delegated when doing so reduces total effort; having subagent tools does not require using them.
 
 The project's quality-check remains the independent final quality gate. Skill workflows do not add per-task reviews or another whole-branch review on top of it. Keep the project's review budget, test oracles, and evidence requirements.
 
