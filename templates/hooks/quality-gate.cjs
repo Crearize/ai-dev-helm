@@ -97,7 +97,9 @@
 //   `branch -f|-d|-D|--force` is judged per line. The one fetch let through
 //   is the daily trunk sync - plain `git fetch [origin] [<trunk>]` and then
 //   `git merge origin/<trunk>` on that trunk - in the exact shape
-//   `plainFetch` / `syncMergeTrunk` describe.
+//   `plainFetch` / `syncMergeTrunk` describe, as the WHOLE command with
+//   nothing else in it (`isPlainTrunkSync`), and only while `origin/<trunk>`
+//   resolves to the remote-tracking ref.
 //   The commit/push exception above excludes redirects, expansions, global
 //   git options, other commands and other separators. All other mover checks
 //   still precede branch resolution, including rebase and update-ref forms
@@ -137,7 +139,9 @@
 //     well when the stripped text carries an expansion character (`$`,
 //     backtick, `{`, `}` or `%` - the tokenizer's set), since `$'\x70'ush` and
 //     `pus{h..h}` cannot be read statically; allow when there is neither. A
-//     classifier exception is judged by the same function.
+//     classifier exception is judged by the same function, and so is a
+//     command whose quote is still open at the end (the two shells may close
+//     it in different places, so the words cannot be trusted).
 //   - A command whose `git` / `gh` WORDS number more than 256 is not classified
 //     either: it blocks unconditionally. Words, not resolved calls - a `git` in
 //     an argument position counts, and over-counting is fail-closed. This is
@@ -468,6 +472,10 @@ function tokenizeLines(command, depth = 0) {
   }
   pos = command.length;
   endLine();
+  // A quote still open at the end: the two shells cannot agree on where the
+  // words are (`"C:\tmp\"` closes for PowerShell and not for a POSIX shell),
+  // so `classify` does not trust this tokenization at all.
+  if (quote !== null) lines.unterminated = true;
   return lines;
 }
 
@@ -895,6 +903,26 @@ function syncMergeTrunk(cand) {
   const m = SYNC_SOURCE_RE.exec(words[2]);
   return m ? m[1] : null;
 }
+// The whole command has to be the sync and nothing else: exactly one plain
+// fetch segment followed by exactly one sync-merge segment, joined by a
+// newline, `;` or `&&`, in plain characters (no quotes, redirects, comments,
+// expansions or subshells). Any other command next to them - one that
+// rewrites where `origin` points, for one - can change what the merge reads.
+const TRUNK_SYNC_TEXT_RE = /^[A-Za-z0-9_./ \t\r\n;&-]*$/;
+function isPlainTrunkSync(text, lines) {
+  if (!TRUNK_SYNC_TEXT_RE.test(text) || text.replace(/&&/g, '').includes('&')) return false;
+  const segs = [];
+  for (const line of lines) for (const seg of line.segments) segs.push(seg);
+  if (segs.length !== 2 || segs.some((seg) => seg.nested)) return false;
+  const [fetchSeg, mergeSeg] = segs;
+  if (fetchSeg.before !== '' || !['', ';', '&&'].includes(mergeSeg.before) || mergeSeg.after !== '') return false;
+  const fetchInv = gitInvocations(fetchSeg, segmentFacts(fetchSeg));
+  const mergeInv = gitInvocations(mergeSeg, segmentFacts(mergeSeg));
+  if (fetchInv.length !== 1 || mergeInv.length !== 1) return false;
+  if (fetchSeg.words[0] !== 'git' || mergeSeg.words[0] !== 'git') return false;
+  return plainFetch(fetchInv[0]) !== null
+    && syncMergeTrunk({ kind: 'git', inv: mergeInv[0] }) !== null;
+}
 const FETCH_SPLIT = 'Split this into separate commands: git fetch and a gated push/merge in one call are not allowed.';
 
 // --------------------------------------------------------------------------
@@ -1088,10 +1116,15 @@ function contextRules(a, ctx, deferCommit = false, deferFetch = null) {
     return deny('2', 'Split this into separate commands: git commit and a gated push/merge in one call are not allowed.');
   }
   if (deferFetch) {
-    // The trunk sync after a plain fetch (see `plainFetch`): only on that trunk.
+    // The trunk sync after a plain fetch (see `plainFetch`): only on that trunk,
+    // and only when the merge source really is the remote-tracking ref - a
+    // local tag or branch named `origin/<trunk>` is what git would merge
+    // instead. A ctx that cannot answer is no exemption.
     const trunk = String(branch).toLowerCase();
+    const source = a.cands[0].inv.seg.words[2];
     const ok = isMainBranch(branch) && syncMergeTrunk(a.cands[0]) === trunk
-      && deferFetch.trunks.every((t) => t === trunk);
+      && deferFetch.trunks.every((t) => t === trunk)
+      && typeof ctx.fullRef === 'function' && ctx.fullRef(source) === `refs/remotes/origin/${trunk}`;
     return ok ? allow() : deny('2', FETCH_SPLIT);
   }
 
@@ -1190,10 +1223,11 @@ function countInvocations(lines) {
 // A move is RESOLVED only when all of this holds; anything else makes the
 // location UNRESOLVED from that point on (sticky), and a gated call there
 // blocks:
-//   - the move word is in COMMAND POSITION with nothing before it. A move word
-//     as an argument (`echo cd`) is not a move at all; one behind a prefix
-//     (`builtin cd`, `X=1 cd`, `then cd`, `{ cd`) or inside a block (an `if`
-//     body, a brace block) is one the walk cannot place;
+//   - the move word is in COMMAND POSITION with nothing before it. A move
+//     word ANYWHERE else - behind a prefix (`builtin cd`, `X=1 cd`,
+//     `then cd`), inside a block or a script block on any line, after an
+//     assignment, behind `.` / `&`, glued to a brace, or as a plain argument
+//     (`echo cd`, over-detected on purpose) - is one the walk cannot place;
 //   - it runs unconditionally: not inside `( … )` or a command substitution,
 //     not after `||`, not in a pipeline, not sent to the background with
 //     `&`. After `&&` it is placed for the rest of that `&&` chain (those
@@ -1209,12 +1243,19 @@ function countInvocations(lines) {
 //   - a network path (`//host/…`, `\\host\…`) is never placed - and never
 //     touched on disk, because a share that does not answer would stall the
 //     hook past its timeout, and a hook killed before it prints is an allow.
+// A move followed by `||` is judged twice: once as having happened, once as
+// having failed (the right-hand side runs only then, in the old directory).
 // Text whose execution order the walk cannot follow makes EVERY move
-// unresolved: a loop, a function or script-block runner, `trap` (their
-// bodies run in an order the text does not show), and heredocs or PowerShell
-// block comments (lines one shell runs and the other does not). A candidate
-// inside a block is unresolved whenever the command has any move. A command
-// whose only compound is an `if` / `try` with no move in it walks normally.
+// unresolved: a loop, a script-block runner, `trap` (their bodies run in an
+// order the text does not show), heredocs, PowerShell block comments and a
+// line starting `#>` (lines one shell runs and the other does not), and a
+// block count that goes below zero. Text that runs other text - `eval`,
+// `Invoke-Expression` / `iex`, a function definition, `&` / `.` applied to an
+// expression or a script block - makes every location unresolved even with no
+// move word in sight. A candidate inside a block is unresolved whenever the
+// command has any move. A command whose only compound is an `if` / `try` with
+// no move in it walks normally. On Windows a drive-relative `C:x` is placed
+// for PowerShell only (Git Bash reads it as `C:/x`).
 // git's `-C` is resolved on the physical path only, because git chdir()s,
 // and `-C ''` is a no-op, as in git. Moves after the last candidate are not
 // followed. Only the filesystem is read here (existence, real path), never git.
@@ -1250,7 +1291,18 @@ const REORDER_WORDS = new Set([
   'function', 'filter', 'workflow', 'trap', 'invoke-command', 'icm', 'start-job', 'start-threadjob',
   'register-objectevent', 'register-engineevent',
 ]);
-const UNORDERED_TEXT_RE = /<<(?!<)|<#/;
+// `#>` is here as well: a line that starts with it is a comment to both
+// shells, so a move written after it never runs.
+const UNORDERED_TEXT_RE = /<<(?!<)|<#|#>/;
+// Text that runs other text, or runs it later: `eval` / `Invoke-Expression`,
+// a function definition, and the call / dot-source operator applied to an
+// expression or a script block. Any of them anywhere in the command makes
+// every location in it unresolved, move word or not.
+const OPAQUE_WORDS = new Set(['eval', 'iex', 'invoke-expression', 'function']);
+const DEFINE_WORDS = new Set(['function', 'filter', 'workflow']);
+// A move word glued to other text (`{cd`, `$x=cd`, `cd}`) is still read: the
+// word is split on these characters and every piece is compared.
+const WORD_GLUE_RE = /[={}(),;]+/;
 // The separators a resolved move may sit between: the start of the command or
 // of a line, `;`, or after a backgrounded command (`&&` is handled as a
 // chain); and after it, `;`, `&&` or `||` (the move itself always runs).
@@ -1268,6 +1320,44 @@ function moveKind(word, dialect) {
 
 const isPrefix = (w) => PREFIX_WORDS.has(w.toLowerCase()) || ASSIGNMENT_RE.test(w);
 
+// A word that names a move in EITHER shell, alone or glued to other text.
+// The PowerShell set holds every POSIX move word, so it answers for both.
+const isExactMove = (w) => moveKind(w, 'ps') !== null;
+const hasMoveWord = (w) => isExactMove(w) || w.split(WORD_GLUE_RE).some((p) => p !== '' && isExactMove(p));
+
+// A move word anywhere but the plain command position: as an argument, after
+// an assignment (`$x = cd …`), inside a script block or a brace group on the
+// same line, behind `.` / `&`. The shell may well run it, so it is never
+// ignored - it is a move the walk cannot place.
+function strayMove(seg) {
+  const cw = commandWord(seg);
+  return seg.words.some((w, i) => {
+    if (!hasMoveWord(w)) return false;
+    return !(cw && i === cw.index && isExactMove(cw.word));
+  });
+}
+
+// See OPAQUE_WORDS.
+function isOpaque(seg) {
+  if (seg.after.includes('()')) return true; // `name() { … }`
+  const first = seg.words[0].replace(/^\{+/, '').toLowerCase();
+  if (DEFINE_WORDS.has(first)) return true;
+  for (const w of seg.words) {
+    for (const p of w.toLowerCase().split(WORD_GLUE_RE)) if (OPAQUE_WORDS.has(p)) return true;
+  }
+  // `& $x`, `& { … }`, `& ( … )`, `. $x`, `. { … }`, `. ( … )`.
+  const callOp = /(^|[^&])&\(*$/.test(seg.before);
+  const dotOp = seg.words[0] === '.';
+  const operand = dotOp ? seg.words[1] : seg.words[0];
+  if (callOp && seg.before.endsWith('(')) return true;
+  if (dotOp && seg.words.length === 1 && seg.after.startsWith('(')) return true;
+  if ((callOp || dotOp) && operand !== undefined) {
+    const at = dotOp ? 1 : 0;
+    if (seg.expand[at] || operand.startsWith('{')) return true;
+  }
+  return false;
+}
+
 // The word in command position, its index, and whether anything stood in
 // front of it (a prefix word, an assignment, a glued `{`).
 function commandWord(seg) {
@@ -1283,20 +1373,29 @@ function commandWord(seg) {
   return { index: i, word, prefixed };
 }
 
-// Block depth change of one segment. A trailing `}` counts only on a word
-// with no other `{` in it, so `${x}`, `@{u}` and `{a,b}` stay balanced.
+// Block depth change of one segment: bash keywords (`if` … `fi`) and braces
+// are counted apart, and every brace in a word counts - `${x}`, `@{u}` and
+// `{a,b}` stay balanced on their own, and `} else{` closes one block and
+// opens another. A brace the shell reads as text (`echo }`) can still throw
+// the count off; the walk treats a count that goes below zero as a command it
+// cannot follow.
 function blockDelta(seg) {
   const first = seg.words[0].replace(/^\{+/, '').toLowerCase();
+  let kwOpens = 0;
+  let kwCloses = 0;
   let opens = 0;
   let closes = 0;
-  if (SH_OPENERS.has(first) && !seg.after.startsWith('(')) opens++;
-  if (SH_CLOSERS.has(first)) closes++;
+  let low = 0; // The lowest running brace balance inside the segment.
+  if (SH_OPENERS.has(first) && !seg.after.startsWith('(')) kwOpens++;
+  if (SH_CLOSERS.has(first)) kwCloses++;
   for (const w of seg.words) {
-    const lead = /^\{*/.exec(w)[0].length;
-    opens += lead;
-    if (!w.slice(lead).includes('{')) closes += /\}*$/.exec(w)[0].length;
+    for (const ch of w) {
+      if (ch === '{') opens++;
+      else if (ch === '}') closes++;
+      low = Math.min(low, opens - closes);
+    }
   }
-  return { opens, closes };
+  return { kwOpens, kwCloses, opens, closes, low };
 }
 
 function reorders(seg) {
@@ -1329,6 +1428,9 @@ function readTarget(cooked, raw, expand, dialect, from) {
     if (/^[\\/]/.test(p)) return dialect === 'ps' ? { path: p, artifact, driveless: true } : null;
     const rel = /^([A-Za-z]):(?![\\/])(.*)$/.exec(p); // `C:x` is relative to drive C's directory.
     if (rel) {
+      // ...for PowerShell. Git Bash reads it as `C:/x` instead, and git's own
+      // `-C` gets whatever the shell's path conversion leaves: not placed.
+      if (dialect === 'sh') return null;
       if (rel[1].toUpperCase() !== path.parse(from.physical).root.slice(0, 1).toUpperCase()) return null;
       return { path: rel[2] || '.', artifact };
     }
@@ -1395,6 +1497,7 @@ function originOf(ctx) {
 // The move a segment makes in one dialect: null (none), UNPLAIN (one the walk
 // cannot place), or `{ kind, arg, raw, expand, chained }`.
 function moveOf(seg, dialect, depthBefore, cdpath) {
+  if (strayMove(seg)) return UNPLAIN;
   const cw = commandWord(seg);
   if (!cw) return null;
   const kind = moveKind(cw.word, dialect);
@@ -1415,12 +1518,18 @@ function moveOf(seg, dialect, depthBefore, cdpath) {
 }
 
 // The location of every segment up to the last candidate, in one dialect,
-// and whether it sits inside a block.
-function walkLocations(segs, lastIndex, dialect, start, tangled, cdpath) {
+// and whether it sits inside a block. With `orFails`, a move followed by
+// `||` is taken to fail (the right-hand side runs only then, in the old
+// directory); without it, to succeed. Both readings are judged.
+// A block count that goes below zero (`echo }` inside an `if`) means the
+// walk has lost track of which text is conditional: with a move anywhere in
+// the command, every location from there on is unresolved.
+function walkLocations(segs, lastIndex, dialect, start, { tangled, cdpath, anyMove, orFails }) {
   const at = new Map();
   const inBlock = new Map();
   let here = tangled ? UNRESOLVED : null;
-  let depth = 0;
+  let kwDepth = 0;
+  let braceDepth = 0;
   let tentative = false; // A move placed inside an `&&` chain that may not run.
   let risky = false; // The current `&&` chain holds a command that can fail.
   let moves = 0;
@@ -1437,10 +1546,14 @@ function walkLocations(segs, lastIndex, dialect, start, tangled, cdpath) {
       risky = true;
     }
     at.set(seg, here);
-    inBlock.set(seg, depth > 0);
-    const mv = moveOf(seg, dialect, depth, cdpath);
-    const { opens, closes } = blockDelta(seg);
-    depth = Math.max(0, depth + opens - closes);
+    inBlock.set(seg, kwDepth + braceDepth > 0);
+    const mv = moveOf(seg, dialect, kwDepth + braceDepth, cdpath);
+    const delta = blockDelta(seg);
+    if (braceDepth + delta.low < 0 || kwDepth < delta.kwCloses) {
+      if (anyMove) here = UNRESOLVED;
+    }
+    kwDepth = Math.max(0, kwDepth + delta.kwOpens - delta.kwCloses);
+    braceDepth = Math.max(0, braceDepth + delta.opens - delta.closes);
     if (!mv) {
       risky = true;
       continue;
@@ -1451,6 +1564,10 @@ function walkLocations(segs, lastIndex, dialect, start, tangled, cdpath) {
       continue;
     }
     if (mv.chained && risky) tentative = true;
+    if (orFails && seg.after === '||') {
+      risky = true; // Taken to fail: the directory stays.
+      continue;
+    }
     if (mv.kind === 'pop') {
       here = stack.length > 0 ? stack.pop() : UNRESOLVED;
       continue;
@@ -1528,12 +1645,13 @@ function locateCandidates(lines, candLines, ctx, text) {
   const byDir = new Map();
   const byTop = new Map();
   const placed = new Map(); // line -> Map(ctx -> moved)
-  for (const dialect of DIALECTS) {
-    const anyMove = segs.some((seg) => {
-      const cw = commandWord(seg);
-      return cw !== null && moveKind(cw.word, dialect) !== null;
-    });
-    const walk = walkLocations(segs, lastIndex, dialect, start, anyMove && unordered, cdpath);
+  // A move word anywhere - as an argument, in a block, after an assignment -
+  // counts, in either shell's vocabulary (see `strayMove`).
+  const anyMove = segs.some((seg) => seg.words.some(hasMoveWord));
+  const tangled = segs.some(isOpaque) || (anyMove && unordered);
+  const orRuns = segs.some((seg) => seg.after === '||') ? [false, true] : [false];
+  for (const [dialect, orFails] of DIALECTS.flatMap((d) => orRuns.map((o) => [d, o]))) {
+    const walk = walkLocations(segs, lastIndex, dialect, start, { tangled, cdpath, anyMove, orFails });
     const repos = new Set();
     for (const a of candLines) {
       const loc = candidateLocation(a.cands[0], walk, dialect, start, anyMove);
@@ -1594,6 +1712,10 @@ function locateCandidates(lines, candLines, ctx, text) {
 //                 Read only for a candidate that a move placed elsewhere.
 //                 Its optional `state.failure` ('git-error') tells a git
 //                 failure there apart from "not a work tree" in the reason.
+//   fullRef(name) the full ref name git reads `name` as, or null when it
+//                 cannot say (ambiguous, missing, git failed). Read only for
+//                 the trunk sync; anything but the remote-tracking ref - or
+//                 a ctx without this method - is no exemption.
 // Only `flag` uses null to mean "nothing there"; for every other getter null
 // means the repository state could not be resolved, and rule 5 blocks. WHICH
 // git call failed is recorded on `ctx.state` by the getters themselves, never
@@ -1626,6 +1748,9 @@ function classify(command, ctx) {
     return gateWordFallback(text, TOO_LONG);
   }
   const lines = tokenizeLines(text);
+  // An unterminated quote: one shell reading may run words the other hides
+  // inside the string, so the line is judged on its gate words alone.
+  if (lines.unterminated) return gateWordFallback(text, UNCLASSIFIABLE);
   if (countInvocations(lines) > MAX_INVOCATIONS) return deny('2', TOO_MANY_INVOCATIONS);
   const analyzed = lines.map(analyzeLine);
   const all = [];
@@ -1638,7 +1763,8 @@ function classify(command, ctx) {
   const candLines = analyzed.filter((a) => a.cands.length > 0);
   const fetchOnly = commandMover === 'fetch' ? fetchOnlyMovers(all) : null;
   const deferFetch = fetchOnly && candLines.length > 0
-    && candLines.every((a) => a.cands.length === 1 && syncMergeTrunk(a.cands[0]) !== null) ? fetchOnly : null;
+    && candLines.every((a) => a.cands.length === 1 && syncMergeTrunk(a.cands[0]) !== null)
+    && isPlainTrunkSync(text, lines) ? fetchOnly : null;
   for (const a of analyzed) {
     const verdict = staticRules(a, commandMover, deferCommit, commandGitEnv, deferFetch);
     if (verdict) return verdict;
@@ -1664,6 +1790,11 @@ function classify(command, ctx) {
 // not get to execute code through the gate.
 const SAFE_GIT = ['-c', 'core.fsmonitor=false'];
 const SAFE_DIFF = ['--no-ext-diff', '--no-textconv'];
+// No network either: in a partial clone a diff that needs a missing blob
+// would fetch it from the promisor remote (a stall, and a request the user
+// never approved), and a credential prompt would wait for input that never
+// comes. A missing object is a git failure, which blocks.
+const GIT_ENV = { ...process.env, GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0' };
 
 function runGit(args, cwd) {
   const budget = DEADLINE - Date.now();
@@ -1671,6 +1802,7 @@ function runGit(args, cwd) {
   try {
     const out = execFileSync('git', [...SAFE_GIT, ...args], {
       cwd,
+      env: GIT_ENV,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: Math.min(5000, budget),
@@ -1772,6 +1904,14 @@ function makeCtx(cwd) {
     // Rule 5's fail-open reads only the payload ctx's state, never this one.
     at(dir) {
       return makeCtx(dir);
+    },
+    // The full ref name git reads `name` as (a tag or local branch named
+    // `origin/main` wins over the remote-tracking ref), or null on failure.
+    fullRef(name) {
+      return once(`ref:${name}`, () => {
+        const r = git(['rev-parse', '--symbolic-full-name', name]);
+        return r.ok ? r.out.trim() || null : null;
+      });
     },
     get branch() {
       return once('branch', () => {
