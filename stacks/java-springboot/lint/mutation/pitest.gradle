@@ -174,6 +174,15 @@ if (mutationDiffRequested) {
         if (!reportPath.startsWith(buildPath) || reportPath == buildPath || reportPath == buildPath.resolve('reports')) {
             throw new GradleException("[mutationDiff] pitest.reportDir (${reportPath}) is not a PIT-specific directory under the build directory (${buildPath}) - the diff run deletes it before every run; keep it below build/ and apart from build/reports itself (plugin default: build/reports/pitest)")
         }
+        // A component ending in a dot or a space is refused too: Win32 strips
+        // them, so `reports.` would name build/reports itself and slip past
+        // the comparison above. (. and .. are gone after normalize().)
+        buildPath.relativize(reportPath).each { part ->
+            def partName = part.toString()
+            if (partName.endsWith('.') || partName.endsWith(' ')) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${reportPath}) has a path component ('${partName}') ending in a dot or a space - Windows strips those, so it could name a different directory than written; use a plain directory name below the build directory (plugin default: build/reports/pitest)")
+            }
+        }
         // Plain files only from here on: the action must not reach project
         // state (configuration cache).
         def reportDirFile = reportPath.toFile()
@@ -208,9 +217,11 @@ if (mutationDiffRequested) {
         // clean` or a manual delete removes them.
         // Containment: each existing path component must be a real directory
         // or file (no link, junction or other reparse point) whose real
-        // parent IS the verified real parent (Files.isSameFile - an identity
-        // check, never a case-insensitive name comparison, which a
-        // case-sensitive directory on a case-insensitive OS would defeat).
+        // parent IS the verified real parent (Files.isSameFile, and on
+        // Windows additionally an exact comparison of the two real-path
+        // strings, because isSameFile also accepts a case variant there). The
+        // primary defense is refusing links and reparse points; the parent
+        // check is a second line behind it.
         // The walk starts at realpath(root), never compares a whole real path
         // with a lexical one, so a build directory that itself sits under a
         // link (macOS /var -> /private/var) is not mistaken for "outside".
@@ -232,6 +243,13 @@ if (mutationDiffRequested) {
             // or an entry that was listed but vanishes under its normalized
             // name). mustExist: only reportDir itself (and what lies below
             // build/ on the way to it) may be absent.
+            // The real parent must be the verified real parent: the same file,
+            // and on Windows (where isSameFile also accepts a case variant)
+            // the same real-path string.
+            def sameParent = { Path parentReal, Path verifiedReal ->
+                parentReal != null && Files.isSameFile(parentReal, verifiedReal) &&
+                    (!isWindows || parentReal.toString() == verifiedReal.toString())
+            }
             def contained = { Path root, Path target, boolean mustExist ->
                 try {
                     def lexicalRoot = root.toAbsolutePath().normalize()
@@ -250,7 +268,7 @@ if (mutationDiffRequested) {
                         }
                         if (linkLike(attrs)) return 'outside'
                         def next = lexical.toRealPath()
-                        if (next.parent == null || !Files.isSameFile(next.parent, real)) return 'outside'
+                        if (!sameParent(next.parent, real)) return 'outside'
                         real = next
                     }
                     return 'ok'
@@ -299,7 +317,7 @@ if (mutationDiffRequested) {
                             attrs = Files.readAttributes(entry, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
                             if (!linkLike(attrs)) {
                                 entryReal = entry.toRealPath()
-                                inside = entryReal.parent != null && Files.isSameFile(entryReal.parent, dirReal)
+                                inside = sameParent(entryReal.parent, dirReal)
                             }
                         } catch (Exception ignored) {
                             result.uninspectable << entry
@@ -348,7 +366,7 @@ if (mutationDiffRequested) {
                     stream.collect(java.util.stream.Collectors.toList())
                 }.findAll { it.fileName.toString().startsWith(quarantinePrefix) }
                 if (!leftovers.isEmpty()) {
-                    task.logger.warn("[mutationDiff] left alone: ${leftovers.join(', ')} - an earlier cleanup of pitest.reportDir could not finish deleting it. It is not a report PIT or quality-check reads; remove it by hand (or run the clean task).")
+                    task.logger.warn("[mutationDiff] left alone: ${leftovers.join(', ')} - a leftover quarantine entry (from an earlier cleanup or placed manually) was left untouched. It is not a report PIT or quality-check reads; remove it by hand (or run the clean task).")
                 }
             } catch (Exception ignored) {
                 // no parent directory yet, or unreadable: nothing to report
@@ -359,6 +377,21 @@ if (mutationDiffRequested) {
                 return // no previous report: nothing to do
             } catch (IOException e) {
                 throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be inspected - nothing was deleted: ${e}", e)
+            }
+            // Never the build directory or build/reports themselves, on real
+            // paths (a trailing-dot spelling can name them), and the real
+            // name must be exactly the configured one.
+            try {
+                def realReport = report.toRealPath(LinkOption.NOFOLLOW_LINKS)
+                def guarded = [buildDirFile.toPath(), buildDirFile.toPath().resolve('reports')]
+                if (guarded.any { Files.exists(it) && Files.isSameFile(realReport, it) } ||
+                        realReport.fileName.toString() != report.fileName.toString()) {
+                    throw new GradleException("[mutationDiff] pitest.reportDir (${report}) names the build directory, build/reports or a differently spelled directory (real path ${realReport}) - nothing was deleted. Use a plain PIT-specific directory name below build/.")
+                }
+            } catch (GradleException e) {
+                throw e
+            } catch (Exception e) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be resolved - nothing was deleted: ${e}", e)
             }
             def reportVerdict = contained(buildDirFile.toPath(), report, false)
             if (reportVerdict == 'error') {
@@ -384,7 +417,7 @@ if (mutationDiffRequested) {
             try {
                 Files.move(report, quarantine, StandardCopyOption.ATOMIC_MOVE)
             } catch (Exception e) {
-                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be moved aside for deletion (on Windows: a file in it is open in another process, or a directory in it is another process's working directory): ${e} - nothing was deleted. Close that process and re-run.", e)
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be moved aside for deletion (e.g. a file in it is in use, a process uses a directory in it as its working directory, permissions, or it is a mount point): ${e} - nothing was deleted. Close that process and re-run.", e)
             }
             def moved = inspectTree(quarantine)
             if (moved.verdict != 'ok' || !moved.outside.isEmpty() || !moved.uninspectable.isEmpty() || !moved.locked.isEmpty()) {
