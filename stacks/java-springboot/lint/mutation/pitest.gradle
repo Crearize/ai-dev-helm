@@ -200,12 +200,18 @@ if (mutationDiffRequested) {
             def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
             def caseInsensitive = osName.contains('win') || osName.contains('mac')
             def sameName = { String a, String b -> caseInsensitive ? a.equalsIgnoreCase(b) : a == b }
-            def contained = { Path root, Path target ->
+            // Verdict per path: 'ok', 'outside' (resolves elsewhere: a link or
+            // junction, dangling ones included) or 'error' (could not be
+            // inspected: permissions, IO, or an entry that was listed but
+            // vanishes under its normalized name). mustExist: an entry that
+            // Files.list returned is never "absent" - only reportDir itself
+            // (and what lies below build/ on the way to it) may be.
+            def contained = { Path root, Path target, boolean mustExist ->
                 try {
                     def lexicalRoot = root.toAbsolutePath().normalize()
                     def relative = lexicalRoot.relativize(target.toAbsolutePath().normalize())
-                    if (relative.toString().isEmpty()) return true
-                    if (relative.getName(0).toString() == '..') return false
+                    if (relative.toString().isEmpty()) return 'ok'
+                    if (relative.getName(0).toString() == '..') return 'outside'
                     def real = lexicalRoot.toRealPath()
                     def lexical = lexicalRoot
                     for (int i = 0; i < relative.nameCount; i++) {
@@ -214,40 +220,79 @@ if (mutationDiffRequested) {
                         try {
                             Files.readAttributes(lexical, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
                         } catch (NoSuchFileException ignored) {
-                            return true // absent from here on: nothing below can redirect
+                            return mustExist ? 'error' : 'ok' // absent: nothing below can redirect
                         }
-                        // any other failure (permissions) falls to the catch below: outside
-                        def next = lexical.toRealPath()
+                        def next
+                        try {
+                            next = lexical.toRealPath()
+                        } catch (NoSuchFileException ignored) {
+                            return 'outside' // dangling link
+                        }
                         if (next.parent == null || !sameName(next.parent.toString(), real.toString()) || !sameName(next.fileName.toString(), name)) {
-                            return false
+                            return 'outside'
                         }
                         real = next
                     }
-                    return true
+                    return 'ok'
                 } catch (Exception ignored) {
-                    return false // unresolvable (a dangling link included): outside
+                    return 'error' // permissions / IO: not inspectable
+                }
+            }
+            def isWindows = osName.contains('win')
+            // Entries that cannot be deleted would stop phase 2 partway; find
+            // them in phase 1. Windows: the read-only attribute (never
+            // followed). POSIX: deleting needs a writable parent directory.
+            def undeletable = { Path entry ->
+                try {
+                    if (isWindows) {
+                        return Files.getAttribute(entry, 'dos:readonly', LinkOption.NOFOLLOW_LINKS) == Boolean.TRUE
+                    }
+                    def parent = entry.parent
+                    return parent != null && !Files.isWritable(parent)
+                } catch (Exception ignored) {
+                    return true
                 }
             }
             def report = reportDirFile.toPath()
             try {
                 Files.readAttributes(report, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
             } catch (NoSuchFileException ignored) {
-                return // no previous report
+                return // no previous report: nothing to do
             } catch (IOException e) {
-                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) cannot be inspected - nothing was deleted: ${e}", e)
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be inspected - nothing was deleted: ${e}", e)
             }
-            if (!contained(buildDirFile.toPath(), report)) {
+            def reportVerdict = contained(buildDirFile.toPath(), report, false)
+            if (reportVerdict == 'error') {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) or a directory on the way to it could not be inspected (permission or I/O error) - nothing was deleted.")
+            }
+            if (reportVerdict != 'ok') {
                 throw new GradleException("[mutationDiff] pitest.reportDir (${report}) resolves outside the build directory (${buildDirFile}) through a link or junction - nothing was deleted. The directories between the build directory and reportDir (build/reports) must be real directories, not links.")
             }
             def outside = []
+            def uninspectable = []
+            def locked = []
             def doomed = []
             def inspect
             inspect = { Path dir ->
-                def entries = Files.list(dir).withCloseable { it.collect(java.util.stream.Collectors.toList()) }
+                def entries
+                try {
+                    entries = Files.list(dir).withCloseable { it.collect(java.util.stream.Collectors.toList()) }
+                } catch (Exception ignored) {
+                    uninspectable << dir
+                    return
+                }
                 entries.each { Path entry ->
-                    if (!contained(report, entry)) {
+                    def verdict = contained(report, entry, true)
+                    if (verdict == 'outside') {
                         outside << entry
                         return
+                    }
+                    if (verdict != 'ok') {
+                        uninspectable << entry
+                        return
+                    }
+                    if (undeletable(entry)) {
+                        locked << entry
                     }
                     if (Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) {
                         inspect(entry)
@@ -258,11 +303,26 @@ if (mutationDiffRequested) {
             if (Files.isDirectory(report, LinkOption.NOFOLLOW_LINKS)) {
                 inspect(report)
             }
+            if (undeletable(report)) {
+                locked << report
+            }
             if (!outside.isEmpty()) {
                 throw new GradleException("[mutationDiff] pitest.reportDir (${report}) contains entries that resolve outside it (a junction or symbolic link): ${outside.join(', ')} - nothing was deleted. Remove them by hand and re-run.")
             }
-            doomed.each { Files.delete(it) }
-            Files.delete(report)
+            if (!uninspectable.isEmpty()) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) contains entries that could not be inspected: ${uninspectable.join(', ')} - nothing was deleted. Fix or remove them by hand and re-run.")
+            }
+            if (!locked.isEmpty()) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) contains entries that cannot be deleted (read-only or in a non-writable directory): ${locked.join(', ')} - nothing was deleted. Fix their permissions or remove them by hand and re-run.")
+            }
+            def current = null
+            try {
+                doomed.each { current = it; Files.delete(it) }
+                current = report
+                Files.delete(report)
+            } catch (Exception e) {
+                throw new GradleException("[mutationDiff] cleanup of pitest.reportDir (${report}) stopped partway at ${current}: ${e} - some report files may already be deleted. Remove the rest by hand and re-run.", e)
+            }
         }
     }
     tasks.named('pitest').configure { dependsOn(mutationDiffCleanReport) }
