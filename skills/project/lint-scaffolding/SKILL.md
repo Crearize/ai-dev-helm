@@ -109,7 +109,7 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 
 | 資産 | 配線方法 |
 |---|---|
-| ast-grep（`lint/ast-grep/<dir>/`） | プロダクトルートに `sgconfig.yml` を作成し、`ruleDirs` に**採用したディレクトリのみ**を列挙する。`@ast-grep/cli` を devDependency に追加する（ハーネス本体の依存ではなくプロダクト側に導入する） |
+| ast-grep（`lint/ast-grep/<dir>/`） | プロダクトルートに `sgconfig.yml` を作成し、`ruleDirs` に**採用したディレクトリのみ**を列挙する。`@ast-grep/cli` を devDependency に追加する（ハーネス本体の依存ではなくプロダクト側に導入する）。スクリプトから CLI を起動するときは `npx ast-grep` を使わず（壊れた導入では無関係の `ast-grep@0.1.0` を取得する）、次の順で解決する: (1) プラットフォーム別パッケージの実行ファイル（`@ast-grep/cli-win32-x64-msvc/ast-grep.exe` など）、(2) `@ast-grep/cli/ast-grep` の JS shim を `node` で起動（Windows では npm が shim を実行ファイルに置き換えないため、`.exe` が無い導入でもこれで動く）、(3) Windows のみ `node_modules/.bin/ast-grep.cmd` を `cmd /d /s /c` で起動（`.cmd` は Node から直接 spawn できない）。実例は `lib/lint-assets.test.js` の `resolveAstGrepCommand`（#160） |
 | ESLint（`lint/eslint/`） | プロダクトの `eslint.config.mjs` から `./lint/eslint/harness.config.mjs` を import し、プロダクト固有の上書きは**プリセットより下**に置く。プリセットは `projectService: true` を使うため**プロダクトの `tsconfig.json` が必須**（詳細は `lint/README-nextjs-react.md`）。不採用グループはプリセットの下で該当ルールを off にする |
 | Checkstyle（`lint/checkstyle/`） | Gradle の `checkstyle` プラグインを追加し `configFile` を `lint/checkstyle/checkstyle.xml` に向ける（`lint/README-java-springboot.md`）。不採用グループはグループコメント単位で削除する |
 | ArchUnit（`lint/archunit/`） | `archunit-junit5` を testImplementation に追加し、テンプレートを `src/test/java/` 配下へコピーして `__BASE_PACKAGE__` をプロダクトのベースパッケージに置換する（`lint/README-java-springboot.md`） |
@@ -119,16 +119,17 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 
 **抑制機構を配線するときのチェックリスト（#118）**
 
-Checkstyle の `SuppressWarningsFilter`、ESLint の `eslint-disable`、ast-grep の `ignores` 等、**抑制機構**（あるチェックを個別に黙らせる仕組み）を配線するときは、配線と同時に次の6点を点検し、機械検出で塞ぐ。下流の実測（Checkstyle 行単位抑制、#117）では、これを配線前に列挙していれば1サイクルで閉じられたはずの抜け道が、後から2サイクルにわたって順次指摘された。
+Checkstyle の `SuppressWarningsFilter`、ESLint の `eslint-disable`、ast-grep の `ignores` 等、**抑制機構**（あるチェックを個別に黙らせる仕組み）を配線するときは、配線と同時に次の7点を点検し、機械検出で塞ぐ。下流の実測（Checkstyle 行単位抑制、#117）では、これを配線前に列挙していれば1サイクルで閉じられたはずの抜け道が、後から2サイクルにわたって順次指摘された。
 
 1. **全抑制値**（`all` 等の特別値）を書けるか → 機械検出で禁止する
 2. **他チェック名**を書けるか（前置の有無・大小・別名） → 許可表記を1つに固定し、それ以外を機械検出で禁止する
 3. **宣言スコープ**（型宣言・フィールド・ファイル）に付けられるか → 最小宣言以外を機械検出で禁止する
 4. **非リテラル値**（定数参照・連結・テキストブロック）を書けるか → リテラル以外を機械検出で禁止する
-5. 抑制機構**自身**を検査するチェック（Checkstyle の `SuppressWarnings` チェック等）が、その抑制機構に**自己抑制**されないか → されるなら検出は機構の外（ast-grep 等）に置く
-6. 上記を**スパイクで実測**（検出すべきサンプル／検出してはいけないサンプルの両方）してから配線し、結果をカバレッジマップの「残差」に記録する
+5. 抑制を宣言する**構文そのもの**を別の書き方にできるか（完全修飾名 `@java.lang.SuppressWarnings`、名前の区切りの間の空白・コメント等） → 歯止めのルールは表記ではなく構文の要素で照合し、別の書き方を機械検出から漏らさない（#160）
+6. 抑制機構**自身**を検査するチェック（Checkstyle の `SuppressWarnings` チェック等）が、その抑制機構に**自己抑制**されないか → されるなら検出は機構の外（ast-grep 等）に置く
+7. 上記を**スパイクで実測**（検出すべきサンプル／検出してはいけないサンプルの両方）してから配線し、結果をカバレッジマップの「残差」に記録する
 
-**原則: 抑制の配線と歯止めのルールは1セットで設計する。** 抑制機構だけを配線し歯止めを後回しにしない（`stacks/java-springboot/lint/checkstyle/checkstyle.xml` の `SuppressWarningsFilter` / `SuppressWarningsHolder` 配線と `shared/lint/ast-grep/error-handling/` の対ルール3本が、この6点を満たした配線の実例）。
+**原則: 抑制の配線と歯止めのルールは1セットで設計する。** 抑制機構だけを配線し歯止めを後回しにしない（`stacks/java-springboot/lint/checkstyle/checkstyle.xml` の `SuppressWarningsFilter` / `SuppressWarningsHolder` 配線と `shared/lint/ast-grep/error-handling/` の対ルール3本が、この7点を満たした配線の実例）。
 
 ### 3-2. 未カバー分の生成
 

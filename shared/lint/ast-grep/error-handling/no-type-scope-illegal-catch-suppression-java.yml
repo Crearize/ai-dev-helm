@@ -8,16 +8,53 @@
 # lambda-holding local variable may carry this annotation - see the
 # "Line-level suppression" section of stacks/java-springboot/lint/README.md
 # for the `// 境界宣言:` convention. Catalog: A3.
+#
+# The annotation is matched as `SuppressWarnings` or `java.lang.SuppressWarnings`
+# (with any whitespace or comments between the qualified name's parts), by
+# its syntax nodes rather than its source text - see `utils` below (#160).
 id: no-type-scope-illegal-catch-suppression-java
 language: Java
 severity: error
 message: "checkstyle:IllegalCatch suppression at type/field scope revives file-wide suppression through one annotation. Move it to the smallest enclosing method, constructor, or lambda-holding local variable. (Catalog: A3, #117)"
+utils:
+  # The annotation's type is `SuppressWarnings` or `java.lang.SuppressWarnings`
+  # - the two names Checkstyle's SuppressWarningsHolder accepts (it builds the
+  # name with FullIdent, which joins the name's tokens and drops whitespace
+  # and comments). Matched on the syntax nodes, not the source text: Java
+  # allows whitespace and comments between the parts of a qualified name
+  # (`@java/**/.lang.SuppressWarnings`, `@java . lang . // x` + newline +
+  # `SuppressWarnings`), and tree-sitter keeps those comments as separate
+  # nodes outside the `scope` / `name` fields compared here. Any other
+  # qualifier (`com.example.SuppressWarnings`, `a.java.lang.SuppressWarnings`)
+  # is a different annotation type that Checkstyle ignores (#160).
+  suppress-warnings-annotation:
+    kind: annotation
+    has:
+      field: name
+      any:
+        - kind: identifier
+          regex: ^SuppressWarnings$
+        - kind: scoped_identifier
+          all:
+            - has:
+                field: name
+                kind: identifier
+                regex: ^SuppressWarnings$
+            - has:
+                field: scope
+                kind: scoped_identifier
+                all:
+                  - has:
+                      field: scope
+                      kind: identifier
+                      regex: ^java$
+                  - has:
+                      field: name
+                      kind: identifier
+                      regex: ^lang$
 rule:
   all:
-    - kind: annotation
-      has:
-        field: name
-        regex: ^SuppressWarnings$
+    - matches: suppress-warnings-annotation
     - has:
         kind: string_literal
         stopBy: end

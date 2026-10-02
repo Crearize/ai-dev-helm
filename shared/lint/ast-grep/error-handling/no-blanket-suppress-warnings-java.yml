@@ -33,20 +33,57 @@
 # If a module is added to or removed from the checkstyle.xml preset, update
 # the module-name alternation in both the (b) and (c) branches below to match
 # (checkstyle.xml carries the mirror note). Catalog: A3.
+#
+# The annotation is matched as `SuppressWarnings` or `java.lang.SuppressWarnings`
+# (with any whitespace or comments between the qualified name's parts), by
+# its syntax nodes rather than its source text - see `utils` below (#160).
 id: no-blanket-suppress-warnings-java
 language: Java
 severity: error
 message: "SuppressWarnings string value blanket-suppresses every check (`all`), misdirects a check (checkstyle:<module not in this preset, or wrong case>), or silences a preset check by its bare or fully-qualified class name. Use the exact checkstyle:<ModuleName> form for a module this preset declares, or a plain javac value. (Catalog: A3, #117)"
+utils:
+  # The annotation's type is `SuppressWarnings` or `java.lang.SuppressWarnings`
+  # - the two names Checkstyle's SuppressWarningsHolder accepts (it builds the
+  # name with FullIdent, which joins the name's tokens and drops whitespace
+  # and comments). Matched on the syntax nodes, not the source text: Java
+  # allows whitespace and comments between the parts of a qualified name
+  # (`@java/**/.lang.SuppressWarnings`, `@java . lang . // x` + newline +
+  # `SuppressWarnings`), and tree-sitter keeps those comments as separate
+  # nodes outside the `scope` / `name` fields compared here. Any other
+  # qualifier (`com.example.SuppressWarnings`, `a.java.lang.SuppressWarnings`)
+  # is a different annotation type that Checkstyle ignores (#160).
+  suppress-warnings-annotation:
+    kind: annotation
+    has:
+      field: name
+      any:
+        - kind: identifier
+          regex: ^SuppressWarnings$
+        - kind: scoped_identifier
+          all:
+            - has:
+                field: name
+                kind: identifier
+                regex: ^SuppressWarnings$
+            - has:
+                field: scope
+                kind: scoped_identifier
+                all:
+                  - has:
+                      field: scope
+                      kind: identifier
+                      regex: ^java$
+                  - has:
+                      field: name
+                      kind: identifier
+                      regex: ^lang$
 rule:
   kind: string_literal
   inside:
     kind: annotation_argument_list
     stopBy: end
     inside:
-      kind: annotation
-      has:
-        field: name
-        regex: ^SuppressWarnings$
+      matches: suppress-warnings-annotation
   any:
     # (a) blanket "all", any case, plain or text-block literal.
     - regex: '(?i)^"{1,3}\s*all\s*"{1,3}$'

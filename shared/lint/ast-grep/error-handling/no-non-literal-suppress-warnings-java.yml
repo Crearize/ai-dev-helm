@@ -8,10 +8,50 @@
 # bare string literal is flagged. The `key` identifier of a `value = "..."`
 # form, and identifiers that are themselves part of a flagged field-access
 # expression, are excluded so each violation is reported once. Catalog: A3.
+#
+# The annotation is matched as `SuppressWarnings` or `java.lang.SuppressWarnings`
+# (with any whitespace or comments between the qualified name's parts), by
+# its syntax nodes rather than its source text - see `utils` below (#160).
 id: no-non-literal-suppress-warnings-java
 language: Java
 severity: error
 message: "SuppressWarnings value must be a plain string literal. A constant reference, field access, or concatenation defeats grep-based review of what is being suppressed. (Catalog: A3, #117)"
+utils:
+  # The annotation's type is `SuppressWarnings` or `java.lang.SuppressWarnings`
+  # - the two names Checkstyle's SuppressWarningsHolder accepts (it builds the
+  # name with FullIdent, which joins the name's tokens and drops whitespace
+  # and comments). Matched on the syntax nodes, not the source text: Java
+  # allows whitespace and comments between the parts of a qualified name
+  # (`@java/**/.lang.SuppressWarnings`, `@java . lang . // x` + newline +
+  # `SuppressWarnings`), and tree-sitter keeps those comments as separate
+  # nodes outside the `scope` / `name` fields compared here. Any other
+  # qualifier (`com.example.SuppressWarnings`, `a.java.lang.SuppressWarnings`)
+  # is a different annotation type that Checkstyle ignores (#160).
+  suppress-warnings-annotation:
+    kind: annotation
+    has:
+      field: name
+      any:
+        - kind: identifier
+          regex: ^SuppressWarnings$
+        - kind: scoped_identifier
+          all:
+            - has:
+                field: name
+                kind: identifier
+                regex: ^SuppressWarnings$
+            - has:
+                field: scope
+                kind: scoped_identifier
+                all:
+                  - has:
+                      field: scope
+                      kind: identifier
+                      regex: ^java$
+                  - has:
+                      field: name
+                      kind: identifier
+                      regex: ^lang$
 rule:
   any:
     - kind: identifier
@@ -19,10 +59,7 @@ rule:
         kind: annotation_argument_list
         stopBy: end
         inside:
-          kind: annotation
-          has:
-            field: name
-            regex: ^SuppressWarnings$
+          matches: suppress-warnings-annotation
       not:
         any:
           - inside:
@@ -36,16 +73,10 @@ rule:
         kind: annotation_argument_list
         stopBy: end
         inside:
-          kind: annotation
-          has:
-            field: name
-            regex: ^SuppressWarnings$
+          matches: suppress-warnings-annotation
     - kind: field_access
       inside:
         kind: annotation_argument_list
         stopBy: end
         inside:
-          kind: annotation
-          has:
-            field: name
-            regex: ^SuppressWarnings$
+          matches: suppress-warnings-annotation

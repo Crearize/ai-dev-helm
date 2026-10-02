@@ -39,6 +39,27 @@ public class Ok {
         r.run();
     }
 
+    // OK: the fully-qualified annotation at method scope (#160)
+    @java.lang.SuppressWarnings("checkstyle:IllegalCatch")
+    public void fullyQualifiedBoundaryMethod() {
+        try {
+            risky();
+        } catch (RuntimeException e) {
+            // 境界宣言: fully-qualified, method scope
+        }
+    }
+
+    // OK: a SuppressWarnings type from another package is not
+    // java.lang.SuppressWarnings - Checkstyle ignores it, so it suppresses
+    // nothing at type scope and must not be flagged
+    @com.example.SuppressWarnings("checkstyle:IllegalCatch")
+    static final class OtherPackage {
+    }
+
+    @com/**/.example.SuppressWarnings("checkstyle:IllegalCatch")
+    static final class OtherPackageWithComment {
+    }
+
     private static void risky() {
     }
 }
