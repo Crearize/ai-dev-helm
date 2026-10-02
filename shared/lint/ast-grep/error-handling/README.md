@@ -48,3 +48,10 @@ the full abuse surface and the operating convention these rules enforce.
 - `no-non-literal-suppress-warnings-java` - flags a `@SuppressWarnings` value
   that is a constant reference, field access, or concatenation instead of a
   plain string literal.
+
+All three match the annotation written as `@SuppressWarnings` or as the
+fully-qualified `@java.lang.SuppressWarnings` - Checkstyle honors both - and
+compare the qualified name's syntax nodes, so whitespace or comments between
+its parts (`@java/**/.lang.SuppressWarnings`) do not hide it (#160). A
+`SuppressWarnings` type from any other package is ignored by Checkstyle and
+by these rules.

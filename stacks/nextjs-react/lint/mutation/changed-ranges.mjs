@@ -360,24 +360,49 @@ function parseScope(entries) {
     list.push([Number(start), Number(end)]);
     files.set(file, list);
   }
-  // Sorted by start once here, so rangesCover can sweep without re-sorting.
+  // Sorted by start once here, so mergeRanges can merge without re-sorting.
   for (const ranges of files.values()) {
     if (ranges !== null) ranges.sort((a, b) => a[0] - b[0]);
   }
   return files;
 }
 
-// Every line of [start, end] lies inside the union of `ranges` (a sweep over
-// ranges already sorted by start; reversed ranges cover nothing).
-function rangesCover(ranges, [start, end]) {
-  let line = start;
-  for (const [s, e] of ranges) {
-    if (s > e || e < line) continue;
-    if (s > line) return false;
-    line = e + 1;
-    if (line > end) return true;
+// Ranges already sorted by start -> disjoint, non-adjacent intervals sorted
+// by start. Reversed ranges (start > end) cover nothing and are dropped;
+// overlapping or adjacent ranges ([1,3] + [4,6]) merge, because coverage is
+// a line set. Built once per file so each lookup below is a binary search.
+function mergeRanges(ranges) {
+  const merged = [];
+  for (const [start, end] of ranges) {
+    if (start > end) continue;
+    const last = merged[merged.length - 1];
+    if (last !== undefined && start <= last[1] + 1) {
+      if (end > last[1]) last[1] = end;
+    } else {
+      merged.push([start, end]);
+    }
   }
-  return line > end;
+  return merged;
+}
+
+// Every line of [start, end] lies inside the union of `merged` (the output
+// of mergeRanges). Because merged intervals are disjoint and non-adjacent,
+// the span is covered exactly when the one interval with the greatest start
+// <= `start` also reaches `end` - found by binary search, O(log C).
+function mergedCover(merged, [start, end]) {
+  let lo = 0;
+  let hi = merged.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    if (merged[mid][0] <= start) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found !== -1 && merged[found][1] >= end;
 }
 
 // True when every line the `previous` scope covered is still inside
@@ -388,16 +413,26 @@ function rangesCover(ranges, [start, end]) {
 // cached mutants by matching source content, so a heavily edited file can in
 // theory carry a cached mutant to a line outside the numeric scope - a
 // residual, documented limitation, not a proof of containment.
+//
+// Cost (#160): the current ranges are merged once per file and each previous
+// range is answered by binary search - O((P + C) log C) for P previous and C
+// current ranges, never a rescan of the current ranges per previous range.
 export function scopeCovers(current, previous) {
   const cur = parseScope(current);
+  const mergedByFile = new Map();
   for (const [file, ranges] of parseScope(previous)) {
     if (!cur.has(file)) return false;
     const curRanges = cur.get(file);
     if (curRanges === null) continue; // current is whole-file: covers everything
     if (ranges === null) return false; // previous is whole-file, current is ranges only
+    let merged = mergedByFile.get(file);
+    if (merged === undefined) {
+      merged = mergeRanges(curRanges);
+      mergedByFile.set(file, merged);
+    }
     for (const range of ranges) {
       if (range[0] > range[1]) return false;
-      if (!rangesCover(curRanges, range)) return false;
+      if (!mergedCover(merged, range)) return false;
     }
   }
   return true;

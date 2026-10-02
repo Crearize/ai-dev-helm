@@ -62,6 +62,34 @@ public class Violation {
         };
     }
 
+    // Violation 8: fully-qualified annotation name at class scope (#160)
+    @java.lang.SuppressWarnings("checkstyle:IllegalCatch")
+    private static final class FullyQualifiedBoundary {
+        void swallow() {
+            try {
+                risky();
+            } catch (RuntimeException e) {
+                // handled
+            }
+        }
+    }
+
+    // Violation 9: a block comment inside the qualified name, at field scope
+    @java/* x */.lang.SuppressWarnings("checkstyle:IllegalCatch")
+    private final Runnable commentedFieldHandler = () -> {
+        try {
+            risky();
+        } catch (RuntimeException e) {
+            // handled
+        }
+    };
+
+    // Violation 10: spaced, line-split qualified name on a record
+    @java . lang . // y
+    SuppressWarnings("checkstyle:IllegalCatch")
+    record FullyQualifiedRecord(int x) {
+    }
+
     // Near miss: method scope is allowed and must not be flagged in this file
     @SuppressWarnings("checkstyle:IllegalCatch")
     public void allowedAtMethodScope() {

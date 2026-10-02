@@ -109,7 +109,7 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 
 | 資産 | 配線方法 |
 |---|---|
-| ast-grep（`lint/ast-grep/<dir>/`） | プロダクトルートに `sgconfig.yml` を作成し、`ruleDirs` に**採用したディレクトリのみ**を列挙する。`@ast-grep/cli` を devDependency に追加する（ハーネス本体の依存ではなくプロダクト側に導入する） |
+| ast-grep（`lint/ast-grep/<dir>/`） | プロダクトルートに `sgconfig.yml` を作成し、`ruleDirs` に**採用したディレクトリのみ**を列挙する。`@ast-grep/cli` を devDependency に追加する（ハーネス本体の依存ではなくプロダクト側に導入する）。スクリプトから CLI を起動するときは `npx ast-grep` を使わず（壊れた導入では無関係の `ast-grep@0.1.0` を取得する）、次の順で解決する: (1) プラットフォーム別パッケージの実行ファイル（`@ast-grep/cli-win32-x64-msvc/ast-grep.exe` など）、(2) `@ast-grep/cli/ast-grep` の JS shim を `node` で起動（Windows では npm が shim を実行ファイルに置き換えないため、`.exe` が無い導入でもこれで動く）、(3) Windows のみ `node_modules/.bin/ast-grep.cmd` を `cmd /d /s /c` で起動（`.cmd` は Node から直接 spawn できない）。実例は `lib/lint-assets.test.js` の `resolveAstGrepCommand`（#160） |
 | ESLint（`lint/eslint/`） | プロダクトの `eslint.config.mjs` から `./lint/eslint/harness.config.mjs` を import し、プロダクト固有の上書きは**プリセットより下**に置く。プリセットは `projectService: true` を使うため**プロダクトの `tsconfig.json` が必須**（詳細は `lint/README-nextjs-react.md`）。不採用グループはプリセットの下で該当ルールを off にする |
 | Checkstyle（`lint/checkstyle/`） | Gradle の `checkstyle` プラグインを追加し `configFile` を `lint/checkstyle/checkstyle.xml` に向ける（`lint/README-java-springboot.md`）。不採用グループはグループコメント単位で削除する |
 | ArchUnit（`lint/archunit/`） | `archunit-junit5` を testImplementation に追加し、テンプレートを `src/test/java/` 配下へコピーして `__BASE_PACKAGE__` をプロダクトのベースパッケージに置換する（`lint/README-java-springboot.md`） |
