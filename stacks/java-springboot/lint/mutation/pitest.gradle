@@ -17,6 +17,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 
 pitest {
@@ -106,7 +107,8 @@ pitest {
 //   its own actions, its dependencies do not. The task refuses a reportDir
 //   outside the module's build directory, and one reached through - or
 //   holding - a junction or symlink (#159: checked on real paths, nothing
-//   deleted on refusal). Stryker's
+//   deleted on refusal), and moves reportDir aside as a whole before
+//   deleting anything in it. Stryker's
 //   twin only removes its report on the EMPTY scope: Stryker always rewrites
 //   the report on a non-empty scope, PIT does not (no mutants = no XML).
 def mutationDiffRequested = gradle.startParameter.taskNames.any {
@@ -172,6 +174,15 @@ if (mutationDiffRequested) {
         if (!reportPath.startsWith(buildPath) || reportPath == buildPath || reportPath == buildPath.resolve('reports')) {
             throw new GradleException("[mutationDiff] pitest.reportDir (${reportPath}) is not a PIT-specific directory under the build directory (${buildPath}) - the diff run deletes it before every run; keep it below build/ and apart from build/reports itself (plugin default: build/reports/pitest)")
         }
+        // A component ending in a dot or a space is refused too: Win32 strips
+        // them, so `reports.` would name build/reports itself and slip past
+        // the comparison above. (. and .. are gone after normalize().)
+        buildPath.relativize(reportPath).each { part ->
+            def partName = part.toString()
+            if (partName.endsWith('.') || partName.endsWith(' ')) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${reportPath}) has a path component ('${partName}') ending in a dot or a space - Windows strips those, so it could name a different directory than written; use a plain directory name below the build directory (plugin default: build/reports/pitest)")
+            }
+        }
         // Plain files only from here on: the action must not reach project
         // state (configuration cache).
         def reportDirFile = reportPath.toFile()
@@ -179,90 +190,251 @@ if (mutationDiffRequested) {
         // #159: no Gradle Delete. It gives no guarantee to treat a Windows
         // junction as a link, so a junction INSIDE reportDir could carry the
         // recursive delete outside, and a junction ABOVE it (build/reports ->
-        // elsewhere) passes the lexical check above. Two phases instead:
+        // elsewhere) passes the lexical check above. Three phases instead:
         // (1) inspect - reportDir must lie inside buildDir on REAL paths, and
-        //     so must every entry below it inside reportDir; one entry that
-        //     resolves elsewhere (a junction or symlink) stops the task with
-        //     NOTHING deleted, naming the entry. Links are never unlinked
-        //     either, so no JVM's junction-delete semantics are relied on.
-        // (2) delete - only when (1) passed, deepest first, Files.delete.
-        // Containment walks the path RELATIVE to the root one component at a
-        // time from realpath(root): each existing component must resolve to
-        // its real parent plus the same name. Never a whole-path comparison,
-        // so a build directory that itself sits under a link (macOS /var ->
-        // /private/var) is not mistaken for "outside". Junction detection
-        // does not rely on Files.isSymbolicLink (false for a junction).
+        //     so must every entry below it inside reportDir; an entry that is
+        //     a link, a junction or any other reparse point, resolves
+        //     elsewhere, cannot be inspected or cannot be deleted stops the
+        //     task with NOTHING deleted (and nothing moved), naming the entry.
+        //     Links are never followed or unlinked, so no JVM's junction-delete
+        //     semantics are relied on.
+        // (2) move aside - reportDir is renamed in one atomic step to a unique
+        //     quarantine name in its own parent (.<name>.helm-delete-<uuid>).
+        //     Some delete denials cannot be seen beforehand (a file another
+        //     process holds open without delete sharing, a directory that is
+        //     another process's working directory, an ACL, a sticky
+        //     directory); on Windows the first two also block the rename, so
+        //     the task stops with reportDir untouched. If the rename fails for
+        //     any reason, nothing was deleted.
+        // (3) delete - the quarantine tree is inspected again under the same
+        //     rules, then deleted deepest first with Files.delete. reportDir
+        //     itself is already gone, so a delete that still fails here cannot
+        //     leave a stale report behind; the task fails naming the
+        //     quarantine directory that remains.
+        // Leftover quarantine directories from an earlier failed run are left
+        // alone (the simpler and safer choice: never delete what this run did
+        // not inspect and move itself) and reported as a warning; `gradle
+        // clean` or a manual delete removes them.
+        // Containment: each existing path component must be a real directory
+        // or file (no link, junction or other reparse point) whose real
+        // parent IS the verified real parent (Files.isSameFile, and on
+        // Windows additionally an exact comparison of the two real-path
+        // strings, because isSameFile also accepts a case variant there). The
+        // primary defense is refusing links and reparse points; the parent
+        // check is a second line behind it.
+        // The walk starts at realpath(root), never compares a whole real path
+        // with a lexical one, so a build directory that itself sits under a
+        // link (macOS /var -> /private/var) is not mistaken for "outside".
+        // The report tree is walked iteratively (no recursion depth limit),
+        // each entry checked once against its already verified parent.
         // Residual window, outside the threat model: between (1) and (2)
         // another local process with write access to reportDir could swap
-        // an entry for a link. Such a process can already delete those files
-        // itself; (2) only deletes the entries (1) enumerated, one at a time.
-        doLast {
+        // an entry for a link; (3) re-inspects the moved tree and deletes only
+        // what that inspection enumerated, one entry at a time.
+        doLast { task ->
             def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
-            def caseInsensitive = osName.contains('win') || osName.contains('mac')
-            def sameName = { String a, String b -> caseInsensitive ? a.equalsIgnoreCase(b) : a == b }
-            def contained = { Path root, Path target ->
+            def isWindows = osName.contains('win')
+            // A symbolic link, or any other reparse point / special file:
+            // Windows reports a junction as "other", not as a symbolic link.
+            def linkLike = { BasicFileAttributes attrs -> attrs.isSymbolicLink() || attrs.isOther() }
+            // Verdict per path: 'ok', 'outside' (a link, junction or other
+            // reparse point on the way, or a component that resolves
+            // elsewhere) or 'error' (could not be inspected: permissions, IO,
+            // or an entry that was listed but vanishes under its normalized
+            // name). mustExist: only reportDir itself (and what lies below
+            // build/ on the way to it) may be absent.
+            // The real parent must be the verified real parent: the same file,
+            // and on Windows (where isSameFile also accepts a case variant)
+            // the same real-path string.
+            def sameParent = { Path parentReal, Path verifiedReal ->
+                parentReal != null && Files.isSameFile(parentReal, verifiedReal) &&
+                    (!isWindows || parentReal.toString() == verifiedReal.toString())
+            }
+            def contained = { Path root, Path target, boolean mustExist ->
                 try {
                     def lexicalRoot = root.toAbsolutePath().normalize()
                     def relative = lexicalRoot.relativize(target.toAbsolutePath().normalize())
-                    if (relative.toString().isEmpty()) return true
-                    if (relative.getName(0).toString() == '..') return false
+                    if (relative.toString().isEmpty()) return 'ok'
+                    if (relative.getName(0).toString() == '..') return 'outside'
                     def real = lexicalRoot.toRealPath()
                     def lexical = lexicalRoot
                     for (int i = 0; i < relative.nameCount; i++) {
-                        def name = relative.getName(i).toString()
-                        lexical = lexical.resolve(name)
+                        lexical = lexical.resolve(relative.getName(i).toString())
+                        def attrs
                         try {
-                            Files.readAttributes(lexical, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
+                            attrs = Files.readAttributes(lexical, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
                         } catch (NoSuchFileException ignored) {
-                            return true // absent from here on: nothing below can redirect
+                            return mustExist ? 'error' : 'ok' // absent: nothing below can redirect
                         }
-                        // any other failure (permissions) falls to the catch below: outside
+                        if (linkLike(attrs)) return 'outside'
                         def next = lexical.toRealPath()
-                        if (next.parent == null || !sameName(next.parent.toString(), real.toString()) || !sameName(next.fileName.toString(), name)) {
-                            return false
-                        }
+                        if (!sameParent(next.parent, real)) return 'outside'
                         real = next
                     }
-                    return true
+                    return 'ok'
                 } catch (Exception ignored) {
-                    return false // unresolvable (a dangling link included): outside
+                    return 'error' // permissions / IO: not inspectable
                 }
             }
+            // Entries that cannot be deleted would stop the deletes partway;
+            // find the detectable ones up front. Windows: the read-only
+            // attribute (never followed). POSIX: deleting needs a writable
+            // parent directory.
+            def undeletable = { Path entry ->
+                try {
+                    if (isWindows) {
+                        return Files.getAttribute(entry, 'dos:readonly', LinkOption.NOFOLLOW_LINKS) == Boolean.TRUE
+                    }
+                    def parent = entry.parent
+                    return parent != null && !Files.isWritable(parent)
+                } catch (Exception ignored) {
+                    return true
+                }
+            }
+            // Inspects the tree below `top` (real path `topReal`) without
+            // following anything, iteratively. Returns the findings and every
+            // entry in pre-order (each directory before its contents).
+            def scan = { Path top, Path topReal ->
+                def result = [outside: [], uninspectable: [], locked: [], entries: []]
+                def stack = new ArrayDeque<List>()
+                stack.push([top, topReal])
+                while (!stack.isEmpty()) {
+                    def frame = stack.pop()
+                    Path dir = frame[0]
+                    Path dirReal = frame[1]
+                    def children
+                    try {
+                        children = Files.list(dir).withCloseable { it.collect(java.util.stream.Collectors.toList()) }
+                    } catch (Exception ignored) {
+                        result.uninspectable << dir
+                        continue
+                    }
+                    for (Path entry : children) {
+                        BasicFileAttributes attrs
+                        Path entryReal = null
+                        boolean inside = false
+                        try {
+                            attrs = Files.readAttributes(entry, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
+                            if (!linkLike(attrs)) {
+                                entryReal = entry.toRealPath()
+                                inside = sameParent(entryReal.parent, dirReal)
+                            }
+                        } catch (Exception ignored) {
+                            result.uninspectable << entry
+                            continue
+                        }
+                        if (!inside) {
+                            result.outside << entry
+                            continue
+                        }
+                        if (undeletable(entry)) {
+                            result.locked << entry
+                        }
+                        result.entries << entry
+                        if (attrs.isDirectory()) {
+                            stack.push([entry, entryReal])
+                        }
+                    }
+                }
+                return result
+            }
+            // Inspects `target` (reportDir, or its quarantine) as a whole.
+            def inspectTree = { Path target ->
+                def verdict = contained(buildDirFile.toPath(), target, true)
+                if (verdict != 'ok') {
+                    return [verdict: verdict]
+                }
+                def tree
+                try {
+                    def attrs = Files.readAttributes(target, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
+                    tree = attrs.isDirectory()
+                        ? scan(target, target.toRealPath())
+                        : [outside: [], uninspectable: [], locked: [], entries: []]
+                } catch (Exception ignored) {
+                    return [verdict: 'error']
+                }
+                if (undeletable(target)) {
+                    tree.locked << target
+                }
+                tree.verdict = 'ok'
+                return tree
+            }
             def report = reportDirFile.toPath()
+            def quarantinePrefix = ".${report.fileName}.helm-delete-"
+            try {
+                def leftovers = Files.list(report.parent).withCloseable { stream ->
+                    stream.collect(java.util.stream.Collectors.toList())
+                }.findAll { it.fileName.toString().startsWith(quarantinePrefix) }
+                if (!leftovers.isEmpty()) {
+                    task.logger.warn("[mutationDiff] left alone: ${leftovers.join(', ')} - a leftover quarantine entry (from an earlier cleanup or placed manually) was left untouched. It is not a report PIT or quality-check reads; remove it by hand (or run the clean task).")
+                }
+            } catch (Exception ignored) {
+                // no parent directory yet, or unreadable: nothing to report
+            }
             try {
                 Files.readAttributes(report, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
             } catch (NoSuchFileException ignored) {
-                return // no previous report
+                return // no previous report: nothing to do
             } catch (IOException e) {
-                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) cannot be inspected - nothing was deleted: ${e}", e)
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be inspected - nothing was deleted: ${e}", e)
             }
-            if (!contained(buildDirFile.toPath(), report)) {
-                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) resolves outside the build directory (${buildDirFile}) through a link or junction - nothing was deleted. The directories between the build directory and reportDir (build/reports) must be real directories, not links.")
-            }
-            def outside = []
-            def doomed = []
-            def inspect
-            inspect = { Path dir ->
-                def entries = Files.list(dir).withCloseable { it.collect(java.util.stream.Collectors.toList()) }
-                entries.each { Path entry ->
-                    if (!contained(report, entry)) {
-                        outside << entry
-                        return
-                    }
-                    if (Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) {
-                        inspect(entry)
-                    }
-                    doomed << entry
+            // Never the build directory or build/reports themselves, on real
+            // paths (a trailing-dot spelling can name them), and the real
+            // name must be exactly the configured one.
+            try {
+                def realReport = report.toRealPath(LinkOption.NOFOLLOW_LINKS)
+                def guarded = [buildDirFile.toPath(), buildDirFile.toPath().resolve('reports')]
+                if (guarded.any { Files.exists(it) && Files.isSameFile(realReport, it) } ||
+                        realReport.fileName.toString() != report.fileName.toString()) {
+                    throw new GradleException("[mutationDiff] pitest.reportDir (${report}) names the build directory, build/reports or a differently spelled directory (real path ${realReport}) - nothing was deleted. Use a plain PIT-specific directory name below build/.")
                 }
+            } catch (GradleException e) {
+                throw e
+            } catch (Exception e) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be resolved - nothing was deleted: ${e}", e)
             }
-            if (Files.isDirectory(report, LinkOption.NOFOLLOW_LINKS)) {
-                inspect(report)
+            def reportVerdict = contained(buildDirFile.toPath(), report, false)
+            if (reportVerdict == 'error') {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) or a directory on the way to it could not be inspected (permission or I/O error) - nothing was deleted.")
             }
-            if (!outside.isEmpty()) {
-                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) contains entries that resolve outside it (a junction or symbolic link): ${outside.join(', ')} - nothing was deleted. Remove them by hand and re-run.")
+            if (reportVerdict != 'ok') {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) resolves outside the build directory (${buildDirFile}) through a link or junction - nothing was deleted. The directories between the build directory and reportDir (build/reports) must be real directories, not links, junctions or other reparse points.")
             }
-            doomed.each { Files.delete(it) }
-            Files.delete(report)
+            def found = inspectTree(report)
+            if (found.verdict != 'ok') {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be inspected (permission or I/O error) - nothing was deleted.")
+            }
+            if (!found.outside.isEmpty()) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) contains entries that resolve outside it (a junction, symbolic link or other reparse point): ${found.outside.join(', ')} - nothing was deleted. Remove them by hand and re-run.")
+            }
+            if (!found.uninspectable.isEmpty()) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) contains entries that could not be inspected: ${found.uninspectable.join(', ')} - nothing was deleted. Fix or remove them by hand and re-run.")
+            }
+            if (!found.locked.isEmpty()) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) contains entries that cannot be deleted (read-only or in a non-writable directory): ${found.locked.join(', ')} - nothing was deleted. Fix their permissions or remove them by hand and re-run.")
+            }
+            def quarantine = report.resolveSibling(quarantinePrefix + UUID.randomUUID())
+            try {
+                Files.move(report, quarantine, StandardCopyOption.ATOMIC_MOVE)
+            } catch (Exception e) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) could not be moved aside for deletion (e.g. a file in it is in use, a process uses a directory in it as its working directory, permissions, or it is a mount point): ${e} - nothing was deleted. Close that process and re-run.", e)
+            }
+            def moved = inspectTree(quarantine)
+            if (moved.verdict != 'ok' || !moved.outside.isEmpty() || !moved.uninspectable.isEmpty() || !moved.locked.isEmpty()) {
+                def offending = moved.verdict != 'ok' ? [quarantine] : (moved.outside + moved.uninspectable + moved.locked)
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) was moved aside to ${quarantine}, but it changed after the inspection (${offending.join(', ')}) - nothing in it was deleted. pitest.reportDir itself is gone, so no stale report remains; remove ${quarantine} by hand.")
+            }
+            def current = null
+            try {
+                for (Path entry : moved.entries.reverse()) {
+                    current = entry
+                    Files.delete(entry)
+                }
+                current = quarantine
+                Files.delete(quarantine)
+            } catch (Exception e) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) was moved aside to ${quarantine}, but deleting it stopped at ${current}: ${e} - pitest.reportDir itself is gone, so no stale report remains; remove ${quarantine} by hand.", e)
+            }
         }
     }
     tasks.named('pitest').configure { dependsOn(mutationDiffCleanReport) }

@@ -453,19 +453,22 @@ export function scopeCovers(current, previous) {
 // whole lexical one - a cwd that itself sits under a link (macOS /var ->
 // /private/var) would then look "outside" in a perfectly normal layout.
 // Instead it starts from realpath(root) and walks the path RELATIVE to root
-// one component at a time: each existing component's real path must be its
-// real parent joined with the same name. A component that resolves anywhere
-// else (a link or junction - Node's lstat reports both as links, but the walk
-// does not rely on that) is outside. The first absent component ends the
-// walk: nothing below it exists yet, so nothing below it can redirect.
+// one component at a time: each existing component must be a plain file or
+// directory (a link or junction - Node's lstat reports both as links - or
+// any other special entry is outside), and the parent of its real path must
+// BE the verified real parent: the same directory by identity (device and
+// inode), never by a case-insensitive name comparison, which a
+// case-sensitive directory on Windows or macOS would defeat. The first
+// absent component ends the walk: nothing below it exists yet, so nothing
+// below it can redirect.
 
-const CASE_INSENSITIVE_FS = process.platform === 'win32' || process.platform === 'darwin';
-
-function samePath(a, b) {
-  if (!CASE_INSENSITIVE_FS) return a === b;
-  // macOS may hand back a name in another Unicode normalization form.
-  const fold = (p) => (process.platform === 'darwin' ? p.normalize('NFC') : p).toLowerCase();
-  return fold(a) === fold(b);
+// Same directory: identical real paths, or the same device and inode (a
+// zero inode - a filesystem without stable ids - never counts as a match).
+function sameDirectory(a, b) {
+  if (a === b) return true;
+  const sa = fs.statSync(a, { bigint: true });
+  const sb = fs.statSync(b, { bigint: true });
+  return sa.ino !== 0n && sa.dev === sb.dev && sa.ino === sb.ino;
 }
 
 // realpath with the OS resolver (follows junctions on Windows), falling back
@@ -502,11 +505,11 @@ export function isContained(root, target) {
     let lexical = lexicalRoot;
     for (const name of relative.split(path.sep)) {
       lexical = path.join(lexical, name);
-      if (lstatOrNull(lexical) === null) return true;
-      // Exists but does not resolve (a dangling link): a write would follow
-      // it to wherever it points.
+      const stat = lstatOrNull(lexical);
+      if (stat === null) return true;
+      if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return false;
       const next = realpathOf(lexical);
-      if (!samePath(next, path.join(real, name))) return false;
+      if (!sameDirectory(path.dirname(next), real)) return false;
       real = next;
     }
     return true;
