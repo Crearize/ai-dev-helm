@@ -1,0 +1,51 @@
+name: Test
+
+# Runs the harness suite on every OS the adopters use. Several hooks and
+# mutation helpers have Windows-only (junctions, PowerShell argv, shims) or
+# macOS-only (/var -> /private/var) behaviour that an ubuntu-only run misses.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# A new push to the same PR cancels the older run; pushes to main always finish.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['20', '24']
+    steps:
+      # Keep LF in the checkout so fixtures and patch application match on Windows.
+      - name: Disable CRLF conversion
+        run: git config --global core.autocrlf false
+
+      # No token left in .git/config for dependency install scripts to read.
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+
+      # legacy-peer-deps: same reason as publish.yml (eslint-plugin-react's
+      # published peer range caps below the ESLint major the assets target).
+      - name: Install
+        run: npm ci --legacy-peer-deps
+
+      - name: Test
+        run: npm test
