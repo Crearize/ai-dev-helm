@@ -13,10 +13,16 @@ on:
 permissions:
   contents: read
 
+# A new push to the same PR cancels the older run; pushes to main always finish.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -27,7 +33,10 @@ jobs:
       - name: Disable CRLF conversion
         run: git config --global core.autocrlf false
 
+      # No token left in .git/config for dependency install scripts to read.
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:

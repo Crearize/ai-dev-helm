@@ -80,12 +80,13 @@ done
 # Upstream uses a flat skills/<name>/ layout; this repo nests skills under
 # skills/superpowers/<name>/. Rewrite absolute-style upstream paths in the
 # copied documents so cross-skill references resolve in consuming projects.
-# `sed -i.bak` (suffix attached) is the in-place form that GNU and BSD/macOS
-# sed both accept; the backups are removed right after.
+# `sed -i<suffix>` (suffix attached) is the in-place form that GNU and
+# BSD/macOS sed both accept. The suffix is unique to this script so removing
+# the backups never deletes an upstream file.
 for skill in "${SKILLS[@]}"; do
-    find "$DEST" -name '*.md' -print0 | xargs -0 sed -i.bak "s|skills/$skill/|skills/superpowers/$skill/|g"
+    find "$DEST" -name '*.md' -print0 | xargs -0 sed -i.helm-sed-bak "s|skills/$skill/|skills/superpowers/$skill/|g"
 done
-find "$DEST" -name '*.md.bak' -type f -delete
+find "$DEST" -name '*.helm-sed-bak' -type f -delete
 
 # Upstream files nest code fences inside fenced prompt templates, which breaks
 # rendering in some Markdown viewers. Widen the outer fences after copying.

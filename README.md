@@ -609,6 +609,8 @@ ai-dev-helm/
 │   └── fix-nested-fences.sh   # ネストしたコードフェンスの補正（transform から呼び出し）
 │
 └── .github/workflows/
+    ├── test.yml               # OS（ubuntu / windows / macos）× Node の行列テスト
+    ├── publish.yml            # release-please と npm 公開
     └── sync-superpowers.yml   # superpowers 自動同期ワークフロー
 ```
 
