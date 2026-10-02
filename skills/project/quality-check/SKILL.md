@@ -22,11 +22,18 @@ description: マージ前に必ず実行。静的チェック・テスト・体�
 **無条件ブロック**（規則1の候補がある行について、フラグの有無・ブランチを問わず、以下のいずれかに該当すれば必ずブロックする）:
 
 - 規則1の候補がある行の force / delete push（`-f` / `-d` の短縮オプション束ね形を含む）、`+refspec`、`--mirror`、`--all`、`--branches`
-- ゲート対象と同一行にある別の git 操作。この判定対象は**閉じた集合**である: HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `revert` / `am` / `bisect` / `update-ref` / `stash pop` / `stash apply`）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定し、`fetch` および `branch -f` / `-d` / `-D` / `--force` は**同一行**で判定する。それ以外の git 操作（`status` / `add` / `log` / `diff` / `tag` / `remote` 等）は同居してもブロックしない
-- `-C` / `--git-dir` / `--work-tree` / `--namespace` / `-c` / `--config-env` / `GIT_*=` 代入 / 同一行の `cd` / `pushd`
+- ゲート対象と同一行にある別の git 操作。この判定対象は**閉じた集合**である: HEAD を動かす操作（`commit` / `reset` / `checkout` / `switch` / `cherry-pick` / `rebase` / `revert` / `am` / `bisect` / `update-ref` / `stash pop` / `stash apply`）と `fetch`（後の `git merge origin/<x>` が読む参照を書き換えるため。#158）は**コマンド全体**（改行区切りの複数行にまたがっても）で判定し、`branch -f` / `-d` / `-D` / `--force` は**同一行**で判定する。それ以外の git 操作（`status` / `add` / `log` / `diff` / `tag` / `remote` 等）は同居してもブロックしない
+- ゲート対象の git 呼び出しの `--git-dir` / `--work-tree` / `--namespace` / `-c`（連結形の `-c<name>=<value>` を含む） / `--config-env`、および**コマンド全体**のどこかにある `GIT_*` 環境変数の代入（`GIT_DIR=x git …`・`export GIT_DIR=x`・`set GIT_DIR=x`・PowerShell の `$env:GIT_DIR=…`）
+- ゲート対象より前にある、静的に解決できない作業場所の移動（下記「操作先の移動」）。移動先が git の作業ツリーでない場合と、1 つのコマンドの候補が 2 つ以上のリポジトリにまたがる場合も block する
 - 規則1の候補がある行に限り、行内のシェル展開文字（`$` `` ` `` `{` `}` `%`。`$'…'` / `$"…"` の ANSI-C / ロケールクォートも展開扱い）を無条件 block する。**行内の全語**（リダイレクト先の語は argv に残らないため除く。ただしその語内のコマンド置換の本体は同一行として解析する）が対象で、`gh` の自由テキスト値オプション（`-t`/`--subject`・`-b`/`--body`・`-F`/`--body-file` の6形と `--subject=` / `--body=` / `--body-file=` の `=` 付き3形）のみ例外。候補が無い行の展開文字は block しない（脅威モデル外の迂回として hook ヘッダの「見通せない形」に列挙する）
 - 複数のゲート対象操作の同居
 - `<x>:main` 形の refspec（`<x>` が現在のブランチ名 / `HEAD` / `@`（大小無視）のいずれでもない逆形）
+
+**操作先の移動**（#158）: `cd` / `pushd` / `-C` は一律の block ではなく、移動先を求めて判定する。hook はコマンド全体（全行・全セグメント）を実行順に読み、各ゲート対象の**実効ディレクトリ**を payload の cwd から求める。移動とみなす語は `cd` / `chdir` / `pushd` / `popd` / `cd..`、PowerShell の `Set-Location`（`-Path` / `-LiteralPath` を含む）/ `sl` / `Push-Location` / `Pop-Location`（大小無視。`pushd` 系と `popd` 系はスタックとして追う）。git の `-C <path>` と連結形の `-C<path>` は同じものとして、その呼び出しだけに適用する（Windows PowerShell は引用符の無い `-C../other` を `-C` と `../other` に分けるため、どちらの読み方でも同じ場所になる）。
+
+- 解決できる移動: 移動の語がセグメントの先頭にあり、`( … )` やコマンド置換の中でも、`&&` / `||` の右辺でも、パイプラインの中でも、`&` でバックグラウンドに送られてもいない。引数が展開文字を含まない 1 語で、`-` / `+N` / `~…` / 空ではなく、判定の時点でディレクトリとして存在し、シェルの論理パスと実体パスの読み方が一致する（シンボリックリンクを `..` で戻る形は一致しない）。CDPATH が設定されている場合（hook の環境、またはコマンド内の代入）は `/` / `./` / `../` で始まる引数だけ。`popd` 系は戻り先があるとき
+- 解決できない移動: 上記以外のすべて（引数なし・`cd $X`・`cd -`・`cd ~`・存在しない・`if cd x` / `builtin cd x` のように先頭以外にある・`( … )` やコマンド置換の中・`a && cd x` / `a || cd x`・パイプライン・`&`）。また、移動とループ・`if`・`case`・`{ … }`・関数定義（PowerShell の `foreach` / `switch` / `try` を含む）が同じコマンドにある場合は、本文の実行順がテキストの順と一致しないため、すべての移動を解決できないものとして扱う。いったん解決できない移動があると、それ以降はすべて解決できない（`popd` で戻っても同じ）。解決できない移動の後のゲート対象は、ブランチを問わず block する（ゲート対象の無いコマンドには影響しない。`cd $X` の次の行の `npm test` は通る）
+- 実効ディレクトリの `git rev-parse --show-toplevel` の実体パスが cwd のものと同じなら、移動しなかったものとして通常どおり判定する（同じリポジトリの中の `cd sub` の後の push・merge は過剰に拒否しない）。違うリポジトリなら、**移動先のリポジトリのブランチ・フラグ・差分**で規則 2 の `<x>:main`・規則 3・規則 4 を判定する（現在のリポジトリのフラグでは通さない）
 
 **限定した例外**: 単一行の通常形 `git commit ... && git push [remote]`（refspec 省略、追加コマンド・git グローバルオプション・展開文字・リダイレクト・作業場所変更なし）だけは、実行前のブランチが feature と確認できれば上記 mover ブロックを免除する。main / master・detached HEAD・ブランチ不明では免除しない。`checkout` / `switch` / `bisect` / branch 引数付き `rebase` / `update-ref` 等には広げない。
 
@@ -40,11 +47,11 @@ description: マージ前に必ず実行。静的チェック・テスト・体�
 
 JSON の先頭にある UTF-8 BOM は除去してから解析する。文字コード変換による内容の破損を復元するものではない。
 
-**fail-open**（無条件で allow）は、入力ペイロードが不正な場合（理由を stderr に出力する）と、git リポジトリの外で実行された場合の2つに限る。それ以外の git 呼び出し失敗はゲート対象候補があればブロックする。
+**fail-open**（無条件で allow）は、入力ペイロードが不正な場合（理由を stderr に出力する）と、git リポジトリの外で実行された場合の2つに限る。後者は payload の cwd だけに適用し、`cd` / `-C` で移動した先での block と、解決できない移動による block は、cwd がリポジトリの外でも block のままとする。それ以外の git 呼び出し失敗はゲート対象候補があればブロックする。
 
-**worktree 上の main**（#116）: セッションの作業ディレクトリが worktree でない場合、その worktree 内の main へのマージはこの hook からは見えない（`-C` / `cd` を使う形は無条件ブロックされる）。セッションの作業ディレクトリが worktree なら、その main は通常どおりゲートされる。hook はセッションの作業ディレクトリのリポジトリを基準に判定し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読む。正規の手順は「その worktree を作業ディレクトリとするセッションで quality-check を完走し、フラグをその worktree に作成してからそこで merge する」の1つのみ。統括側の別ディレクトリで先にフラグを作ってから merge する手順は誤りであり、成立しない。
+**worktree 上の main**（#116）: セッションの作業ディレクトリが worktree でない場合、その worktree 内の main へのマージは、静的に解決できる `cd` / `pushd` / `-C` で行えばその worktree のブランチとフラグで判定され、解決できない移動を使う形は block される。それ以外の経路（スクリプト経由など）はこの hook からは見えない。セッションの作業ディレクトリが worktree なら、その main は通常どおりゲートされる。hook はセッションの作業ディレクトリのリポジトリを基準に判定し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読む。正規の手順は「その worktree を作業ディレクトリとするセッションで quality-check を完走し、フラグをその worktree に作成してからそこで merge する」の1つのみ。統括側の別ディレクトリで先にフラグを作ってから merge する手順は誤りであり、成立しない。
 
-**feature ブランチ上の意図的な過検出**: フラグ不要な feature ブランチへの push であっても、候補語（`merge` / `pull` / `rebase` / refspec 省略の `push` / refspec に展開文字を含む `push`（例 `git push origin feat/$TICKET`））を含む行は、同一行の別 git 操作・`-C` / `cd`・展開文字・hard flag の各条件でブロックされうる（意図的な設計。`git fetch && git rebase origin/main` のような行は分けて実行する）。改行で分けても、`git commit` と refspec 省略の `git push` は1回の tool 呼び出しであるためブロックされる（refspec を明示するか、別の tool 呼び出しに分ける）。
+**feature ブランチ上の意図的な過検出**: フラグ不要な feature ブランチへの push であっても、候補語（`merge` / `pull` / `rebase` / refspec 省略の `push` / refspec に展開文字を含む `push`（例 `git push origin feat/$TICKET`））を含む行は、同一行の別 git 操作・解決できない移動・展開文字・hard flag の各条件でブロックされうる（意図的な設計。`git fetch && git rebase origin/main` のような行は分けて実行する。`fetch` はコマンド全体で判定するため、改行で分けても同じ tool 呼び出しなら block される）。改行で分けても、`git commit` と refspec 省略の `git push` は1回の tool 呼び出しであるためブロックされる（refspec を明示するか、別の tool 呼び出しに分ける）。
 
 ### ハーネスのみ変更の免除
 

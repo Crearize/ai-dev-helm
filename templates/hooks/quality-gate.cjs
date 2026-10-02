@@ -4,12 +4,16 @@
 // PreToolUse hook: forbid direct push / merge into main (or master) unless a
 // quality check passed. That single sentence is the whole requirement.
 //
-// The hook does NOT resolve what would land on main: no source-tip
-// resolution, no PR-head lookup, no override-declaration parsing, no
-// other-repository resolution. It statically classifies the command line and
-// asks for the flag. Trunk names are fixed to `main` / `master`; a product
-// using another trunk name is not gated here and relies on the
-// `permissions.deny` layer and convention.
+// The hook statically classifies the command line and asks for the flag. The
+// one thing it resolves for that is WHERE a gated call runs: the repository a
+// statically readable `cd` / `pushd` / `popd` / `Set-Location` (on any line
+// before the call) or `-C <path>` / `-C<path>` (on the call) moves it to, which
+// is then judged with THAT repository's branch and flag (#158; see "Where each
+// gated call runs" below). It does NOT resolve what would land on main: no
+// source-tip resolution, no PR-head lookup, no override-declaration parsing,
+// no resolution of another repository's PR (`gh -R` and the like). Trunk names
+// are fixed to `main` / `master`; a product using another trunk name is not
+// gated here and relies on the `permissions.deny` layer and convention.
 //
 // THREAT MODEL: this gate stops ACCIDENTAL, good-faith operations from reaching
 // main. Work always starts from an issue and a branch, and a push or merge that
@@ -30,11 +34,16 @@
 //      override it. The sole deferred mover check is a plain, single-line
 //      `git commit ... && git push [remote]` without a refspec: it needs the
 //      current branch, and only a resolved feature branch allows it.
-//   3. Resolve ctx (current branch, flag, diffs). A resolution failure blocks
-//      (rule 5). If ctx proves the candidates are not gated (e.g. `git merge`
-//      on a feature branch) -> allow. Then evaluate rule 2 item 6
+//   3. Place every candidate (#158): walk the whole command for moves and
+//      apply the call's own `-C`. A move that cannot be resolved blocks; so
+//      does a target outside any git work tree, and candidates in two or more
+//      repositories in one command. A target in the cwd's toplevel is judged
+//      with the cwd's ctx; another repository with a ctx of its own.
+//   4. Resolve that ctx (current branch, flag, diffs). A resolution failure
+//      blocks (rule 5). If ctx proves the candidates are not gated (e.g.
+//      `git merge` on a feature branch) -> allow. Then evaluate rule 2 item 6
 //      (`<x>:main`), still ahead of rules 3 and 4.
-//   4. Rule 3's sync forms -> allow; the rule 4 exemption -> allow; rule 3's
+//   5. Rule 3's sync forms -> allow; the rule 4 exemption -> allow; rule 3's
 //      flag conditions -> allow; else block. (The sync forms are checked first
 //      because they need no diff at all.)
 //
@@ -60,8 +69,13 @@
 //   bisect, update-ref, stash pop|apply, fetch, branch -f|-d|-D|--force) other
 //   than the gated call itself - that set is CLOSED, so every other git
 //   operation (status, add, log, diff, tag, remote, restore, ...) may share the
-//   line without blocking; `-C`/`--git-dir`/`--work-tree`/`--namespace`/`-c`/
-//   `--config-env`, a `GIT_*=` assignment or a `cd`/`pushd` on the line; shell
+//   line without blocking; `--git-dir`/`--work-tree`/`--namespace`/`-c` (and
+//   the attached `-c<name>=<value>`)/`--config-env` on the gated call, or a
+//   `GIT_*` assignment ANYWHERE in the command (`X=… cmd`, `export`, `set`,
+//   PowerShell `$env:GIT_…`); a move the location walk cannot resolve before
+//   the candidate, a target outside any git work tree, or candidates in more
+//   than one repository (step 3 - `cd`/`pushd`/`-C` themselves are NOT
+//   blocked any more, they are followed); shell
 //   expansion (`$`, backtick, `{`, `}`, `%`, `$'`) in a word, except the value
 //   of gh's free-text options - `-t`/`--subject`, `-b`/`--body`,
 //   `-F`/`--body-file` (six forms), plus their `--subject=`/`--body=`/
@@ -78,8 +92,9 @@
 //   the threat model above).
 //   The movers that move HEAD or make a commit (commit, reset, checkout,
 //   switch, cherry-pick, rebase, revert, am, bisect, update-ref,
-//   stash pop|apply) are judged over the WHOLE command, newlines included;
-//   `fetch` and `branch -f|-d|-D|--force` are judged per line.
+//   stash pop|apply) and `fetch` (it rewrites the ref a later merge reads)
+//   are judged over the WHOLE command, newlines included;
+//   `branch -f|-d|-D|--force` is judged per line.
 //   The commit/push exception above excludes redirects, expansions, global
 //   git options, other commands and other separators. All other mover checks
 //   still precede branch resolution, including rebase and update-ref forms
@@ -100,11 +115,14 @@
 //   `prompts/`, `rules/`, plus the hook's registration files (see
 //   GATE_CONTROL_PATTERNS, which is the authority).
 // Rule 5 (fail-open, exactly twice): a payload whose `tool_input.command` is
-//   not a string (malformed JSON, a missing field), and a cwd that is not
-//   inside a git work tree - decided by rev-parse's EXIT STATUS, never by its
-//   (localized) message. Any other git failure or timeout on a line with a
-//   candidate blocks. Both fail-opens write their reason to stderr, so a hook
-//   that has stopped gating is visible rather than silent.
+//   not a string (malformed JSON, a missing field), and a PAYLOAD cwd that is
+//   not inside a git work tree - decided by rev-parse's EXIT STATUS, never by
+//   its (localized) message. The second one is about the payload cwd only: a
+//   block decided where a `cd` / `-C` moved the call (or because the move
+//   could not be resolved) stands even when the cwd is not a repository. Any
+//   other git failure or timeout on a line with a candidate blocks. Both
+//   fail-opens write their reason to stderr, so a hook that has stopped
+//   gating is visible rather than silent.
 // Rule 6 (output): `{"decision":"block","reason":...}` only; allow is silent.
 //
 // The classification budget, and no part of it is a fail-open.
@@ -135,6 +153,12 @@
 // candidate blocks there; and `git push --force` with no refspec blocks
 // anywhere, because "no refspec" is a candidate. The plain commit/push form
 // described above is the only exception to the feature-branch over-detection.
+// The location walk over-detects the same way: a move it cannot place
+// (`cd $DIR`, `cd` inside `( … )`, `a && cd x`, any move in a command that
+// also has a loop, `if` or function) blocks a later candidate even when the
+// candidate would have been fine - and a mainOnly candidate (`git merge`, a
+// refspec-less push) blocks there without its branch being read. A
+// candidate-free command is never walked: `cd $DIR` + `npm test` is allowed.
 //
 // This is a static check for a cooperating agent, not a sandbox. It is aimed at
 // the accidental operation (see the threat model above); nothing here can see
@@ -153,6 +177,12 @@
 //   - a gate word percent-encoded inside quotes, which a `gh api` endpoint
 //     reads back: `gh api -X PUT "repos/o/r/pulls/1/%6Derge"`;
 //   - arguments supplied by another process: `xargs git push`, `env -S`;
+//   - a directory change made by anything but a move word the location walk
+//     reads: a script or `source`d file that runs `cd`, an alias or a
+//     function defined in an earlier tool call, bash's `autocd`, `cd`
+//     spelled by an expansion. (A `cd` / `pushd` / `Set-Location` on another
+//     line and the attached `-C<path>` - including PowerShell splitting it
+//     into `-C <path>` - ARE read; see "Where each gated call runs".)
 //   - a refspec that lives in configuration: `remote.<name>.push`,
 //     `push.default = matching`, `branch.<n>.merge`;
 //   - other merge APIs: `gh api graphql` with `mergePullRequest`, or
@@ -262,6 +292,13 @@ function scanSubstitution(command, start, crossLines = false) {
 // "main"` compares as `main`); no expansion is performed, but every word
 // records whether its source carried an expansion character. `depth` is the
 // command-substitution nesting level and is set only by this function.
+//
+// Each segment also records what the location walk (#158) needs to know about
+// how it runs: `before` / `after` are the separator characters (`;&|()`) that
+// precede and follow it - carried across a newline, so `a &&` + newline + `cd x`
+// still reads `&&` before the `cd` - and `nested` says it sits inside a
+// `( … )` subshell or a command substitution, where a `cd` does not outlive
+// the subshell.
 function tokenizeLines(command, depth = 0) {
   const lines = [];
   let line = { segments: [] };
@@ -271,6 +308,9 @@ function tokenizeLines(command, depth = 0) {
   let expand = false;
   let quote = null;
   let dropWord = false; // A pending redirection target, dropped from the argv.
+  let parenDepth = 0; // Unquoted `(` subshells open at this point.
+  let pendingSep = ''; // Separators since the last segment.
+  let prevSeg = null; // The last segment, collecting the separators after it.
   // Whether a word has STARTED at this position, which is not the same as
   // having characters in it: `""` and `''` start a word without adding any, and
   // bash reads `""#` as the one-character word `#`, not as a comment.
@@ -291,7 +331,14 @@ function tokenizeLines(command, depth = 0) {
   const endSegment = () => {
     endWord();
     dropWord = false;
-    if (seg.words.length > 0) line.segments.push(seg);
+    if (seg.words.length > 0) {
+      seg.before = pendingSep;
+      seg.after = '';
+      seg.nested = depth > 0 || parenDepth > 0;
+      pendingSep = '';
+      prevSeg = seg;
+      line.segments.push(seg);
+    }
     seg = { words: [], expand: [] };
   };
   const endLine = () => {
@@ -378,6 +425,10 @@ function tokenizeLines(command, depth = 0) {
       dropWord = true; // The target word never reaches the argv.
     } else if (SEGMENT_SEPARATORS.includes(ch)) {
       endSegment();
+      if (ch === '(') parenDepth++;
+      else if (ch === ')' && parenDepth > 0) parenDepth--;
+      pendingSep += ch;
+      if (prevSeg) prevSeg.after += ch;
     } else {
       if (ch === '$' || ch === '{' || ch === '}' || ch === '%') expand = true;
       word += ch;
@@ -407,10 +458,15 @@ const GIT_VALUE_OPTS = new Set([
   '-C', '-c', '--git-dir', '--work-tree', '--namespace',
   '--exec-path', '--super-prefix', '--config-env', '--attr-source',
 ]);
-// git global options that make the hook's own cwd meaningless (rule 2).
-const GIT_LOCATION_OPTS = [
-  '-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env',
-];
+// git global options that point the call somewhere the hook does not resolve
+// (rule 2). `-C` is NOT here: `-C <path>` and the attached `-C<path>` are
+// followed to their directory instead (#158, see `resolveLocations`). The
+// attached `-c<name>=<value>` is the same option as `-c <name>=<value>`.
+const GIT_LOCATION_OPTS = ['--git-dir', '--work-tree', '--namespace', '--config-env'];
+function isUnresolvedGlobal(g) {
+  if (g === '-c' || (g.startsWith('-c') && !g.startsWith('--'))) return true;
+  return GIT_LOCATION_OPTS.some((o) => g === o || g.startsWith(`${o}=`));
+}
 // push options that consume the following word.
 const PUSH_VALUE_OPTS = new Set(['--repo', '--receive-pack', '--exec', '-o', '--push-option']);
 // Never exempt, on any branch, once a push candidate exists.
@@ -444,7 +500,12 @@ const UPSTREAM_REFS = new Set(['head', '@']);
 // `pulls/$(gh pr view --json number -q .number)/merge` is one word with spaces
 // in it. Excluding `\s` made that form miss, and a miss here is an allow.
 const PULLS_MERGE_RE = /(^|\/)pulls\/[^/]+\/merge(?![A-Za-z0-9_-])/i;
-const GIT_ENV_RE = /^GIT_[A-Za-z0-9_]*=/;
+// A `GIT_*` environment assignment in any spelling the tokenizer leaves
+// readable: `GIT_DIR=x git …`, `export GIT_DIR=x`, cmd's `set GIT_DIR=x`, and
+// PowerShell's `$env:GIT_DIR='x'` / `$env:GIT_DIR = 'x'` / `${env:GIT_DIR}`.
+// Case-insensitive: Windows reads `git_dir` as the same variable.
+const GIT_ENV_RE = /^GIT_[A-Za-z0-9_]*=/i;
+const PS_GIT_ENV_RE = /^\$\{?env:GIT_/i;
 // Last-resort screen for a command line the classifier will not read (over the
 // byte budget, or a classifier exception): does it mention a gated word at all?
 const GATE_WORD_RE = /(?:^|[^A-Za-z0-9_-])(merge|pull|push|rebase|pr)(?:[^A-Za-z0-9_-]|$)/i;
@@ -527,18 +588,25 @@ function segmentFacts(seg) {
 // subcommand. `git -c push.default=simple push` is a push; `git stash push`
 // is not (the subcommand word is matched whole). `start` is the index of the
 // first argument word, and the argument list is `seg.words[start..]`.
+// `chdirs` lists every `-C` in order, `-C <path>` and the attached `-C<path>`
+// alike: Windows PowerShell splits an unquoted `-C../other` into `-C` and
+// `../other`, so both spellings have to land on the same directory (#158).
 function gitInvocations(seg, facts) {
   const found = [];
   for (let i = 0; i < seg.words.length; i++) {
     if (!isCmdWord(seg.words[i], 'git')) continue;
     const globals = [];
+    const chdirs = [];
     let j = i + 1;
     while (j < seg.words.length && seg.words[j].startsWith('-')) {
-      globals.push(seg.words[j]);
-      j += GIT_VALUE_OPTS.has(seg.words[j]) ? 2 : 1;
+      const w = seg.words[j];
+      globals.push(w);
+      if (w === '-C') chdirs.push({ path: seg.words[j + 1] ?? '', expand: seg.expand[j + 1] === true });
+      else if (w.startsWith('-C')) chdirs.push({ path: w.slice(2), expand: seg.expand[j] === true });
+      j += GIT_VALUE_OPTS.has(w) ? 2 : 1;
     }
     if (j >= seg.words.length) continue;
-    found.push({ sub: seg.words[j].toLowerCase(), seg, facts, start: j + 1, globals, gated: false });
+    found.push({ sub: seg.words[j].toLowerCase(), seg, facts, start: j + 1, globals, chdirs, gated: false });
   }
   return found;
 }
@@ -570,7 +638,7 @@ function ghCandidates(seg, facts) {
     }
     const sub = (seg.words[j] || '').toLowerCase();
     if (sub === 'api') {
-      if (facts.mergeApiFrom[j + 1]) found.push({ kind: 'gh', mainOnly: false });
+      if (facts.mergeApiFrom[j + 1]) found.push({ kind: 'gh', mainOnly: false, seg });
       continue;
     }
     if (sub !== 'pr') continue;
@@ -578,7 +646,7 @@ function ghCandidates(seg, facts) {
     while (k < seg.words.length && seg.words[k].startsWith('-')) {
       k += GH_VALUE_OPTS.has(seg.words[k]) ? 2 : 1;
     }
-    if ((seg.words[k] || '').toLowerCase() === 'merge') found.push({ kind: 'gh', mainOnly: false });
+    if ((seg.words[k] || '').toLowerCase() === 'merge') found.push({ kind: 'gh', mainOnly: false, seg });
   }
   return found;
 }
@@ -659,19 +727,21 @@ function pushCandidate(inv) {
 }
 
 // Rule 1 candidate detection plus the raw material rule 2 needs, for one line.
+// `gitEnv` is per line here and is read over the WHOLE command by `classify`;
+// `cd` / `pushd` and `-C` are no longer rule 2 at all - they are followed by
+// the location walk (#158).
 function analyzeLine(line) {
   const cands = [];
   const invocations = [];
   let expansion = false;
   let relocation = false;
+  let gitEnv = false;
 
   for (const seg of line.segments) {
     const facts = segmentFacts(seg);
     const freeText = freeTextIndices(seg.words);
     seg.words.forEach((w, i) => {
-      const lw = w.toLowerCase();
-      if (lw === 'cd' || lw === 'pushd') relocation = true;
-      if (GIT_ENV_RE.test(w)) relocation = true;
+      if (GIT_ENV_RE.test(w) || PS_GIT_ENV_RE.test(w)) gitEnv = true;
       if (seg.expand[i] && !freeText.has(i)) expansion = true;
     });
     for (const c of ghCandidates(seg, facts)) cands.push(c);
@@ -692,12 +762,10 @@ function analyzeLine(line) {
 
   if (cands.length > 0) {
     for (const inv of invocations) {
-      if (inv.gated && inv.globals.some((g) => GIT_LOCATION_OPTS.some((o) => g === o || g.startsWith(`${o}=`)))) {
-        relocation = true;
-      }
+      if (inv.gated && inv.globals.some(isUnresolvedGlobal)) relocation = true;
     }
   }
-  return { line, cands, invocations, expansion, relocation };
+  return { line, cands, invocations, expansion, relocation, gitEnv };
 }
 
 // git subcommands that move HEAD or make a commit. They must be split out
@@ -717,7 +785,9 @@ const HEAD_MOVERS = [
   'revert', 'am', 'bisect',
 ];
 
-// `fetch` and `branch -f` do not move HEAD, so they only matter next to a
+// `fetch` does not move HEAD but rewrites the remote-tracking ref a later
+// `git merge origin/<x>` reads, and a newline does not change that, so it is
+// judged over the whole command too (#158). `branch -f` only matters next to a
 // gated operation on the SAME line.
 function moverName(inv, scope) {
   if (inv.gated) return null;
@@ -727,8 +797,8 @@ function moverName(inv, scope) {
     const first = inv.seg.words[inv.start];
     if (first === 'pop' || first === 'apply') return `stash ${first}`;
   }
-  if (scope !== 'line') return null;
   if (s === 'fetch') return 'fetch';
+  if (scope !== 'line') return null;
   if (s === 'branch' && inv.facts.forceFrom[inv.start]) return 'branch';
   return null;
 }
@@ -837,8 +907,9 @@ function isHardPushFlag(f) {
 
 // Rule 2, items 1-5: no ctx is touched, so these also block on a feature
 // branch (deliberate over-detection, see the header). `commandMover` is the
-// whole command's HEAD mover, computed once by the caller.
-function staticRules(a, commandMover, deferCommit = false) {
+// whole command's HEAD mover and `commandGitEnv` whether a `GIT_*` assignment
+// appears anywhere in it, both computed once by the caller.
+function staticRules(a, commandMover, deferCommit = false, commandGitEnv = false) {
   if (a.cands.length === 0) return null;
   for (const c of a.cands) {
     if (c.kind !== 'push') continue;
@@ -850,8 +921,8 @@ function staticRules(a, commandMover, deferCommit = false) {
   if (mover && !deferCommit) {
     return deny('2', `Split this into separate commands: git ${mover} and a gated push/merge in one call are not allowed.`);
   }
-  if (a.relocation) {
-    return deny('2', 'Run git from the target repository directory as a separate command (no -C/--git-dir/-c/GIT_*=/cd on the same line).');
+  if (a.relocation || commandGitEnv) {
+    return deny('2', 'Run git from the target repository directory as a separate command (no --git-dir/--work-tree/--namespace/-c/--config-env, and no GIT_* assignment anywhere in the command).');
   }
   if (a.expansion) {
     return deny('2', 'Write refs without shell expansion (no $, backtick, brace or %VAR% words).');
@@ -996,8 +1067,270 @@ function countInvocations(lines) {
   return n;
 }
 
+// --------------------------------------------------------------------------
+// Where each gated call runs (#158)
+// --------------------------------------------------------------------------
+// A `cd` on an earlier line, or `-C <path>` / `-C<path>` on the call itself,
+// changes the repository a gated call writes to. The whole command is walked
+// in execution order and every segment gets the EFFECTIVE DIRECTORY it runs
+// in, starting from the payload cwd: `null` (not moved), a resolved
+// `{ logical, physical }` pair, or UNRESOLVED. The candidate is then judged in
+// that directory's repository (see `locateCandidates`).
+//
+// A move is RESOLVED only when all of this holds; anything else makes the
+// location UNRESOLVED from that point on (sticky), and a gated call there
+// blocks:
+//   - the move word is the segment's FIRST word: `cd`, `chdir`, `pushd`,
+//     `popd`, `cd..`, or PowerShell's `Set-Location` / `sl` / `Push-Location`
+//     / `Pop-Location` (case-insensitive; `-Path` / `-LiteralPath` accepted).
+//     A move word anywhere else (`builtin cd x`, `if cd x`, `then cd x`) is
+//     a move the walk cannot place;
+//   - it runs unconditionally in this shell: not inside `( … )` or a command
+//     substitution, not after `&&` / `||`, not in a pipeline, not sent to
+//     the background with `&`;
+//   - it has exactly one argument, with no expansion character, not `-`,
+//     `+N` or `~…`, naming a directory that exists now (so the `cd` will
+//     succeed and the next line's position is certain), and the shell's
+//     logical reading of `..` agrees with the physical one (a symlink makes
+//     them differ). An MSYS spelling such as `/c/Users/…` is read as a path
+//     on the current drive, does not exist there, and stays unresolved;
+//   - with CDPATH set (in the hook's environment, or assigned anywhere in
+//     the command) the target starts with `/`, `./` or `../`, because bash
+//     searches CDPATH first for any other name;
+//   - `popd` / `Pop-Location` has something to pop.
+// A command that has both a move and a compound construct (`if`, a loop,
+// `case`, `{ … }`, a function definition, PowerShell's `foreach` / `switch`
+// / `try`) is UNRESOLVED throughout: a loop or a function body runs its
+// lines in an order the text does not show, so `f() { git push …; }` + `cd x`
+// + `f` would otherwise be judged in the wrong directory.
+// git's `-C` is resolved on the physical path only, because git chdir()s.
+// Only the filesystem is read here (existence and real path), never git.
+const UNRESOLVED = Object.freeze({ unresolved: true });
+const MAX_MOVES = 64; // More moves than this in one command: UNRESOLVED.
+const MOVE_WORDS = new Map([
+  ['cd', 'cd'], ['chdir', 'cd'], ['sl', 'cd'], ['set-location', 'cd'],
+  ['pushd', 'push'], ['push-location', 'push'],
+  ['popd', 'pop'], ['pop-location', 'pop'],
+]);
+// Module-qualified PowerShell spellings (`Microsoft.PowerShell.Management\Set-Location`)
+// reach the tokenizer with the `\` eaten, so the long names match as suffixes.
+const PS_MOVE_SUFFIXES = [['set-location', 'cd'], ['push-location', 'push'], ['pop-location', 'pop']];
+const PS_PATH_PARAMS = new Set(['-path', '-literalpath']);
+const COMPOUND_WORDS = new Set([
+  'if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac',
+  'select', 'function', 'foreach', 'switch', 'try', 'catch', 'finally', 'trap',
+]);
+// The separators a resolved move may sit between: the start of the command or
+// of a line, `;`, or after a backgrounded command; and before it ends, `;`,
+// `&&` or `||` (the `cd` itself always runs).
+const MOVE_BEFORE = new Set(['', ';', '&']);
+const MOVE_AFTER = new Set(['', ';', '&&', '||']);
+const CDPATH_RE = /^(\$\{?env:)?CDPATH(=|\}?$)/i;
+
+function moveKind(word) {
+  const lw = word.toLowerCase();
+  if (lw === 'cd..') return 'up';
+  if (MOVE_WORDS.has(lw)) return MOVE_WORDS.get(lw);
+  for (const [suffix, kind] of PS_MOVE_SUFFIXES) if (lw.endsWith(suffix)) return kind;
+  return null;
+}
+
+// The move a segment makes: null (none), `{ plain: false }` (one the walk
+// cannot place), or `{ plain: true, kind, arg }`.
+function moveOf(seg) {
+  const at = seg.words.findIndex((w) => moveKind(w) !== null);
+  if (at === -1) return null;
+  if (at !== 0 || seg.nested || !MOVE_BEFORE.has(seg.before) || !MOVE_AFTER.has(seg.after)) {
+    return { plain: false };
+  }
+  const kind = moveKind(seg.words[0]);
+  let args = seg.words.slice(1);
+  let expand = seg.expand.slice(1);
+  if (kind === 'up') return args.length === 0 ? { plain: true, kind: 'cd', arg: '..' } : { plain: false };
+  if (kind === 'pop') return args.length === 0 ? { plain: true, kind } : { plain: false };
+  if (args.length === 2 && PS_PATH_PARAMS.has(args[0].toLowerCase())) {
+    args = args.slice(1);
+    expand = expand.slice(1);
+  }
+  if (args.length !== 1 || expand[0] || !readableDir(args[0])) return { plain: false };
+  return { plain: true, kind, arg: args[0] };
+}
+
+const readableDir = (p) => p !== '' && p !== '-' && !/^[~+]/.test(p) && !/^-/.test(p);
+
+function isCompound(seg) {
+  if (COMPOUND_WORDS.has(seg.words[0].toLowerCase())) return true;
+  if (seg.after.includes('()')) return true; // `name() { … }`
+  return seg.words.some((w) => w === '{' || w === '}');
+}
+
+// Follow `arg` from `from` the way the kernel does: component by component,
+// each one resolved to its real path, `..` taken from the real parent.
+const PATH_SEPARATORS = process.platform === 'win32' ? /[\\/]+/ : /\/+/;
+function physicalWalk(from, arg) {
+  let cur = from;
+  let rest = arg;
+  if (path.isAbsolute(arg)) {
+    const root = path.parse(arg).root;
+    cur = fs.realpathSync.native(path.resolve(root));
+    rest = arg.slice(root.length);
+  }
+  for (const comp of rest.split(PATH_SEPARATORS)) {
+    if (comp === '' || comp === '.') continue;
+    if (comp === '..') {
+      cur = path.dirname(cur);
+      continue;
+    }
+    cur = fs.realpathSync.native(path.join(cur, comp));
+    if (!fs.statSync(cur).isDirectory()) return null;
+  }
+  return fs.statSync(cur).isDirectory() ? cur : null;
+}
+
+// One move from a resolved location, or null when it cannot be resolved.
+// `logical` is the shell's `cd`; git's `-C` passes false (physical only).
+function changeDir(from, arg, logical) {
+  try {
+    const physical = physicalWalk(from.physical, arg);
+    if (physical === null) return null;
+    if (!logical) return { logical: physical, physical };
+    const lg = path.resolve(from.logical, arg);
+    if (fs.realpathSync.native(lg) !== physical) return null;
+    return { logical: lg, physical };
+  } catch {
+    return null;
+  }
+}
+
+function originOf(ctx) {
+  const cwd = ctx.cwd;
+  if (typeof cwd !== 'string' || cwd === '') return UNRESOLVED;
+  try {
+    const logical = path.resolve(cwd);
+    return { logical, physical: fs.realpathSync.native(logical) };
+  } catch {
+    return UNRESOLVED;
+  }
+}
+
+// The location every segment runs at, as a Map, plus the lazily resolved
+// origin. ctx is read (`ctx.cwd`) only once a move actually has to be placed.
+function resolveLocations(lines, ctx) {
+  const segs = [];
+  for (const line of lines) for (const seg of line.segments) segs.push(seg);
+  // With CDPATH set - in the hook's environment or anywhere in the command -
+  // bash looks a bare `cd sub` up in CDPATH before the current directory, so
+  // only `/…`, `./…` and `../…` targets can be placed.
+  const cdpath = Boolean(process.env.CDPATH)
+    || segs.some((seg) => seg.words.some((w) => CDPATH_RE.test(w)));
+  const moves = segs.map((seg) => {
+    const mv = moveOf(seg);
+    if (cdpath && mv && mv.plain && mv.arg !== undefined && mv.kind !== 'pop'
+      && !path.isAbsolute(mv.arg) && !/^\.\.?([\\/]|$)/.test(mv.arg)) {
+      return { plain: false };
+    }
+    return mv;
+  });
+  const moveCount = moves.filter(Boolean).length;
+  let origin;
+  const start = () => {
+    if (origin === undefined) origin = originOf(ctx);
+    return origin;
+  };
+  const at = new Map();
+  let here = moveCount > MAX_MOVES || (moveCount > 0 && segs.some(isCompound)) ? UNRESOLVED : null;
+  const stack = [];
+  segs.forEach((seg, i) => {
+    at.set(seg, here);
+    const mv = moves[i];
+    if (!mv || here === UNRESOLVED) return;
+    if (!mv.plain) {
+      here = UNRESOLVED;
+      return;
+    }
+    if (mv.kind === 'pop') {
+      here = stack.length > 0 ? stack.pop() : UNRESOLVED;
+      return;
+    }
+    const from = here || start();
+    const next = from === UNRESOLVED ? null : changeDir(from, mv.arg, true);
+    if (next === null) {
+      here = UNRESOLVED;
+      return;
+    }
+    if (mv.kind === 'push') stack.push(here);
+    here = next;
+  });
+  return { at, origin: start };
+}
+
+// The candidate's effective directory: its segment's location, then each
+// `-C` of the call in order.
+function candidateLocation(cand, locs) {
+  const seg = cand.inv ? cand.inv.seg : cand.seg;
+  let here = locs.at.get(seg) ?? null;
+  for (const c of cand.inv ? cand.inv.chdirs : []) {
+    if (here === UNRESOLVED) return UNRESOLVED;
+    if (c.expand || !readableDir(c.path)) return UNRESOLVED;
+    const from = here || locs.origin();
+    if (from === UNRESOLVED) return UNRESOLVED;
+    here = changeDir(from, c.path, false);
+    if (here === null) return UNRESOLVED;
+  }
+  return here;
+}
+
+const UNRESOLVED_MOVE = 'Run git from the target repository directory as a separate command: a cd/pushd/Set-Location/-C target that cannot be resolved statically may not precede a gated push/merge.';
+const NOT_A_WORK_TREE = 'The directory this push/merge would run in is not inside a git work tree. Run git from the target repository directory as a separate command.';
+const MULTI_REPO = 'Run gated operations for one repository per command: split the push/merge for each repository into its own command.';
+
+// A verdict decided somewhere other than the payload cwd's repository must not
+// ride rule 5's "cwd is not a git work tree" fail-open, which is about the
+// payload cwd alone. Non-enumerable, so the verdict's shape does not change.
+function elsewhere(verdict) {
+  Object.defineProperty(verdict, 'elsewhere', { value: true });
+  return verdict;
+}
+
+// The ctx each candidate line is judged with, or a block. Every candidate line
+// holds exactly one candidate here (rule 2 already blocked more than one).
+function locateCandidates(lines, candLines, ctx) {
+  const locs = resolveLocations(lines, ctx);
+  const placed = [];
+  const repos = new Set();
+  for (const a of candLines) {
+    const loc = candidateLocation(a.cands[0], locs);
+    if (loc === null) {
+      placed.push({ a, ctx, moved: false });
+      repos.add('');
+      continue;
+    }
+    if (loc === UNRESOLVED) return elsewhere(deny('2', UNRESOLVED_MOVE));
+    const origin = locs.origin();
+    if (origin !== UNRESOLVED && origin.physical === loc.physical) {
+      placed.push({ a, ctx, moved: false });
+      repos.add('');
+      continue;
+    }
+    const there = typeof ctx.at === 'function' ? ctx.at(loc.physical) : null;
+    const top = there ? there.toplevel : null;
+    if (!top) return elsewhere(deny('2', there ? NOT_A_WORK_TREE : UNRESOLVED_MOVE));
+    if (top === ctx.toplevel) {
+      placed.push({ a, ctx, moved: false }); // Same toplevel: judged as if unmoved.
+      repos.add('');
+    } else {
+      placed.push({ a, ctx: there, moved: true });
+      repos.add(top);
+    }
+  }
+  if (repos.size > 1) return elsewhere(deny('2', MULTI_REPO));
+  return placed;
+}
+
 // Pure classifier: it only READS `ctx`, through lazy getters, and a command
-// with no rule-1 candidate never touches it at all.
+// with no rule-1 candidate never touches it at all. Beyond ctx it reads the
+// filesystem - existence and real paths - to place a `cd` / `-C` target, and
+// only when such a move precedes a candidate (see `resolveLocations`).
 //
 // ctx contract - every getter answers for the repository the session is in:
 //   branch        current branch name, or null/'' when there is none (detached
@@ -1012,6 +1345,13 @@ function countInvocations(lines) {
 //   diffSinceBase `{ files, overrideChanged }` for `origin/main...HEAD`, or
 //                 null on failure. An absent base ref is an EMPTY diff (no
 //                 exemption), not null.
+//   cwd           the payload cwd (absolute path) - where the location walk
+//                 starts. Missing: every move is UNRESOLVED.
+//   toplevel      real path of the work tree root, or null when there is none
+//                 or git failed.
+//   at(dir)       a ctx of this same shape for another directory (a real
+//                 path), used when a `cd` / `-C` lands outside this toplevel.
+//                 Read only for a candidate that a move placed elsewhere.
 // Only `flag` uses null to mean "nothing there"; for every other getter null
 // means the repository state could not be resolved, and rule 5 blocks. WHICH
 // git call failed is recorded on `ctx.state` by the getters themselves, never
@@ -1051,15 +1391,19 @@ function classify(command, ctx) {
   // The HEAD movers are judged over the whole command, so this answer is the
   // same for every line: compute it once.
   const commandMover = moverOf(all, 'command');
+  const commandGitEnv = analyzed.some((a) => a.gitEnv);
   const deferCommit = commandMover === 'commit' && isPlainCommitPush(text, analyzed);
   for (const a of analyzed) {
-    const verdict = staticRules(a, commandMover, deferCommit);
+    const verdict = staticRules(a, commandMover, deferCommit, commandGitEnv);
     if (verdict) return verdict;
   }
-  for (const a of analyzed) {
-    if (a.cands.length === 0) continue;
-    const verdict = contextRules(a, ctx, deferCommit);
-    if (verdict.decision === 'block') return verdict;
+  const candLines = analyzed.filter((a) => a.cands.length > 0);
+  if (candLines.length === 0) return allow();
+  const placed = locateCandidates(lines, candLines, ctx);
+  if (!Array.isArray(placed)) return placed;
+  for (const p of placed) {
+    const verdict = contextRules(p.a, p.ctx, deferCommit);
+    if (verdict.decision === 'block') return p.moved ? elsewhere(verdict) : verdict;
   }
   return allow();
 }
@@ -1154,6 +1498,23 @@ function makeCtx(cwd) {
 
   return {
     state,
+    cwd,
+    get toplevel() {
+      return once('toplevel', () => {
+        const top = root();
+        if (top === null) return null;
+        try {
+          return fs.realpathSync.native(top);
+        } catch {
+          return fail('git-error');
+        }
+      });
+    },
+    // A fresh ctx for another directory: its own git calls, its own state.
+    // Rule 5's fail-open reads only the payload ctx's state, never this one.
+    at(dir) {
+      return makeCtx(dir);
+    },
     get branch() {
       return once('branch', () => {
         const r = git(['branch', '--show-current']);
@@ -1266,8 +1627,9 @@ function main() {
       verdict = gateWordFallback(command, UNCLASSIFIABLE);
     }
     if (verdict.decision !== 'block') return;
-    if (ctx.state.failure === 'not-a-repo') {
-      // Rule 5, fail-open #2.
+    if (ctx.state.failure === 'not-a-repo' && !verdict.elsewhere) {
+      // Rule 5, fail-open #2 - for the payload cwd only: a block decided in
+      // the directory a `cd` / `-C` moved to stands (#158).
       process.stderr.write('quality-gate: not inside a git repository; skipping\n');
       return;
     }
