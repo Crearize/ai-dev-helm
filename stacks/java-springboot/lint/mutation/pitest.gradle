@@ -15,7 +15,9 @@
 
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 
 pitest {
     // Pin the PIT core version. junit5PluginVersion 1.2.1 (below) requires PIT
@@ -190,6 +192,10 @@ if (mutationDiffRequested) {
         // so a build directory that itself sits under a link (macOS /var ->
         // /private/var) is not mistaken for "outside". Junction detection
         // does not rely on Files.isSymbolicLink (false for a junction).
+        // Residual window, outside the threat model: between (1) and (2)
+        // another local process with write access to reportDir could swap
+        // an entry for a link. Such a process can already delete those files
+        // itself; (2) only deletes the entries (1) enumerated, one at a time.
         doLast {
             def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
             def caseInsensitive = osName.contains('win') || osName.contains('mac')
@@ -205,7 +211,12 @@ if (mutationDiffRequested) {
                     for (int i = 0; i < relative.nameCount; i++) {
                         def name = relative.getName(i).toString()
                         lexical = lexical.resolve(name)
-                        if (!Files.exists(lexical, LinkOption.NOFOLLOW_LINKS)) return true
+                        try {
+                            Files.readAttributes(lexical, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
+                        } catch (NoSuchFileException ignored) {
+                            return true // absent from here on: nothing below can redirect
+                        }
+                        // any other failure (permissions) falls to the catch below: outside
                         def next = lexical.toRealPath()
                         if (next.parent == null || !sameName(next.parent.toString(), real.toString()) || !sameName(next.fileName.toString(), name)) {
                             return false
@@ -218,11 +229,15 @@ if (mutationDiffRequested) {
                 }
             }
             def report = reportDirFile.toPath()
-            if (!Files.exists(report, LinkOption.NOFOLLOW_LINKS)) {
-                return
+            try {
+                Files.readAttributes(report, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
+            } catch (NoSuchFileException ignored) {
+                return // no previous report
+            } catch (IOException e) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) cannot be inspected - nothing was deleted: ${e}", e)
             }
             if (!contained(buildDirFile.toPath(), report)) {
-                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) resolves outside the build directory (${buildDirFile}) through a link or junction - nothing was deleted. Keep build/ and build/reports real directories.")
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) resolves outside the build directory (${buildDirFile}) through a link or junction - nothing was deleted. The directories between the build directory and reportDir (build/reports) must be real directories, not links.")
             }
             def outside = []
             def doomed = []

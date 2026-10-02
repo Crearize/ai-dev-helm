@@ -485,7 +485,18 @@ export function isContained(root, target) {
 // mis-set path, or one squatting on the cache) is left alone, and so is a
 // link - neither followed nor unlinked. Returns 'removed', 'absent' or
 // 'refused' (with the reason on stderr); a file that cannot be unlinked (a
-// lock) is 'refused' too, since it is still there.
+// lock) is 'refused' too, since it is still there. A path outside cwd that
+// does not exist is 'absent' (a read-only lstat; there is nothing to
+// delete), so a linked reports/ without a stale report is not an error -
+// 'absent' never means "safe to write here": a writer checks containment
+// itself (prepareDiffIncremental).
+//
+// Residual window, outside the threat model: between the checks and the
+// unlink, another local process with write access to the tree could swap a
+// component for a link. Such a process can already delete those files
+// itself; this file only ever unlinks the fixed names it manages (one file
+// at a time, never a tree), so the window cannot widen into a recursive
+// delete elsewhere.
 export function removeManagedFile(cwd, rel) {
   const root = path.resolve(cwd);
   const abs = path.resolve(root, rel);
@@ -494,6 +505,11 @@ export function removeManagedFile(cwd, rel) {
     return 'refused';
   };
   if (abs === root || !isContained(root, path.dirname(abs))) {
+    try {
+      if (abs !== root && lstatOrNull(abs) === null) return 'absent';
+    } catch {
+      // unreadable: treated as present
+    }
     return refuse(`it is outside ${root} (link or junction)`);
   }
   let stat;
@@ -535,7 +551,17 @@ function removeStaleReport(baseConfig, cwd) {
     );
     return false;
   }
-  if (lstatOrNull(abs)?.isDirectory()) {
+  let isDirectory;
+  try {
+    isDirectory = lstatOrNull(abs)?.isDirectory() === true;
+  } catch (err) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] jsonReporter.fileName (${fileName}) cannot be inspected - not removing it: ${err.message}\n`
+    );
+    return false;
+  }
+  if (isDirectory) {
     fs.writeSync(
       2,
       `[mutation:diff] jsonReporter.fileName (${fileName}) is a directory, not a report file - not removing it. ` +
@@ -648,7 +674,12 @@ function prepareDiffIncremental(cwd, scope) {
     if (!isContained(root, dir)) return disable(`${dir} is outside ${root} (link or junction)`);
   }
   for (const file of [cachePath, sidecarPath]) {
-    const stat = lstatOrNull(file);
+    let stat;
+    try {
+      stat = lstatOrNull(file);
+    } catch (err) {
+      return disable(`${file} cannot be inspected: ${err.message}`);
+    }
     if (stat !== null && (stat.isSymbolicLink() || !stat.isFile())) {
       return disable(
         `${file} is ${stat.isSymbolicLink() ? 'a link or junction' : 'not a regular file'} - ` +
@@ -676,24 +707,36 @@ function prepareDiffIncremental(cwd, scope) {
   } else {
     fs.writeSync(2, `[mutation:diff] incremental: starting the diff cache (${DIFF_INCREMENTAL_FILE})\n`);
   }
-  fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
+  try {
+    fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
+  } catch (err) {
+    return disable(`the scope sidecar's directory could not be created: ${err.message}`);
+  }
+  // 'absent' below is safe to write over only because containment of this
+  // directory was checked first, above.
   // Replace, never write through: the old sidecar is unlinked, and the new
   // one is created exclusively ('wx' fails on anything - a link included -
   // that appeared in its place meanwhile).
   if (removeManagedFile(root, DIFF_SCOPE_FILE) === 'refused') {
     return disable(`the scope sidecar (${DIFF_SCOPE_FILE}) could not be replaced`);
   }
-  fs.writeFileSync(
-    sidecarPath,
-    `${JSON.stringify(
-      // baseRef is informational (diagnostics); only mergeBase and mutate
-      // take part in the reuse decision.
-      { version: SIDECAR_VERSION, baseRef: scope.baseRef, mergeBase: scope.mergeBase, mutate: scope.entries },
-      null,
-      2
-    )}\n`,
-    { flag: 'wx' }
-  );
+  try {
+    fs.writeFileSync(
+      sidecarPath,
+      `${JSON.stringify(
+        // baseRef is informational (diagnostics); only mergeBase and mutate
+        // take part in the reuse decision.
+        { version: SIDECAR_VERSION, baseRef: scope.baseRef, mergeBase: scope.mergeBase, mutate: scope.entries },
+        null,
+        2
+      )}\n`,
+      { flag: 'wx' }
+    );
+  } catch (err) {
+    // EEXIST (something appeared in its place), or a Windows delete still
+    // pending on the old sidecar: no sidecar, so no cache this run.
+    return disable(`the scope sidecar (${DIFF_SCOPE_FILE}) could not be written: ${err.message}`);
+  }
   return true;
 }
 

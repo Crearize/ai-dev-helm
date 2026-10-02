@@ -31,12 +31,16 @@
 // - Files whose paths contain glob-magic characters (Next.js [id] segments)
 //   fall back to whole-file scope; all other files are scoped per line.
 // - `incremental` stays off by default and never touches the full run's
-//   cache (`incrementalFile` always names the diff-only cache).
+//   cache (`incrementalFile` names the diff-only cache; when that cache is
+//   refused - #159: its directory resolves outside the run directory, or a
+//   link or directory sits in its place - the config carries
+//   `incremental: false` and no `incrementalFile` at all).
 //   MUTATION_INCREMENTAL=1 opts in for re-measurement; the cache is reused
 //   only while the scope still covers the previous run against the same
 //   merge base and is discarded first otherwise - Stryker would keep the
 //   stale out-of-scope mutants in this run's report. A cache that cannot be
-//   removed disables the cache for that run instead.
+//   removed disables the cache for that run instead. Deletes never recurse
+//   and never follow a link (see changed-ranges.mjs, isContained).
 //
 // A product that extends the base config (jest runner, a re-enabled mutator)
 // keeps this file untouched and wraps its own config the same way:
