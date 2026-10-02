@@ -13,6 +13,12 @@
 //
 // Requires Gradle 7.5+ (providers.exec).
 
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
+
 pitest {
     // Pin the PIT core version. junit5PluginVersion 1.2.1 (below) requires PIT
     // core 1.16 or newer; the gradle-pitest-plugin's older default core (1.15.0)
@@ -98,7 +104,9 @@ pitest {
 //   place for quality-check to read as this run's result. A dependency, not
 //   a doFirst, so it still runs on the empty scope - a disabled task skips
 //   its own actions, its dependencies do not. The task refuses a reportDir
-//   outside the module's build directory (it deletes recursively). Stryker's
+//   outside the module's build directory, and one reached through - or
+//   holding - a junction or symlink (#159: checked on real paths, nothing
+//   deleted on refusal). Stryker's
 //   twin only removes its report on the EMPTY scope: Stryker always rewrites
 //   the report on a non-empty scope, PIT does not (no mutants = no XML).
 def mutationDiffRequested = gradle.startParameter.taskNames.any {
@@ -145,24 +153,117 @@ if (mutationDiffRequested) {
         [fqcn, fqcn + '$*']
     }
     pitest.failWhenNoMutations = false
-    def mutationDiffCleanReport = tasks.register('mutationDiffCleanReport', Delete) {
+    def mutationDiffCleanReport = tasks.register('mutationDiffCleanReport') {
         group = 'verification'
         description = 'Removes the previous PIT report so a diff run that produces no mutants cannot pass it off as its own.'
-        // The directory is deleted recursively and a product can point
-        // reportDir anywhere, so refuse anything outside this module's build
-        // directory (the plugin default is build/reports/pitest).
+        // The directory is deleted with everything in it and a product can
+        // point reportDir anywhere, so refuse anything outside this module's
+        // build directory (the plugin default is build/reports/pitest).
+        // This lexical check fails early, at configuration; the real-path
+        // checks below run when the task executes.
         def reportDirValue = pitest.reportDir.getOrNull()
         if (reportDirValue == null) {
-            throw new org.gradle.api.GradleException('[mutationDiff] pitest.reportDir is not set - keep the plugin default (build/reports/pitest) or point it at a PIT-specific directory under build/')
+            throw new GradleException('[mutationDiff] pitest.reportDir is not set - keep the plugin default (build/reports/pitest) or point it at a PIT-specific directory under build/')
         }
         def reportPath = reportDirValue.asFile.toPath().toAbsolutePath().normalize()
         def buildPath = layout.buildDirectory.get().asFile.toPath().toAbsolutePath().normalize()
         // Strictly below build/ and not build/reports itself: those hold
         // other tools' output too.
         if (!reportPath.startsWith(buildPath) || reportPath == buildPath || reportPath == buildPath.resolve('reports')) {
-            throw new org.gradle.api.GradleException("[mutationDiff] pitest.reportDir (${reportPath}) is not a PIT-specific directory under the build directory (${buildPath}) - the diff run deletes it before every run; keep it below build/ and apart from build/reports itself (plugin default: build/reports/pitest)")
+            throw new GradleException("[mutationDiff] pitest.reportDir (${reportPath}) is not a PIT-specific directory under the build directory (${buildPath}) - the diff run deletes it before every run; keep it below build/ and apart from build/reports itself (plugin default: build/reports/pitest)")
         }
-        delete pitest.reportDir
+        // Plain files only from here on: the action must not reach project
+        // state (configuration cache).
+        def reportDirFile = reportPath.toFile()
+        def buildDirFile = buildPath.toFile()
+        // #159: no Gradle Delete. It gives no guarantee to treat a Windows
+        // junction as a link, so a junction INSIDE reportDir could carry the
+        // recursive delete outside, and a junction ABOVE it (build/reports ->
+        // elsewhere) passes the lexical check above. Two phases instead:
+        // (1) inspect - reportDir must lie inside buildDir on REAL paths, and
+        //     so must every entry below it inside reportDir; one entry that
+        //     resolves elsewhere (a junction or symlink) stops the task with
+        //     NOTHING deleted, naming the entry. Links are never unlinked
+        //     either, so no JVM's junction-delete semantics are relied on.
+        // (2) delete - only when (1) passed, deepest first, Files.delete.
+        // Containment walks the path RELATIVE to the root one component at a
+        // time from realpath(root): each existing component must resolve to
+        // its real parent plus the same name. Never a whole-path comparison,
+        // so a build directory that itself sits under a link (macOS /var ->
+        // /private/var) is not mistaken for "outside". Junction detection
+        // does not rely on Files.isSymbolicLink (false for a junction).
+        // Residual window, outside the threat model: between (1) and (2)
+        // another local process with write access to reportDir could swap
+        // an entry for a link. Such a process can already delete those files
+        // itself; (2) only deletes the entries (1) enumerated, one at a time.
+        doLast {
+            def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+            def caseInsensitive = osName.contains('win') || osName.contains('mac')
+            def sameName = { String a, String b -> caseInsensitive ? a.equalsIgnoreCase(b) : a == b }
+            def contained = { Path root, Path target ->
+                try {
+                    def lexicalRoot = root.toAbsolutePath().normalize()
+                    def relative = lexicalRoot.relativize(target.toAbsolutePath().normalize())
+                    if (relative.toString().isEmpty()) return true
+                    if (relative.getName(0).toString() == '..') return false
+                    def real = lexicalRoot.toRealPath()
+                    def lexical = lexicalRoot
+                    for (int i = 0; i < relative.nameCount; i++) {
+                        def name = relative.getName(i).toString()
+                        lexical = lexical.resolve(name)
+                        try {
+                            Files.readAttributes(lexical, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
+                        } catch (NoSuchFileException ignored) {
+                            return true // absent from here on: nothing below can redirect
+                        }
+                        // any other failure (permissions) falls to the catch below: outside
+                        def next = lexical.toRealPath()
+                        if (next.parent == null || !sameName(next.parent.toString(), real.toString()) || !sameName(next.fileName.toString(), name)) {
+                            return false
+                        }
+                        real = next
+                    }
+                    return true
+                } catch (Exception ignored) {
+                    return false // unresolvable (a dangling link included): outside
+                }
+            }
+            def report = reportDirFile.toPath()
+            try {
+                Files.readAttributes(report, BasicFileAttributes, LinkOption.NOFOLLOW_LINKS)
+            } catch (NoSuchFileException ignored) {
+                return // no previous report
+            } catch (IOException e) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) cannot be inspected - nothing was deleted: ${e}", e)
+            }
+            if (!contained(buildDirFile.toPath(), report)) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) resolves outside the build directory (${buildDirFile}) through a link or junction - nothing was deleted. The directories between the build directory and reportDir (build/reports) must be real directories, not links.")
+            }
+            def outside = []
+            def doomed = []
+            def inspect
+            inspect = { Path dir ->
+                def entries = Files.list(dir).withCloseable { it.collect(java.util.stream.Collectors.toList()) }
+                entries.each { Path entry ->
+                    if (!contained(report, entry)) {
+                        outside << entry
+                        return
+                    }
+                    if (Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) {
+                        inspect(entry)
+                    }
+                    doomed << entry
+                }
+            }
+            if (Files.isDirectory(report, LinkOption.NOFOLLOW_LINKS)) {
+                inspect(report)
+            }
+            if (!outside.isEmpty()) {
+                throw new GradleException("[mutationDiff] pitest.reportDir (${report}) contains entries that resolve outside it (a junction or symbolic link): ${outside.join(', ')} - nothing was deleted. Remove them by hand and re-run.")
+            }
+            doomed.each { Files.delete(it) }
+            Files.delete(report)
+        }
     }
     tasks.named('pitest').configure { dependsOn(mutationDiffCleanReport) }
     if (changedClasses.isEmpty()) {

@@ -51,6 +51,12 @@
 //   otherwise it is discarded first. The sidecar is developer-editable and
 //   gitignored, so anything this file would not have written itself counts
 //   as "no provenance" and discards the cache too.
+// - Deletes and writes never leave the run directory (#159): no recursive
+//   delete exists, a link or directory in a managed file's place is refused
+//   (never followed or unlinked), and containment is judged on real paths
+//   walked component by component from the real cwd (isContained), so a
+//   junction or symlink on the way stops the clean-up while a cwd that itself
+//   sits under a link (macOS /var) does not.
 //
 // API boundary: `withChangedLines` (the config wrapper - a PRE-RUN HOOK with
 // side effects: it may delete the stale report and the diff cache, writes
@@ -438,30 +444,135 @@ export function scopeCovers(current, previous) {
   return true;
 }
 
-// Best-effort removal that REPORTS its outcome: a locked file must not turn
-// a clean-up into a crash, but the caller has to know the file is still
-// there (an empty-scope exit with a stale report left behind would be read
-// as a genuine result). `recursive` is opted into only for the two paths
-// this file OWNS (the diff cache and its sidecar), so a directory squatting
-// on them goes too; a symlink is removed as the link, never followed.
-function rmBestEffort(absPath, { recursive = false } = {}) {
+// --- containment (#159) -------------------------------------------------------
+//
+// Every delete and every write this file performs must land inside the
+// directory the run started from, judged on REAL paths: a junction (Windows)
+// or symlink anywhere on the way would otherwise carry a delete or the
+// sidecar write outside. The check never compares a whole real path with a
+// whole lexical one - a cwd that itself sits under a link (macOS /var ->
+// /private/var) would then look "outside" in a perfectly normal layout.
+// Instead it starts from realpath(root) and walks the path RELATIVE to root
+// one component at a time: each existing component's real path must be its
+// real parent joined with the same name. A component that resolves anywhere
+// else (a link or junction - Node's lstat reports both as links, but the walk
+// does not rely on that) is outside. The first absent component ends the
+// walk: nothing below it exists yet, so nothing below it can redirect.
+
+const CASE_INSENSITIVE_FS = process.platform === 'win32' || process.platform === 'darwin';
+
+function samePath(a, b) {
+  if (!CASE_INSENSITIVE_FS) return a === b;
+  // macOS may hand back a name in another Unicode normalization form.
+  const fold = (p) => (process.platform === 'darwin' ? p.normalize('NFC') : p).toLowerCase();
+  return fold(a) === fold(b);
+}
+
+// realpath with the OS resolver (follows junctions on Windows), falling back
+// to Node's own walk where the native call is unsupported. Throws ENOENT for
+// a missing (or dangling) path.
+function realpathOf(abs) {
   try {
-    fs.rmSync(absPath, { force: true, recursive });
-    return true;
+    return fs.realpathSync.native(abs);
   } catch (err) {
-    fs.writeSync(2, `[mutation:diff] warning: could not remove ${absPath}: ${err.message}\n`);
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') throw err;
+    return fs.realpathSync(abs);
+  }
+}
+
+function lstatOrNull(abs) {
+  try {
+    return fs.lstatSync(abs);
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+    throw err;
+  }
+}
+
+// True when `target` (absolute, or relative to `root`) is `root` itself or
+// lies below it on real paths, per the walk described above. Any error while
+// resolving counts as outside (fail-closed).
+export function isContained(root, target) {
+  try {
+    const lexicalRoot = path.resolve(root);
+    const relative = path.relative(lexicalRoot, path.resolve(lexicalRoot, target));
+    if (relative === '') return true;
+    if (path.isAbsolute(relative) || relative.split(path.sep)[0] === '..') return false;
+    let real = realpathOf(lexicalRoot);
+    let lexical = lexicalRoot;
+    for (const name of relative.split(path.sep)) {
+      lexical = path.join(lexical, name);
+      if (lstatOrNull(lexical) === null) return true;
+      // Exists but does not resolve (a dangling link): a write would follow
+      // it to wherever it points.
+      const next = realpathOf(lexical);
+      if (!samePath(next, path.join(real, name))) return false;
+      real = next;
+    }
+    return true;
+  } catch {
     return false;
+  }
+}
+
+// Removes ONE regular file this file manages, and nothing else. No recursive
+// delete exists in this file any more: a directory in the file's place (a
+// mis-set path, or one squatting on the cache) is left alone, and so is a
+// link - neither followed nor unlinked. Returns 'removed', 'absent' or
+// 'refused' (with the reason on stderr); a file that cannot be unlinked (a
+// lock) is 'refused' too, since it is still there. A path outside cwd that
+// does not exist is 'absent' (a read-only lstat; there is nothing to
+// delete), so a linked reports/ without a stale report is not an error -
+// 'absent' never means "safe to write here": a writer checks containment
+// itself (prepareDiffIncremental).
+//
+// Residual window, outside the threat model: between the checks and the
+// unlink, another local process with write access to the tree could swap a
+// component for a link. Such a process can already delete those files
+// itself; this file only ever unlinks the fixed names it manages (one file
+// at a time, never a tree), so the window cannot widen into a recursive
+// delete elsewhere.
+export function removeManagedFile(cwd, rel) {
+  const root = path.resolve(cwd);
+  const abs = path.resolve(root, rel);
+  const refuse = (why) => {
+    fs.writeSync(2, `[mutation:diff] warning: not removing ${abs}: ${why}\n`);
+    return 'refused';
+  };
+  if (abs === root || !isContained(root, path.dirname(abs))) {
+    try {
+      if (abs !== root && lstatOrNull(abs) === null) return 'absent';
+    } catch {
+      // unreadable: treated as present
+    }
+    return refuse(`it is outside ${root} (link or junction)`);
+  }
+  let stat;
+  try {
+    stat = lstatOrNull(abs);
+  } catch (err) {
+    return refuse(err.message);
+  }
+  if (stat === null) return 'absent';
+  if (stat.isSymbolicLink()) return refuse('it is a link or junction - not following or removing it');
+  if (!stat.isFile()) return refuse('it is not a regular file');
+  try {
+    fs.unlinkSync(abs);
+    return 'removed';
+  } catch (err) {
+    if (err.code === 'ENOENT') return 'absent';
+    return refuse(err.message);
   }
 }
 
 // A stale json report from a previous run must not survive an empty-scope
 // exit - quality-check would read yesterday's mutants as today's. The path
-// is PRODUCT-owned config (jsonReporter.fileName), unlike the cache
-// constants: it is never removed recursively, never when it is a directory
-// (a mis-set 'reports' must not take the tree with it - the same hazard
-// pitest.gradle refuses for reportDir), and never outside the directory the
-// run started from. Each refusal returns false so the empty-scope path
-// exits 1 instead of claiming an empty scope.
+// is PRODUCT-owned config (jsonReporter.fileName): it is never removed when
+// it is a directory (a mis-set 'reports' must not take the tree with it -
+// the same hazard pitest.gradle refuses for reportDir) or a link, and never
+// outside the directory the run started from - lexically, and on real paths
+// (a junction on the way). Each refusal returns false so the empty-scope
+// path exits 1 instead of claiming an empty scope.
 function removeStaleReport(baseConfig, cwd) {
   const fileName = baseConfig.jsonReporter?.fileName;
   if (!fileName) return true;
@@ -475,14 +586,17 @@ function removeStaleReport(baseConfig, cwd) {
     );
     return false;
   }
-  let stat = null;
+  let isDirectory;
   try {
-    stat = fs.lstatSync(abs);
-  } catch {
-    // absent: nothing stale to remove
-    return true;
+    isDirectory = lstatOrNull(abs)?.isDirectory() === true;
+  } catch (err) {
+    fs.writeSync(
+      2,
+      `[mutation:diff] jsonReporter.fileName (${fileName}) cannot be inspected - not removing it: ${err.message}\n`
+    );
+    return false;
   }
-  if (stat.isDirectory()) {
+  if (isDirectory) {
     fs.writeSync(
       2,
       `[mutation:diff] jsonReporter.fileName (${fileName}) is a directory, not a report file - not removing it. ` +
@@ -490,13 +604,14 @@ function removeStaleReport(baseConfig, cwd) {
     );
     return false;
   }
-  return rmBestEffort(abs);
+  return removeManagedFile(root, relative) !== 'refused';
 }
 
+// Both files, so neither is left behind by an early return. True when both
+// are gone.
 function resetDiffCache(cwd) {
-  const cacheGone = rmBestEffort(path.resolve(cwd, DIFF_INCREMENTAL_FILE), { recursive: true });
-  const sidecarGone = rmBestEffort(path.resolve(cwd, DIFF_SCOPE_FILE), { recursive: true });
-  return cacheGone && sidecarGone;
+  const results = [DIFF_INCREMENTAL_FILE, DIFF_SCOPE_FILE].map((rel) => removeManagedFile(cwd, rel));
+  return results.every((result) => result !== 'refused');
 }
 
 // Sidecar format. Bump the version whenever the meaning of a field changes:
@@ -573,9 +688,40 @@ function cacheIsReadable(absPath) {
 // has to be discarded but could not be removed stays on disk, and Stryker
 // would read it as this run's - so that case returns false (a cache-less
 // run, said so on stderr) rather than "starting the diff cache".
+//
+// Containment comes FIRST (#159), before the reuse decision: the reuse
+// branch deletes nothing, so a refusal inside the delete helper alone would
+// never fire there, and Stryker would read and write a cache through a
+// junction. The cache and sidecar directory must lie inside cwd on real
+// paths (an absent part is checked up to its nearest existing ancestor), and
+// the two files themselves must be regular files or absent - never a link
+// or a directory. Otherwise the run is cache-less: no mkdir, no sidecar, and
+// withChangedLines hands Stryker no cache path at all.
 function prepareDiffIncremental(cwd, scope) {
-  const cachePath = path.resolve(cwd, DIFF_INCREMENTAL_FILE);
-  const sidecarPath = path.resolve(cwd, DIFF_SCOPE_FILE);
+  const root = path.resolve(cwd);
+  const cachePath = path.resolve(root, DIFF_INCREMENTAL_FILE);
+  const sidecarPath = path.resolve(root, DIFF_SCOPE_FILE);
+  const disable = (why) => {
+    fs.writeSync(2, `[mutation:diff] incremental: disabled for this run - ${why}\n`);
+    return false;
+  };
+  for (const dir of new Set([path.dirname(cachePath), path.dirname(sidecarPath)])) {
+    if (!isContained(root, dir)) return disable(`${dir} is outside ${root} (link or junction)`);
+  }
+  for (const file of [cachePath, sidecarPath]) {
+    let stat;
+    try {
+      stat = lstatOrNull(file);
+    } catch (err) {
+      return disable(`${file} cannot be inspected: ${err.message}`);
+    }
+    if (stat !== null && (stat.isSymbolicLink() || !stat.isFile())) {
+      return disable(
+        `${file} is ${stat.isSymbolicLink() ? 'a link or junction' : 'not a regular file'} - ` +
+          'it is left alone; remove it and re-run with MUTATION_INCREMENTAL=1 to start a new cache'
+      );
+    }
+  }
   const previous = cacheIsReadable(cachePath) ? readScopeSidecar(sidecarPath) : null;
   const reusable =
     previous !== null &&
@@ -596,20 +742,36 @@ function prepareDiffIncremental(cwd, scope) {
   } else {
     fs.writeSync(2, `[mutation:diff] incremental: starting the diff cache (${DIFF_INCREMENTAL_FILE})\n`);
   }
-  fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
-  // Replace, never write through: a symlink in the sidecar's place must not
-  // redirect the write.
-  rmBestEffort(sidecarPath, { recursive: true });
-  fs.writeFileSync(
-    sidecarPath,
-    `${JSON.stringify(
-      // baseRef is informational (diagnostics); only mergeBase and mutate
-      // take part in the reuse decision.
-      { version: SIDECAR_VERSION, baseRef: scope.baseRef, mergeBase: scope.mergeBase, mutate: scope.entries },
-      null,
-      2
-    )}\n`
-  );
+  try {
+    fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
+  } catch (err) {
+    return disable(`the scope sidecar's directory could not be created: ${err.message}`);
+  }
+  // 'absent' below is safe to write over only because containment of this
+  // directory was checked first, above.
+  // Replace, never write through: the old sidecar is unlinked, and the new
+  // one is created exclusively ('wx' fails on anything - a link included -
+  // that appeared in its place meanwhile).
+  if (removeManagedFile(root, DIFF_SCOPE_FILE) === 'refused') {
+    return disable(`the scope sidecar (${DIFF_SCOPE_FILE}) could not be replaced`);
+  }
+  try {
+    fs.writeFileSync(
+      sidecarPath,
+      `${JSON.stringify(
+        // baseRef is informational (diagnostics); only mergeBase and mutate
+        // take part in the reuse decision.
+        { version: SIDECAR_VERSION, baseRef: scope.baseRef, mergeBase: scope.mergeBase, mutate: scope.entries },
+        null,
+        2
+      )}\n`,
+      { flag: 'wx' }
+    );
+  } catch (err) {
+    // EEXIST (something appeared in its place), or a Windows delete still
+    // pending on the old sidecar: no sidecar, so no cache this run.
+    return disable(`the scope sidecar (${DIFF_SCOPE_FILE}) could not be written: ${err.message}`);
+  }
   return true;
 }
 
@@ -626,9 +788,12 @@ function prepareDiffIncremental(cwd, scope) {
 //
 // `incremental` (default: MUTATION_INCREMENTAL, see incrementalRequested;
 // only the boolean `true` opts in when passed explicitly) enables the
-// diff-only cache; `incrementalFile` always names that cache so the full
-// run's cache is never read or written from here - a product's own
-// `incrementalFile` is deliberately ignored for the diff run.
+// diff-only cache; `incrementalFile` names that cache so the full run's
+// cache is never read or written from here - a product's own
+// `incrementalFile` is deliberately ignored for the diff run. When the cache
+// was requested but refused (#159: its directory resolves outside cwd, a
+// link or directory sits in its place, or a stale cache would not go), the
+// result carries `incremental: false` and no `incrementalFile` at all.
 //
 // `cwd` must be the directory Stryker runs from: the ranges are relative to
 // it and the cache paths are resolved against it here, but against Stryker's
@@ -664,11 +829,17 @@ export function withChangedLines(
     process.exit(0);
   }
   fs.writeSync(2, `[mutation:diff] base ${ref}: ${scope.entries.length} changed range(s) in scope\n`);
-  const useCache = incremental === true && prepareDiffIncremental(cwd, scope);
+  if (incremental === true && !prepareDiffIncremental(cwd, scope)) {
+    // Refused (outside cwd, a link, a stale cache that would not go): no
+    // cache path at all, so Stryker cannot read or write one through the
+    // refused location - the product's own incrementalFile included.
+    const { incrementalFile: _productCache, ...rest } = baseConfig;
+    return { ...rest, mutate: scope.entries, incremental: false };
+  }
   return {
     ...baseConfig,
     mutate: scope.entries,
-    incremental: useCache,
+    incremental: incremental === true,
     incrementalFile: DIFF_INCREMENTAL_FILE,
   };
 }
