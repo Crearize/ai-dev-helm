@@ -4,14 +4,14 @@ A quick-reference checklist for AI tools when working on development tasks.
 
 ## Before Starting Work (AI auto-executes)
 
-- [ ] Create GitHub Issue with `gh issue create`
-- [ ] Get Issue number
+- [ ] Create GitHub Issue with `gh issue create` (in projects that use Issues)
+- [ ] Get Issue number (in projects that use Issues)
 - [ ] Create branch: `git checkout -b [type]/[description]-[issue-number]`
 
 ## Before Starting (Required)
 
 - [ ] Branch confirmed (not on main)
-- [ ] Issue number obtained
+- [ ] Issue number obtained (in projects that use Issues)
 - [ ] Branch created with correct naming
 
 ## During Implementation (Important)

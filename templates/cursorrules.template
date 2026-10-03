@@ -79,7 +79,7 @@ When the execution shell is PowerShell (default on Windows), bash idioms fail. F
 4. **No `/dev/null`** - redirect with `2>$null` or pipe to `Out-Null`
 5. **Quote paths containing spaces** and prefer `Join-Path` for path construction
 6. **Complex one-liners break easily** (quoting, `?:` operator is PowerShell 7+ only) - write a temporary script file and execute it instead
-7. More Windows shell rules (Git Bash path conversion, `taskkill`, encodings): `documents/development/windows-shell.md`
+More Windows shell rules (Git Bash path conversion, `taskkill`, encodings): `documents/development/windows-shell.md`
 
 ## Phase Design Workflow
 
