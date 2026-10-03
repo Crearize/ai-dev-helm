@@ -35,6 +35,9 @@
     ],
     "allow": []
   },
+  "env": {
+    "SUPERPOWERS_DISABLE_TELEMETRY": "1"
+  },
   "hooks": {
     "PreToolUse": [
       {

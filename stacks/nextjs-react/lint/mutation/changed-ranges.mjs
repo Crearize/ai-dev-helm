@@ -815,6 +815,10 @@ export function withChangedLines(
   const scope = deriveScope({ cwd, baseRef: ref, mutate: baseConfig.mutate });
   if (scope.entries.length === 0) {
     const reportGone = removeStaleReport(baseConfig, cwd);
+    // The html report is for humans (quality-check reads json), but a stale
+    // one would show yesterday's mutants as today's. Best effort: a refusal
+    // only warns (removeManagedFile prints it).
+    removeManagedFile(cwd, baseConfig.htmlReporter?.fileName ?? 'reports/mutation/mutation.html');
     resetDiffCache(cwd);
     if (!reportGone) {
       fs.writeSync(
