@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **lint:** catch fully-qualified SuppressWarnings ([#171](https://github.com/Crearize/ai-dev-helm/issues/171)) ([11fdfa8](https://github.com/Crearize/ai-dev-helm/commit/11fdfa81235e85010842d1f8c9eb8b16116ef834)), closes [#160](https://github.com/Crearize/ai-dev-helm/issues/160)
 * **mutation:** confine deletes to real paths without following links ([#172](https://github.com/Crearize/ai-dev-helm/issues/172)) ([8c413e7](https://github.com/Crearize/ai-dev-helm/commit/8c413e7d3066e4383f7157d6ed6fb3ef29c122e2)), closes [#159](https://github.com/Crearize/ai-dev-helm/issues/159)
 * **mutation:** delete PIT reports all-or-nothing and match directories exactly ([#174](https://github.com/Crearize/ai-dev-helm/issues/174)) ([1b00afe](https://github.com/Crearize/ai-dev-helm/commit/1b00afee559325aac0d43a4a81f141c705418b24)), closes [#159](https://github.com/Crearize/ai-dev-helm/issues/159)
 * **quality-gate:** judge gated commands in the repository they run in ([#173](https://github.com/Crearize/ai-dev-helm/issues/173)) ([0a94e22](https://github.com/Crearize/ai-dev-helm/commit/0a94e22bb46d8ef22512fc938406eb8748061072)), closes [#158](https://github.com/Crearize/ai-dev-helm/issues/158)
