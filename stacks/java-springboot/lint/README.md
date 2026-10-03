@@ -135,15 +135,15 @@ lint/
 
 ```groovy
 plugins {
-    id 'info.solidsoft.pitest' version '1.15.0'
+    id 'info.solidsoft.pitest' version '1.19.0'
 }
 
 apply from: 'lint/mutation/pitest.gradle'
 ```
 
-The `1.15.0` here is the **gradle-pitest-plugin** version (the Gradle integration), not the PIT core. It is independent of the PIT core version, which `pitest.gradle` pins explicitly to `1.25.9` via `pitestVersion` so the JUnit 5 companion (`junit5PluginVersion = '1.2.3'`) stays compatible regardless of the plugin version the product resolves. Use whatever recent gradle-pitest-plugin version you like here; the core stays pinned by the snippet.
+The `1.19.0` here is the **gradle-pitest-plugin** version (the Gradle integration), not the PIT core. It is independent of the PIT core version, which `pitest.gradle` pins explicitly to `1.25.9` via `pitestVersion` so the JUnit 5 companion (`junit5PluginVersion = '1.2.3'`) stays compatible regardless of the plugin version the product resolves. **Gradle 9 requires plugin 1.19.0 or later** (1.15.0 fails on Gradle 9.2 because `ReportingExtension.baseDir` was removed); Java 25 needs Gradle 9.1 or later. The core stays pinned by the snippet.
 
-2. Do **not** edit the copied `lint/mutation/pitest.gradle`. Set the product's base package in `gradle.properties` instead: `mutationBasePackage=com.example.product`. The snippet reads it into `targetClasses` (the product's production classes) and stops the build with a message if it is unset. Because the snippet stays unedited, re-running `init` (which overwrites `lint/`) cannot revert the scope.
+2. Do **not** edit the copied `lint/mutation/pitest.gradle`. Set the product's base package in `gradle.properties` instead: `mutationBasePackage=com.example.product`. The snippet reads it into `targetClasses` (the product's production classes) and stops the build with a message only when a mutation task (`pitest`, `mutationFull`, `mutationDiff`) is requested without it; other tasks (`test`, `build`, `bootRun`) are unaffected. **Migration:** add `mutationBasePackage` to `gradle.properties` before re-running `init` on a product that applies the snippet. Because the snippet stays unedited, re-running `init` (which overwrites `lint/`) cannot revert the scope.
 
    Java versions: PIT core 1.25.9 + `pitest-junit5-plugin` 1.2.3 read Java 25 class files (major 69) and were run on Java 25 in a real Spring Boot project. The earlier pin (1.16.1 / 1.2.1) failed on Java 25 with `Unsupported class file major version 69`. Earlier Java versions are not re-verified with this pin; if one fails, override `pitestVersion` / `junit5PluginVersion` in the product's own `pitest { }` block after the `apply from`.
 

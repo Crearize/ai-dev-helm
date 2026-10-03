@@ -18,7 +18,7 @@
 //
 // Behavior notes (see changed-ranges.mjs for the mechanics):
 // - Empty scope (docs-only or test-only diffs, or changes only in excluded
-//   paths): the stale json report and the diff cache are removed,
+//   paths): the stale json AND html reports and the diff cache are removed,
 //   "[mutation:diff] empty scope" is printed and the process exits 0 before
 //   Stryker starts; quality-check records `mutation.reason: "empty_scope"`.
 //   If the stale report could NOT be removed the process exits 1 instead

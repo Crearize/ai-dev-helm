@@ -21,7 +21,15 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 
 def mutationBasePackage = project.findProperty('mutationBasePackage')?.toString()?.trim()
-if (!mutationBasePackage) {
+// Only a requested mutation task needs the property. Throwing for every build
+// would break test/build/bootRun/checkstyle in products that apply this script
+// (e.g. from `subprojects { }`) before they have set it. Task names are part of
+// Gradle's configuration-cache key, same approach as mutationDiffRequested below.
+def mutationTaskRequested = gradle.startParameter.taskNames.any {
+    def n = it.tokenize(':').last()
+    n == 'pitest' || n == 'mutationFull' || n == 'mutationDiff'
+}
+if (!mutationBasePackage && mutationTaskRequested) {
     throw new GradleException('mutationBasePackage is not set - add mutationBasePackage=<base package, e.g. com.example.product> to gradle.properties (or pass -PmutationBasePackage=...)')
 }
 
@@ -49,7 +57,9 @@ pitest {
     // README). The snippet is never edited in place, so re-running init cannot
     // silently revert the scope. Full-scope by default; the mutationDiff entry
     // point below narrows this to the changed classes.
-    targetClasses = ["${mutationBasePackage}.*".toString()]
+    if (mutationBasePackage) {
+        targetClasses = ["${mutationBasePackage}.*".toString()]
+    }
 
     // Behaviour-changing mutators only: Conditionals Boundary, Negate
     // Conditionals, Math, Increments, Invert Negatives, Void Method Calls and
