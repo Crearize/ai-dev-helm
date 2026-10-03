@@ -15,4 +15,4 @@ Investigate failures instead of merely stopping at the first failed command. Esc
 
 Complete the project's independent quality-check once for the final change, using its review budget and required verification. Do not add per-task reviews or another final code reviewer. Integrate according to existing authorization and project branch policy; use finishing-a-development-branch when integration guidance is needed.
 
-If the review limit is reached and the user approves exceeding it, run `review-budget extend` yourself (`node .claude/hooks/review-budget.cjs extend --phase <phase> --rounds <1-3> --reason "<the user's approval, quoted>"`); never ask the user to run commands, inspect state, or reset state.
+If the review limit is reached and the user approves exceeding it, run `extend` yourself with the same review-budget script used in step 1 of the quality-check reservation (`.claude/hooks/…`, `.codex/hooks/…`, or `ai-dev-helm review-budget`): `extend --phase <phase> --rounds <1-3> --reason "<the user's approval, quoted>"`; never ask the user to run commands, inspect state, or reset state.

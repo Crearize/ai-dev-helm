@@ -48,7 +48,7 @@ Explore existing context first and batch the questions that are still needed int
 
 **Design gate (required before any implementation code)** - when the design is complete:
 
-1. Reserve and request one independent design review: `node .claude/hooks/review-budget.cjs begin --phase design --roles document-reviewer` (or `npx @crearize/ai-dev-helm review-budget begin` with the same arguments when no hook is installed), a reviewer named `document-reviewer`, the design-review model from `documents/development/harness-runtime.md`.
+1. Reserve and request one independent design review: `node .claude/hooks/review-budget.cjs begin --phase design --roles document-reviewer` (`ai-dev-helm review-budget begin` with the same arguments runs the same script from the project root), a reviewer named `document-reviewer`, the design-review model from `documents/development/harness-runtime.md`.
 2. Send the user one message with the design, the review findings and how each was resolved.
 3. Stop until the user explicitly approves. A request to implement is not approval of a design that did not exist yet.
 
