@@ -4,19 +4,27 @@
 // PreToolUse hook: forbid direct push / merge into main (or master) unless a
 // quality check passed. That single sentence is the whole requirement.
 //
-// THREAT MODEL: this gate stops ACCIDENTAL, good-faith operations from reaching
-// main. Work always starts from an issue and a branch, and a push or merge that
-// does get through is recoverable with a revert, so the gate is insurance and
-// not a boundary. Deliberate evasion - spelling a gate word with shell
-// expansion or an encoding, going through a wrapper script, running git
-// indirectly - is OUT OF SCOPE by design (see "Nothing here can see through"
-// below).
+// THREAT MODEL: the gate stops an AI agent's ORDINARY mistakes - a push or
+// merge into main without the quality check, a push run in the wrong
+// repository, the local main pushed from a feature branch. Work always starts
+// from an issue and a branch, and a push that does get through is recoverable
+// with a revert, so the gate is insurance, not a boundary. A command built on
+// purpose so that the gate cannot read it is OUT OF SCOPE, and nothing here
+// defends against one. Out of scope, among others:
+//   - spelling: a gate word or `powershell` written with expansions, escapes,
+//     brace expansion, encodings or Unicode lookalikes;
+//   - indirection: a script or `-File`, `eval` / `Invoke-Expression`, another
+//     language's inline code, a variable, `xargs`, a function;
+//   - git without the words: `git send-pack`, a mistyped command that
+//     `help.autocorrect` runs, an existing git or shell alias;
+//   - other GitHub APIs: `gh api` calls other than `pulls/<n>/merge` (ref
+//     updates, `graphql`), `gh repo sync`, another repository's PR;
+//   - build steps: a push inside an npm script, a Gradle task and the like;
+//   - configuration: `remote.<name>.push`, `push.default = matching`;
+//   - timing: a directory or link that changes after this check.
 //
 // HOW A COMMAND IS READ (#158). The same text may run under a POSIX shell (Git
-// Bash on Windows) or under PowerShell, and the two read quoting, escapes,
-// paths and directory changes differently. Reading arbitrary shell both ways
-// kept leaving spellings the two disagreed on, and each disagreement was a
-// false allow. So the hook reads an ALLOWLISTED form instead:
+// Bash on Windows) or under PowerShell, so the hook reads an ALLOWLISTED form:
 //   1. A command with no gate word - `push`, `pull`, `merge` or `rebase` as a
 //      whole word, looked for in the raw text and again with `"` `'` `\`
 //      backtick `^` `$` removed and line continuations folded (`gateWordIn`) -
@@ -24,8 +32,7 @@
 //      words are all inside a literal message value (`maskMessages`).
 //   2. A command WITH a gate word is judged only when it is SIMPLE
 //      (`parseSimple` / `checkSegment`). Anything else is refused with
-//      guidance: run the push/merge as its own simple command. A false refusal
-//      costs the agent a rerun; a false allow is a hole.
+//      guidance: run the push/merge as its own simple command.
 //   3. A simple command is judged on its merits: candidates (rule 1), rule 2,
 //      the directory each candidate runs in, then that repository's flag.
 //
@@ -35,18 +42,18 @@
 //     single- or double-quoted string is a whole word (or follows `name=`), is
 //     not empty (Windows PowerShell drops an empty argument), and holds only
 //     those characters, `, ; &`, and non-ASCII letters, digits and CJK
-//     punctuation. So no backslash (no escapes, no line continuations; a
-//     Windows path is written with `/`), `$`, backtick, `|`, `<`, `>`,
-//     parentheses, braces, brackets, `#`, `*`, `?`, `!`, `^`, nested quotes,
-//     CR or NUL anywhere, and no unquoted `,` (an array in PowerShell).
-//     Output plumbing at the very end of the whole command, in the exact
-//     spellings of `stripTrailingOutput`, is dropped first.
+//     punctuation. So no backslash (a Windows path is written with `/`), `$`,
+//     backtick, `|`, `<`, `>`, parentheses, braces, brackets, `#`, `*`, `?`,
+//     `!`, `^`, nested quotes, a lone CR or NUL, and no unquoted `,` (an array
+//     in PowerShell). A CRLF line end is read as LF. Output plumbing at the
+//     very end of the whole command (`stripTrailingOutput`) is dropped first.
 //   - Segments are split on newline, `;` and `&&` only (`||`, `|` and a single
 //     `&` are not simple). `&&` at the end of a line continues on the next.
-//   - Each segment starts with an unquoted command word from a closed list,
-//     case-insensitive: `git`, `gh`, a location change (`cd`, `pushd`, `popd`,
-//     `chdir`, `sl`, `Set-Location`, `Push-Location`, `Pop-Location`), or a
-//     build/test runner (RUNNERS). No `NAME=value` prefix.
+//   - Each segment starts with an unquoted command word from a closed list:
+//     `git`, `gh`, a build/test runner (RUNNERS), case-insensitive, or a
+//     location change spelled the way both shells run it - `cd`, `pushd`,
+//     `popd`, in lower case (`Set-Location`, `sl`, `chdir` move in PowerShell
+//     only). No `NAME=value` prefix.
 //   - `git`: global options are `-C <path>` (also attached, `-C<path>`) and
 //     `--no-pager` only - no `-c`, `--git-dir`, `--work-tree`, `--exec-path`,
 //     `--namespace`, `--super-prefix`, `--config-env` or anything else. The
@@ -54,20 +61,18 @@
 //     no option that makes git run a command string (`runsCommand`).
 //     `gh`: the subcommand is from GH_SUBCOMMANDS (no `alias`, no extension).
 //     A runner: no gate word in its arguments (`npx -c "git push"`).
-//     A location change: exactly one path (`-Path` / `-LiteralPath` may come
-//     first for the PowerShell spellings); `popd` / `Pop-Location` none.
+//     A location change: exactly one path; `popd` none.
 //   - In `git` / `gh` words: no unquoted single-dash option carrying anything
 //     but letters, digits, `_` and `-` (PowerShell splits `-o:main` into `-o:`
 //     and `main`), no word starting with `@` (splatting), no `--%`.
 //   - A path (`checkPath`) is relative, or absolute with `/` (`C:/…` on
 //     Windows); never a network path (`//host`), drive-relative (`C:x`),
 //     drive-less absolute on Windows, `~…`, `-…`, `+…`, or holding `%`. With
-//     CDPATH set in the hook's environment a POSIX `cd` / `pushd` target must
+//     CDPATH set in the hook's environment a `cd` / `pushd` target must
 //     start with `/`, `./` or `../`.
 //
 // Rule 1 (gated candidates): `gh pr merge` (any args); `gh api` with a
-//   `pulls/<n>/merge` word, case insensitive (a `?query` or `#fragment` after
-//   it would still merge, but neither is simple); `git merge` / `git pull` /
+//   `pulls/<n>/merge` word, case insensitive; `git merge` / `git pull` /
 //   `git rebase` (any args, except --abort/--continue/--quit/--skip) - gated
 //   only once ctx says the current branch is main/master; `git push` whose
 //   refspec DESTINATION is exactly `main`/`master` (after stripping `+` and
@@ -83,20 +88,19 @@
 //   ALWAYS REFUSED - gate word or not); a command with a gate word that is not
 //   simple; force/delete/`+refspec`/`--mirror`/`--all`/`--branches` pushes
 //   (short bundles such as `-fu` and long abbreviations such as `--forc`
-//   included); a git
-//   command from the mover set (commit, reset, checkout, switch, cherry-pick,
-//   rebase, revert, am, bisect, update-ref, stash pop|apply, fetch, and on the
-//   same line branch -f|-d|-D|--force) other than the gated call itself - the
-//   set is CLOSED, so status, add, log, diff, tag, remote, restore, ... may
-//   share the command; `%` or a leading `~` in a word of a line that holds a
-//   candidate, except the value of gh's free-text options (`-t`/`--subject`,
-//   `-b`/`--body`, `-F`/`--body-file` and their `=` spellings); a directory
-//   the location walk cannot resolve, one outside any git work tree, or
-//   candidates in two repositories (see "Where each gated call runs"); more
-//   than one gated operation on a line; a push that writes every matching
-//   branch; a trunk-bound refspec whose source is neither HEAD/`@` nor the
-//   current branch (`<x>:main`, and `main` / `refs/heads/main` alone, which
-//   push the LOCAL main, off main).
+//   included); a git command from the mover set (commit, reset, checkout,
+//   switch, cherry-pick, rebase, revert, am, bisect, update-ref, stash
+//   pop|apply, fetch, and on the same line branch -f|-d|-D|--force) other than
+//   the gated call itself - the set is CLOSED, so status, add, log, diff, tag,
+//   remote, restore, ... may share the command; `%` or a leading `~` in a word
+//   of a line that holds a candidate, except the value of gh's free-text
+//   options (`-t`/`--subject`, `-b`/`--body`, `-F`/`--body-file` and their `=`
+//   spellings); a directory the location walk cannot place, one outside any
+//   git work tree, or candidates in two repositories (see "Where each gated
+//   call runs"); more than one gated operation on a line; a push that writes
+//   every matching branch; a trunk-bound refspec whose source is neither
+//   HEAD/`@` nor the current branch (`<x>:main`, and `main` / `refs/heads/main`
+//   alone, which push the LOCAL main, off main).
 //   The movers that move HEAD or make a commit, and `fetch` (it rewrites the
 //   ref a later merge reads), are judged over the WHOLE command;
 //   `branch -f|-d|-D|--force` per line. The one fetch let through is the
@@ -104,9 +108,10 @@
 //   `git merge [--ff-only] origin/<trunk>` on that trunk - as the WHOLE command
 //   with nothing else in it (`isPlainTrunkSync`), and only while
 //   `origin/<trunk>` resolves to the remote-tracking ref; the same shape with
-//   `git rebase origin/<trunk>` lets the rebase be judged as usual. The one commit let through is a
-//   plain `git commit ... && git push [remote]` on a feature branch
-//   (`isPlainCommitPush`).
+//   `git rebase origin/<trunk>` lets the rebase be judged as usual. The one
+//   commit let through is on a feature branch: `git add` / `git commit` and
+//   then a push to the branch's own upstream (`git push [options] [remote]
+//   [HEAD]`) as the last command, and nothing else (`isPlainCommitPush`).
 // Rule 3 (pass): `.quality-check-passed` at the repo root with `commit` an
 //   abbreviated prefix of (or equal to) HEAD (`branch` is diagnostic only), or
 //   `commit` an ancestor of HEAD whose `commit..HEAD` diff is harness files
@@ -134,7 +139,10 @@
 //   reads git at all, so it stands too. Any other git failure or timeout on a
 //   command with a candidate blocks. Both fail-opens write their reason to
 //   stderr, so a hook that has stopped gating is visible rather than silent.
-// Rule 6 (output): `{"decision":"block","reason":...}` only; allow is silent.
+// Rule 6 (output): a block prints both the legacy `decision: "block"` with its
+//   `reason` and `hookSpecificOutput.permissionDecision: "deny"` with the same
+//   reason (`emitBlock`); an allow prints nothing. Every reason says what to
+//   run next.
 //
 // The budget: a command line over 64 KB is not parsed - it blocks when a gate
 // word is found (`gateWordIn`) or when the text with quotes removed carries an
@@ -153,89 +161,21 @@
 // NESTED SHELLS (H-52). `powershell` / `pwsh` / `cmd` / `bash` are not in the
 // closed list of command words, so a shell nested in the command string
 // (`powershell -Command "..."`, `pwsh -c '...'`, `cmd /c "..."`,
-// `bash -lc "..."`, nested two deep) is never simple: when a gate word is
-// visible anywhere in it, it is refused with the same guidance, whatever the
-// branch and the flag. That includes a push the flag would let through when
-// run directly - `powershell -Command "git push origin main"` with a flag on
-// HEAD is refused; run `git push origin main` itself. The nested text is not
-// unwrapped and classified.
+// `bash -lc "..."`) is never simple: when a gate word is visible anywhere in
+// it, it is refused with the same guidance, whatever the branch and the flag
+// (`powershell -Command "git push origin main"` with a flag on HEAD is
+// refused; run `git push origin main` itself).
 //
 // ALWAYS REFUSED (`alwaysDeny`, checked before the gate words, so with or
-// without one). A PowerShell script the gate cannot read - an encoded one, or
-// one PowerShell reads from its standard input. This is a TEXT RULE, not a
-// parse: where a word sits (which command, group, quoted string or script
-// handed to another shell) does not count. The whole command is read in lower
-// case as written, and again with line continuations (`\`, a backtick or `^`
-// right before a line break) folded away - each shell's alone and all three
-// together - so a name or a parameter split across lines is read whole, and
-// a character that is no continuation where the command runs (`a\` in
-// PowerShell or cmd, `a^` in PowerShell or a POSIX shell) does not glue the
-// next line to its word. Each is read with quote characters (ASCII and
-// U+2018-U+201E), a `$` right before one, backticks and carets removed,
-// twice: once with backslashes removed and once with them turned into `/`.
-// These readings are made again with shell expansions that may be empty
-// removed first (`${...}`, `$@`, `$*`, `$1`, `$name` and the like, and cmd's
-// `%name%`), so one placed inside a name or a parameter does not hide it; any
-// reading refuses, and each costs time linear in the text. A reading is cut
-// into tokens at blanks (CR, LF, tab and NBSP included) and at `| & ; < > ( ) { }`,
-// an input redirection (`<`, `0<`, `<<`, `<<<`, `<(`) and an output process
-// substitution (`>(`) kept as one token. A PowerShell token is one whose last
-// component (after `/`, `=` or `:`; for cmd's glued `/c` and `/k`, also
-// without that letter) is `powershell` or `pwsh`, alone or joined to more
-// with `-`, `_` or `.` (`pwsh-preview`, `powershell_ise`), with or without
-// `.exe`, or the Windows short name `powers~N`. With at least one PowerShell
-// token, the command is refused when
-//   - a token after the first one is an encoded-command parameter: one or two
-//     of `-`, `/`, U+2013-U+2015, then `ec` or any leading part of
-//     `encodedcommand` from `e`, optionally with `:<value>` (the spellings
-//     powershell.exe 5.1 and pwsh 7 accept, and a few more);
-//   - a token after the first one is a lone dash (`-Command -`, `-File -`,
-//     `powershell -`) or a parameter given `:-`, in a reading with the
-//     expansions kept (`-Name "$a-$b"` leaves a lone dash once they are
-//     removed);
-//   - a pipe (`|`, `|&`; `||` counted too) comes before the last one, across
-//     newlines, separators and groups, since its output may be the script;
-//   - an input redirection, an output process substitution or `coproc`
-//     appears anywhere.
-// The rule over-refuses on purpose - a miss is a hole, a refusal only costs a
-// rephrase: a search term or a message that mentions these PowerShell
-// spellings (`rg "pwsh|powershell"`, `git commit -m "... pwsh -enc ..."`), a
-// later `-e` that belongs to another program or to the script
-// (`pwsh -File build.ps1 -e prod`), a pipeline earlier in the same command
-// before a PowerShell script is run. Rerun such a command without the
-// PowerShell text, or split it into separate commands. Out of its reach (see
-// below): character-code escapes (`$'\x70wsh'`), brace expansion
-// (`pw{s..s}h`), `Start-Process -ArgumentList`, a PowerShell started on
-// another machine or container (`ssh`, `docker exec`), a script assembled
-// from variables or read from a file.
+// without one): a PowerShell script the gate cannot read. The text is read
+// once - in lower case, with quote characters and line continuations removed,
+// cut into words at blanks and at `; & | ( )` - and refused when a
+// `powershell` / `pwsh` word (any path, optional `.exe`) is followed in the
+// same command by an encoded-command parameter (`-e`, `-ec`, `-en` ...
+// `-encodedcommand`, also after `--` or `/`) or by `-command -` / `-c -` (a
+// script read from standard input). A message or a search term that mentions
+// such a parameter after the name is refused too; rerun it without them.
 //
-// Nothing here can see through, and none of these is treated as a gap:
-//   - a gate word spelled so that it is not in the text: `git $'\x70'ush`,
-//     `git pus{h..h}`, `gh pr me{r..r}ge`, a percent-encoded `gh api`
-//     endpoint;
-//   - a wrapper: a script, an npm script, a git or shell alias or a function
-//     defined in an earlier tool call (one defined in the same command is not
-//     simple), `xargs`, `env -S`;
-//   - indirect execution whose text holds no gate word, or holds it only in a
-//     form that is refused as not simple anyway - the contents are not read:
-//     PowerShell's `Invoke-Expression` / `iex`, `Start-Process`, a script
-//     block `& { ... }`, the contents of `-File <path>`; another language's
-//     inline code (`node -e`, `python -c`, `ruby -e`, `perl -e`, ...);
-//     `eval`, `source`, `. <file>`; `xargs`, `find -exec`; an alias or a
-//     function; a string kept in an environment variable and expanded later;
-//   - an encoded or stdin PowerShell script whose text the ALWAYS REFUSED
-//     rule does not see: `powershell` / `pwsh` or the parameter spelled with
-//     character-code escapes (`$'\x70wsh'`) or brace expansion
-//     (`pw{s..s}h`); `Start-Process -ArgumentList`; a PowerShell started on
-//     another machine or in a container (`ssh`, `docker exec`); a script
-//     assembled from variables or read from a file;
-//   - a refspec that lives in configuration: `remote.<name>.push`,
-//     `push.default = matching`, `branch.<n>.merge`;
-//   - other merge APIs: `gh api graphql` with `mergePullRequest`, `gh repo
-//     sync`, `git subtree push` into a trunk; another repository's PR through
-//     `gh -R`;
-//   - a directory that changes between this check and the command running
-//     (a symlink re-pointed by an earlier segment, a mapped network drive).
 // Trunk names are fixed to `main` / `master`; a product using another trunk
 // name is not gated here and relies on the `permissions.deny` layer and
 // convention. Every git call here goes through execFileSync with an argv
@@ -284,18 +224,14 @@ const PLAIN_CHAR_RE = /[A-Za-z0-9._/:@=+~%-]/;
 // shell treats specially inside quotes - no `$`, backtick, `\`, `!`, or the
 // typographic quotes PowerShell closes a string at.
 const QUOTED_CHAR_RE = /^[A-Za-z0-9._/:@=+~%\- \t\n,;&\p{L}\p{M}\p{N}\u3001-\u303f]$/u;
-const MAX_STATES = 16; // Readings of the location walk; more than this is unresolved.
 
 const RUNNERS = new Set(['npm', 'npx', 'pnpm', 'yarn', 'node', 'gradle', 'gradlew', './gradlew', 'mvn', './mvnw']);
-// A location change: what it does, and whether a POSIX shell runs it too. Bash
-// builtins are case-sensitive, so only the exact lower-case `cd` / `pushd` /
-// `popd` move there; every other spelling moves in PowerShell only.
-const MOVE_WORDS = new Map([
-  ['cd', 'cd'], ['chdir', 'cd'], ['sl', 'cd'], ['set-location', 'cd'],
-  ['pushd', 'push'], ['push-location', 'push'], ['popd', 'pop'], ['pop-location', 'pop'],
-]);
-const POSIX_MOVES = new Set(['cd', 'pushd', 'popd']);
-const PS_PATH_PARAMS = new Set(['-path', '-literalpath']);
+// A location change, in the exact lower-case spelling both shells run. Bash
+// builtins are case-sensitive, so every other spelling (`Set-Location`, `sl`,
+// `chdir`, `CD`, ...) moves in PowerShell only, and where the push would run
+// would depend on the shell: not simple.
+const MOVE_WORDS = new Map([['cd', 'cd'], ['pushd', 'push'], ['popd', 'pop']]);
+const PS_MOVE_RE = /^(cd|chdir|sl|set-location|pushd|push-location|popd|pop-location)$/i;
 // The git subcommands a gated command may hold. None of them runs a command
 // string given on the command line once `runsCommand` has had its say; an
 // alias or `config` (which can define one) is not here.
@@ -411,8 +347,8 @@ function parseSimple(text) {
   return lines;
 }
 
-// A path a location change or `-C` may name. Returns it, or refuses.
-function checkPath(p, posixMove) {
+// A path a location change (`move`) or `-C` may name. Returns it, or refuses.
+function checkPath(p, move) {
   if (/^[~+-]/.test(p) || p.includes('%')) notSimple(`the path \`${p}\``);
   if (p.startsWith('//')) notSimple('a network path');
   if (IS_WIN) {
@@ -422,7 +358,7 @@ function checkPath(p, posixMove) {
     notSimple(`the path \`${p}\``);
   }
   // bash looks a bare name up in CDPATH before the current directory.
-  if (posixMove && process.env.CDPATH && !CDPATH_SAFE_RE.test(p)) notSimple('a bare `cd` name while CDPATH is set');
+  if (move && process.env.CDPATH && !CDPATH_SAFE_RE.test(p)) notSimple(`a bare \`cd\` name while CDPATH is set - write \`cd ./${p}\``);
   return p;
 }
 
@@ -446,27 +382,27 @@ function checkSegment(seg) {
   if (seg.quoted[0]) notSimple('a quoted command word');
   if (words[0].includes('=')) notSimple('an environment assignment');
   for (let i = 0; i < words.length; i++) {
-    // PowerShell's stop-parsing token, quoted or not: the rest of the line
-    // is passed on verbatim, with `%VAR%` expanded and quotes left in.
+    // PowerShell's stop-parsing token. Unquoted, it passes the rest of the
+    // line on verbatim (quotes left in, `%VAR%` expanded); quoted, Windows
+    // PowerShell still honours it but parses the rest as usual and passes the
+    // arguments unquoted. Either way the words git gets are not these.
     if (words[i] === '--%') notSimple('`--%`');
     if (seg.quoted[i]) continue;
     if (words[i].length > 1 && words[i].startsWith('@')) notSimple(`\`${words[i]}\``);
   }
-  if (MOVE_WORDS.has(first)) {
-    const op = MOVE_WORDS.get(first);
-    const posix = POSIX_MOVES.has(words[0]);
+  if (MOVE_WORDS.has(words[0])) {
+    const op = MOVE_WORDS.get(words[0]);
     seg.kind = 'move';
     if (op === 'pop') {
       if (words.length !== 1) notSimple(`arguments to \`${words[0]}\``);
-      seg.move = { op, posix };
+      seg.move = { op };
       return;
     }
-    let at = 1;
-    if (!posix && words.length === 3 && PS_PATH_PARAMS.has(words[1].toLowerCase())) at = 2;
-    if (words.length !== at + 1) notSimple(`\`${words[0]}\` without exactly one path`);
-    seg.move = { op, posix, path: checkPath(words[at], posix) };
+    if (words.length !== 2) notSimple(`\`${words[0]}\` without exactly one path`);
+    seg.move = { op, path: checkPath(words[1], true) };
     return;
   }
+  if (PS_MOVE_RE.test(first)) notSimple(`\`${words[0]}\`, which moves in PowerShell only - write \`cd <path>\``);
   if (RUNNERS.has(first)) {
     seg.kind = 'run';
     if (words.slice(1).some((w) => GATE_WORD_RE.test(w))) notSimple(`a gate word in the arguments of \`${words[0]}\``);
@@ -887,25 +823,21 @@ function isPlainTrunkSync(text, lines) {
   return plainFetch(gitInvocation(fetchSeg, segmentFacts(fetchSeg))) !== null
     && syncTarget({ kind: 'git', inv: gitInvocation(mergeSeg, segmentFacts(mergeSeg)) }) !== null;
 }
-const FETCH_SPLIT = 'Split this into separate commands: git fetch and a gated push/merge in one call are not allowed.';
 
-// Recognize one intentionally small spelling: `git commit ... && git push
-// [remote]` on one line, nothing else. A preceding command can change the
-// branch or repository before the push, so the raw text constrains this
-// exception as well as the analyzed invocations.
-function isPlainCommitPush(text, analyzed) {
-  if (/[\r\n;]/.test(text)) return false;
-  const parts = text.trim().split('&&');
-  if (parts.length !== 2) return false;
-  if (!/^git[ \t]+commit(?:[ \t]|$)/.test(parts[0])) return false;
-  if (!/^[ \t]*git[ \t]+push(?:[ \t]+[A-Za-z0-9_./:@][A-Za-z0-9_./:@-]*)?[ \t]*$/.test(parts[1])) return false;
-  if (analyzed.length !== 1) return false;
-  const a = analyzed[0];
-  if (a.line.segments.length !== 2 || a.invocations.length !== 2 || a.cands.length !== 1) return false;
-  const [commit, push] = a.invocations;
-  return commit.sub === 'commit' && push.sub === 'push'
-    && commit.globals.length === 0 && push.globals.length === 0
-    && a.cands[0].kind === 'push' && a.cands[0].omittedRefspec;
+// The everyday commit and push on a feature branch: `git add` / `git commit`
+// segments, then ONE push that lands on the branch's own upstream (no
+// refspec, or a bare `HEAD`) as the last segment - joined by newlines, `;` or
+// `&&`, with no global option, location change or other command, so nothing
+// before the push can switch the branch or the repository. contextRules lets
+// it through only once ctx says the branch is not the trunk.
+const COMMIT_PUSH_SUBS = new Set(['add', 'commit']);
+function isPlainCommitPush(lines, analyzed) {
+  const segs = lines.flatMap((line) => line.segments);
+  const cands = analyzed.flatMap((a) => a.cands);
+  if (cands.length !== 1 || cands[0].kind !== 'push' || !cands[0].mainOnly) return false;
+  const push = cands[0].inv.seg;
+  return segs[segs.length - 1] === push && segs.every((seg) => seg.kind === 'git'
+    && seg.git.globals.length === 0 && (seg === push || COMMIT_PUSH_SUBS.has(seg.git.sub)));
 }
 
 // --------------------------------------------------------------------------
@@ -979,6 +911,19 @@ function controlReason(files) {
 
 const NEED_FLAG = 'Quality check not passed. Run the quality-check skill before merging into main.';
 const STALE = 'Code changed after the last quality check. Re-run the quality-check skill before merging into main.';
+const splitReason = (mover) => `Split this into separate commands: git ${mover} and a gated push/merge in one call are not allowed. Run the git ${mover} command first, then the push/merge on its own.`;
+// H-49: a harness-only diff that is not exempt only because of the override
+// strings says so, instead of reading like an ordinary code change.
+const overrideReason = (files) => `Quality Gate Overrides / mutation_budget_minutes changed in ${gateConfigFiles(files).join(', ')}: such a change is not harness-exempt. Run the quality-check skill before merging into main.`;
+const overrideOnly = (diff) => diff.overrideChanged && diff.files.every(isHarness);
+// H-49: a pull or merge on the trunk that is close to a sync form names the
+// exact forms that need no flag.
+function needFlagReason(a, branch) {
+  const c = a.cands[0];
+  if (c.kind !== 'git' || (c.sub !== 'pull' && c.sub !== 'merge') || !isMainBranch(branch)) return NEED_FLAG;
+  const trunk = String(branch).toLowerCase();
+  return `${NEED_FLAG} To sync ${trunk} without a flag, run exactly \`git pull\`, \`git pull origin ${trunk}\` or \`git merge origin/${trunk}\` (optionally with --ff-only) as the whole command.`;
+}
 
 // Rule 3's closed set of sync forms, parameterized by the trunk the session is
 // actually on: on `master`, `git pull origin master` and
@@ -1023,9 +968,7 @@ function staticRules(a, commandMover, deferCommit = false, deferFetch = null) {
     }
   }
   const mover = moverOf(a.invocations, 'line') || commandMover;
-  if (mover && !deferCommit && !(deferFetch && mover === 'fetch')) {
-    return deny('2', `Split this into separate commands: git ${mover} and a gated push/merge in one call are not allowed.`);
-  }
+  if (mover && !deferCommit && !(deferFetch && mover === 'fetch')) return deny('2', splitReason(mover));
   if (a.expansion) {
     return deny('2', 'Write refs without shell expansion (no %VAR% word and no word starting with ~).');
   }
@@ -1050,7 +993,7 @@ function reverseRefspec(gated, branch) {
       // `HEAD` and `@` both name the current branch, in any case spelling.
       if (UPSTREAM_REFS.has(src.toLowerCase())) continue;
       if (src.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '') === branch) continue;
-      return deny('2', `Push from the branch itself: ${src}:${dst} pushes a branch other than the current one; only HEAD or the current branch can be pushed to the trunk here. Check out that branch and push from it.`);
+      return deny('2', `Push from the branch itself: ${src}:${dst} pushes a branch other than the current one; only HEAD or the current branch can be pushed to the trunk here. Check out that branch and push from it, or push this branch with \`git push -u origin HEAD\`.`);
     }
   }
   return null;
@@ -1063,13 +1006,10 @@ function rule4Exempt(base, baseControl) {
     && !base.overrideChanged && baseControl.length === 0;
 }
 
-// Rule 3: the flag. `baseControl` is the control-plane hit list of the
-// origin/main diff, already computed for rule 4.
-function rule3Flag(ctx, baseControl) {
+// Rule 3: the flag. `noFlag` is the reason to give when there is none.
+function rule3Flag(ctx, noFlag) {
   const flag = ctx.flag;
-  if (!flag) {
-    return deny('3', baseControl.length > 0 ? controlReason(baseControl) : NEED_FLAG);
-  }
+  if (!flag) return deny('3', noFlag);
   const head = ctx.head;
   if (!head) {
     return deny('5', 'Cannot verify HEAD. Re-run the quality-check skill.');
@@ -1091,7 +1031,7 @@ function rule3Flag(ctx, baseControl) {
   const hits = controlHits(since.files);
   if (hits.length > 0) return deny('3', controlReason(hits));
   if (since.files.every(isHarness) && !since.overrideChanged) return allow();
-  return deny('3', STALE);
+  return deny('3', overrideOnly(since) ? overrideReason(since.files) : STALE);
 }
 
 // Everything that needs ctx. Always returns a decision.
@@ -1104,7 +1044,7 @@ function contextRules(a, ctx, deferCommit = false, deferFetch = null, sole = fal
   const gated = a.cands.filter((c) => !c.mainOnly || isMainBranch(branch));
   if (gated.length === 0) return allow();
   if (deferCommit) {
-    return deny('2', 'Split this into separate commands: git commit and a gated push/merge in one call are not allowed.');
+    return deny('2', splitReason('commit'));
   }
   if (deferFetch && deferFetch.sub === 'merge') {
     // The trunk sync after a plain fetch (see `plainFetch`): only on that trunk,
@@ -1116,7 +1056,7 @@ function contextRules(a, ctx, deferCommit = false, deferFetch = null, sole = fal
     const ok = isMainBranch(branch) && target !== null && target.trunk === trunk
       && deferFetch.trunks.every((t) => t === trunk)
       && typeof ctx.fullRef === 'function' && ctx.fullRef(target.source) === `refs/remotes/origin/${trunk}`;
-    return ok ? allow() : deny('2', FETCH_SPLIT);
+    return ok ? allow() : deny('2', splitReason('fetch'));
   }
   // A plain fetch and then `git rebase origin/<trunk>`: off the trunk it was
   // allowed above (a rebase is gated only on the trunk); on the trunk it is
@@ -1133,7 +1073,10 @@ function contextRules(a, ctx, deferCommit = false, deferFetch = null, sole = fal
   }
   const baseControl = controlHits(base.files);
   if (rule4Exempt(base, baseControl)) return allow();
-  return rule3Flag(ctx, baseControl);
+  let noFlag = needFlagReason(a, branch);
+  if (baseControl.length > 0) noFlag = controlReason(baseControl);
+  else if (overrideOnly(base)) noFlag = overrideReason(base.files);
+  return rule3Flag(ctx, noFlag);
 }
 
 // A command line the classifier will not read (over the byte budget, or a
@@ -1155,98 +1098,27 @@ function gateWordFallback(text, reason) {
 // --------------------------------------------------------------------------
 // Always refused: a PowerShell script the gate cannot read (H-52)
 // --------------------------------------------------------------------------
-// See ALWAYS REFUSED in the header. A text rule, read the same wherever the
-// words sit: nothing here parses the command.
-const UNREADABLE_PS = 'An encoded or stdin PowerShell script cannot be read by the quality gate, so it is refused whether or not it pushes or merges. Run the script as plain text instead. This check reads the command text only: if the command merely mentions PowerShell (a search term, a message) or pipes something earlier in the same command before running a PowerShell script, rerun it without the PowerShell text, or split it into separate commands.';
-// Removed before reading: a `$` right before a quote (`$'...'`), then quote
-// characters (ASCII and U+2018-U+201E), backticks and carets.
-const DOLLAR_QUOTE_RE = /\$(?=['"\u2018-\u201E])/g;
-const NOISE_RE = /['"\u2018-\u201E`^]/g;
-// A token: an input redirection (`<`, `0<`, `<<`, `<<<`, `<&`, `<(`), an
-// output process substitution (`>(`), one of `| & ; > ( ) { }`, or a run of
-// other characters up to a blank (`\s`: CR, LF, tab and NBSP included) or one
-// of those.
-const TOKEN_RE = /\d*<+[&(]?|>\(|[|&;>(){}]|[^\s|&;<>(){}]+/g;
-// Tokens through which a PowerShell may be given its input.
-const feedsInput = (token) => token.includes('<') || token === '>(' || token === 'coproc';
-// `powershell`, `pwsh`, `pwsh-preview`, `powershell_ise`, `pwsh-7.4`, with or
-// without `.exe`, and the Windows short name `powers~1.exe` (the text is
-// already in lower case).
-const PS_NAME_RE = /^(?:(?:powershell|pwsh)(?:[-_.][a-z0-9_.-]*)?|powers~[0-9]+)(?:\.exe)?$/;
-// A parameter: one or two of `-`, `/`, U+2013-U+2015, its name, `:value`.
-const PS_PARAM_RE = /^[-\/\u2013-\u2015]{1,2}([a-z]+)(?::.*)?$/;
-// A script read from standard input: a lone dash, or a parameter given `:-`.
-const PS_STDIN_RE = /^[-\u2013-\u2015]$|^[-\/\u2013-\u2015]{1,2}[a-z]+:[-\u2013-\u2015]$/;
-
-// The last component after `/`, `=` or `:` (a path, `NAME=pwsh`,
-// `-Shell:pwsh`); after `/`, also without a leading `c` or `k`, for cmd's
-// `/c` and `/k` glued to the command (`cmd /cpwsh`).
-function isPowerShellToken(token) {
-  const parts = token.split(/[/=:]/);
-  const last = parts[parts.length - 1];
-  return PS_NAME_RE.test(last) || (parts.length > 1 && /^[ck]/.test(last) && PS_NAME_RE.test(last.slice(1)));
-}
-
-// `ec`, or any leading part of `encodedcommand` from `e`.
-function isEncodedParam(token) {
-  const m = PS_PARAM_RE.exec(token);
-  return m !== null && (m[1] === 'ec' || 'encodedcommand'.startsWith(m[1]));
-}
-
-// One normalized reading of the command; `stdin`: whether a lone dash or a
-// parameter given `:-` counts in it.
-function unreadablePsIn(text, stdin) {
-  const tokens = text.match(TOKEN_RE) || [];
-  let first = -1;
-  let last = -1;
-  for (let i = 0; i < tokens.length; i++) {
-    if (!isPowerShellToken(tokens[i])) continue;
-    if (first === -1) first = i;
-    last = i;
-  }
-  if (first === -1) return false;
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (feedsInput(token)) return true; // Input redirected, anywhere.
-    if (token === '|' && i < last) return true; // Input may flow into a PowerShell.
-    if (i > first && ((stdin && PS_STDIN_RE.test(token)) || isEncodedParam(token))) return true;
-  }
-  return false;
-}
-
-// Line continuations - `\` (POSIX shell), a backtick (PowerShell) or `^`
-// (cmd) right before a line break. The text is read as written, then with
-// each shell's continuation folded away alone and with all three folded: a
-// name or a parameter split across lines is read whole, and a character that
-// is no continuation in the shell running the command (`a\` or `a^` in
-// PowerShell, `a^` in a POSIX shell) does not glue the next line to its word
-// (cmd's `^` is included here, unlike LINE_CONTINUATION_RE for the gate
-// words).
-const CONTINUATION_FOLDS = [/\\\r?\n/g, /`\r?\n/g, /\^\r?\n/g, /[\\`^]\r?\n/g];
-// Shell expansions that may expand to nothing: `${...}` (no `{`, `}`, `$` or
-// line break inside), `$@`, `$*`, `$#`, `$?`, `$$`, `$!`, `$0`-`$9`, `$-`,
-// `$name` (the text is in lower case), and cmd's `%name%`. Removed in an
-// additional reading only. Every attempt stops at the next `$`, `%`, blank or
-// line break, so the removal is linear (`${[^}]*}` rescanned the rest of the
-// text for each unclosed `${`).
-const EXPANSION_RE = /\$\{[^{}$\n]*\}|\$[@*#?$!0-9-]|\$[a-z_][a-z0-9_]*|%[^%\s]*%/g;
+// See ALWAYS REFUSED in the header: one reading of the text, nothing parsed.
+const UNREADABLE_PS = 'An encoded or stdin PowerShell script cannot be read by the quality gate, so it is refused whether or not it pushes or merges. Run the script as plain text instead (`pwsh -File <script>.ps1` or `pwsh -Command "<script>"`). If the command only mentions these parameters (a search term, a message), rerun it without them.';
+const PS_WORD_RE = /(?:^|[\\/])(?:powershell|pwsh)(?:\.exe)?$/;
+const PS_PARAM_RE = /^(?:--?|\/)([a-z]+)$/;
+const PS_SEPARATOR_RE = /^[;&|()\n]$/;
 
 function alwaysDeny(text) {
-  const lower = text.toLowerCase();
-  const sources = [lower];
-  for (const fold of CONTINUATION_FOLDS) {
-    const folded = lower.replace(fold, '');
-    if (!sources.includes(folded)) sources.push(folded);
-  }
-  for (const source of sources) {
-    const unexpanded = source.replace(EXPANSION_RE, '');
-    // A lone dash counts only with the expansions kept (`"$a-$b"`).
-    const bodies = unexpanded === source ? [[source, true]] : [[source, true], [unexpanded, false]];
-    for (const [body, stdin] of bodies) {
-      const plain = body.replace(DOLLAR_QUOTE_RE, '').replace(NOISE_RE, '');
-      for (const reading of [plain.replace(/\\/g, ''), plain.replace(/\\/g, '/')]) {
-        if (unreadablePsIn(reading, stdin)) return deny('2', UNREADABLE_PS);
-      }
+  const words = text.toLowerCase().replace(/[\\`^]\r?\n/g, '').replace(/["']/g, '')
+    .match(/[;&|()\n]|[^\s;&|()]+/g) || [];
+  let ps = false; // A PowerShell word earlier in this command.
+  for (let i = 0; i < words.length; i++) {
+    if (PS_WORD_RE.test(words[i])) {
+      ps = true;
+    } else if (PS_SEPARATOR_RE.test(words[i])) {
+      ps = false;
+    } else if (ps) {
+      const m = PS_PARAM_RE.exec(words[i]);
+      if (!m) continue;
+      const name = m[1];
+      if (name === 'ec' || 'encodedcommand'.startsWith(name)) return deny('2', UNREADABLE_PS);
+      if ((name === 'command' || name === 'c') && words[i + 1] === '-') return deny('2', UNREADABLE_PS);
     }
   }
   return null;
@@ -1255,45 +1127,25 @@ function alwaysDeny(text) {
 // --------------------------------------------------------------------------
 // Everyday forms that need not be refused
 // --------------------------------------------------------------------------
-// Output plumbing at the very END of the whole command - ` 2>&1`,
-// ` >/dev/null`, ` 2>/dev/null`, and finally `| tail -N` / `| head -N` - is
-// dropped before the command is parsed. Exactly these spellings, nowhere else.
-// The longest suffix of the form
-//   ([ \t]+(2>&1|2>/dev/null|>/dev/null))* ([ \t]*|[ \t]*(tail|head)[ \t]+-N)? [ \t\n]*
-// (N: 1-9 then up to five digits) is read backwards from the end, so the
-// cost is linear in what is dropped (a regular expression anchored with `$`
-// retried that from every blank of a long run).
-const TRAILING_REDIRECTS = ['2>&1', '2>/dev/null', '>/dev/null'];
-const isBlank = (ch) => ch === ' ' || ch === '\t';
+// Output plumbing at the very END of the whole command is dropped before the
+// command is parsed: a last pipe into `tail` / `head` (`-5`, `-n 5`) or
+// `Select-Object -Last|-First <n>`, and before it any number of ` 2>&1`,
+// ` >/dev/null`, ` 2> /dev/null` and the like, each after a blank. Exactly
+// these, nowhere else. Each pattern is tried on a short window at the end, so
+// a long run of blanks costs linear time.
+const TRAILING_PIPE_RE = /[ \t]*\|[ \t]*(?:(?:tail|head)[ \t]+-(?:n[ \t]*)?|select-object[ \t]+-(?:last|first)[ \t]+)[1-9][0-9]{0,5}$/i;
+const TRAILING_REDIRECT_RE = /[ \t](?:2>&1|[12]?>[ \t]*\/dev\/null)$/;
+const TRAILING_WINDOW = 64;
 function stripTrailingOutput(text) {
-  let end = text.length;
-  while (end > 0 && (isBlank(text[end - 1]) || text[end - 1] === '\n')) end--;
-  let pos = end;
-  // `| tail -N` / `| head -N`.
-  let j = end;
-  while (j > 0 && text[j - 1] >= '0' && text[j - 1] <= '9') j--;
-  if (end - j >= 1 && end - j <= 6 && text[j] !== '0' && text[j - 1] === '-') {
-    let k = j - 1;
-    const word = k;
-    while (k > 0 && isBlank(text[k - 1])) k--;
-    if (k < word && k >= 4 && (text.slice(k - 4, k) === 'tail' || text.slice(k - 4, k) === 'head')) {
-      k -= 4;
-      while (k > 0 && isBlank(text[k - 1])) k--;
-      if (k > 0 && text[k - 1] === '|') {
-        k--;
-        while (k > 0 && isBlank(text[k - 1])) k--;
-        pos = k;
-      }
-    }
-  }
-  // ` 2>&1`, ` 2>/dev/null`, ` >/dev/null`, each after at least one blank.
-  for (;;) {
-    const r = TRAILING_REDIRECTS.find((s) => pos - s.length > 0 && text.endsWith(s, pos) && isBlank(text[pos - s.length - 1]));
-    if (!r) break;
-    pos -= r.length;
-    while (pos > 0 && isBlank(text[pos - 1])) pos--;
-  }
-  return text.slice(0, pos);
+  let body = text.trimEnd();
+  const cut = (re) => {
+    const m = re.exec(body.slice(-TRAILING_WINDOW));
+    if (m) body = body.slice(0, body.length - m[0].length).trimEnd();
+    return m !== null;
+  };
+  cut(TRAILING_PIPE_RE);
+  while (cut(TRAILING_REDIRECT_RE));
+  return body;
 }
 
 // Message values. A gate word that only appears in the message of
@@ -1303,57 +1155,72 @@ function stripTrailingOutput(text) {
 //   - a quoted string with no `$`, backtick, backslash, typographic quote
 //     (U+2018-U+201E), CR or NUL, ending at a word boundary (so no `'a''b'`
 //     or `"a""b"`, which PowerShell reads as one string and a POSIX shell as
-//     two);
-//   - `"$(cat <<'DELIM'` <LF> lines <LF> `DELIM` <LF> `)"`: a quoted
-//     here-document, no line before the terminator starting with DELIM, no
-//     CR (PowerShell refuses `<<` outright, so it never runs there);
+//     two), after the option (`-m "..."`) or attached to it (`-m"..."`,
+//     `--message="..."`);
+//   - `"$(cat <<'DELIM'` <LF> lines <LF> `DELIM` <LF> `)"`, also `<<-`: a
+//     quoted here-document whose body ends at the first line that is exactly
+//     the delimiter (a line starting `DELIM)` may end it early inside `$(`);
+//   - a quoted here-document given as standard input (`--body-file -
+//     <<'EOF'`, `-F - <<'EOF'`) as the last thing on its line; PowerShell
+//     refuses `<<` outright, so it never runs there;
 //   - PowerShell's `@'` <LF> lines <LF> `'@` with no `'` in it (a POSIX shell
 //     reads that as one literal word).
-// No form may hold a typographic quote (U+2018-U+201E) anywhere: PowerShell
-// reads U+2018-U+201B as `'` and U+201C-U+201E as `"`, so one of them can
-// close a here-string (`’@` at a line start) or a string early.
+// The value of a file option (`-F`, `--file`, `--body-file`) is a path and is
+// masked too, written plainly or with backslashes. No form may hold a
+// typographic quote anywhere: PowerShell reads U+2018-U+201B as `'` and
+// U+201C-U+201E as `"`, so one of them can close a string early.
 // A value that itself holds a git/gh word AND a gate word is not masked. The
 // whole text must be read by this small grammar - plain words, literal quoted
 // strings, separators - or nothing is masked. A masked value becomes the
 // placeholder `"x"`; with no gate word left the command is allowed, and
 // otherwise the masked text - every other word as written - is judged.
 const MASK_OPTS = {
-  git: { subs: [['commit'], ['tag']], opts: new Set(['-m', '--message']) },
+  git: { subs: [['commit'], ['tag']], opts: new Set(['-m', '--message']), files: new Set(['-F', '--file']) },
   gh: {
     subs: ['pr', 'issue'].flatMap((n) => ['create', 'edit', 'comment', 'review'].map((v) => [n, v])),
     opts: new Set(['-t', '--title', '-b', '--body']),
+    files: new Set(['-F', '--body-file']),
   },
 };
 const LITERAL_RE = /^[^$`\\‘-„\r\0]*$/;
 const TYPOGRAPHIC_QUOTE_RE = /[‘-„]/;
 const GIT_GH_WORD_RE = /(?<![A-Za-z])(?:git|gh)(?![A-Za-z])/i;
-const HEREDOC_HEAD_RE = /^"\$\(cat <<'([A-Za-z_][A-Za-z0-9_]*)'\n/;
+const HEREDOC_VALUE_RE = /"\$\(cat <<(-?)'([A-Za-z_][A-Za-z0-9_]*)'\n/y;
+const HEREDOC_STDIN_RE = /<<(-?)'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*\n/y;
+const VALUE_CLOSE_RE = /\n[ \t]*\)"/y;
 const WORD_END = ' \t\n;&|';
 function harmlessValue(content) {
   const plain = content.replace(LINE_CONTINUATION_RE, '').replace(ESCAPE_CHARS_RE, '');
   return !(GIT_GH_WORD_RE.test(content) || GIT_GH_WORD_RE.test(plain)) || !gateWordIn(content);
 }
-// A message value starting at `i`: `{ end, content }`, or null.
+// A quoted here-document whose head `re` matches at `i`: `{ stop, content }`,
+// `stop` at the line break after the terminator (or the end), or null.
+function heredoc(re, text, i) {
+  re.lastIndex = i;
+  const head = re.exec(text);
+  if (!head) return null;
+  const [, dash, delim] = head;
+  const lines = [];
+  for (let k = re.lastIndex; ;) {
+    let nl = text.indexOf('\n', k);
+    if (nl === -1) nl = text.length;
+    const line = text.slice(k, nl);
+    const bare = dash ? line.replace(/^\t+/, '') : line;
+    if (bare === delim) return { stop: nl, content: lines.join('\n') };
+    if (nl === text.length || bare.startsWith(`${delim})`) || /[\r\0]/.test(line) || TYPOGRAPHIC_QUOTE_RE.test(line)) return null;
+    lines.push(line);
+    k = nl + 1;
+  }
+}
+// A here-document or here-string message value starting at `i`:
+// `{ end, content }`, or null.
 function messageValue(text, i) {
   const ends = (k) => k >= text.length || WORD_END.includes(text[k]);
-  const head = HEREDOC_HEAD_RE.exec(text.slice(i));
-  if (head) {
-    const delim = head[1];
-    const bodyStart = i + head[0].length;
-    const lines = [];
-    let k = bodyStart;
-    for (;;) {
-      const nl = text.indexOf('\n', k);
-      if (nl === -1) return null;
-      const line = text.slice(k, nl);
-      if (line === delim) break;
-      if (line.startsWith(delim) || /[\r\0]/.test(line) || TYPOGRAPHIC_QUOTE_RE.test(line)) return null;
-      lines.push(line);
-      k = nl + 1;
-    }
-    const close = text.indexOf('\n', k) + 1;
-    if (text.slice(close, close + 2) !== ')"' || !ends(close + 2)) return null;
-    return { end: close + 2, content: lines.join('\n') };
+  const doc = heredoc(HEREDOC_VALUE_RE, text, i);
+  if (doc) {
+    VALUE_CLOSE_RE.lastIndex = doc.stop;
+    if (!VALUE_CLOSE_RE.test(text) || !ends(VALUE_CLOSE_RE.lastIndex)) return null;
+    return { end: VALUE_CLOSE_RE.lastIndex, content: doc.content };
   }
   if (text.startsWith("@'\n", i)) {
     const close = text.indexOf("'", i + 2);
@@ -1375,17 +1242,28 @@ function literalString(text, i) {
   return { end: close + 1, content };
 }
 // The text with message values masked, or null when it cannot be read.
-// After PowerShell's stop-parsing token `--%` quotes no longer delimit a
-// value, so a command holding it anywhere is never masked.
+// After PowerShell's stop-parsing token `--%` the words git gets are not the
+// ones written (see checkSegment), so a command holding it anywhere is never
+// masked.
 function maskMessages(text) {
   if (text.includes('--%')) return null;
   let out = '';
-  let words = []; // The current segment's unquoted words so far.
+  let words = []; // The current segment's words so far (`"` for a quoted one).
   let i = 0;
-  const optsFor = () => {
-    const spec = MASK_OPTS[words[0]];
-    if (!spec) return null;
-    return spec.subs.some((sub) => sub.every((w, k) => words[k + 1] === w)) ? spec.opts : null;
+  const spec = () => {
+    const s = MASK_OPTS[words[0]];
+    return s && s.subs.some((sub) => sub.every((w, k) => words[k + 1] === w)) ? s : null;
+  };
+  // The quoted value at `i`, masked when it belongs to `opt` and is harmless.
+  const quoted = (opt) => {
+    const s = spec();
+    const isValue = s !== null && (s.opts.has(opt) || s.files.has(opt));
+    const v = (isValue && messageValue(text, i)) || (text[i] !== '@' && literalString(text, i));
+    if (!v) return null;
+    const masked = isValue && harmlessValue(v.content) ? '"x"' : text.slice(i, v.end);
+    i = v.end;
+    words.push('"'); // A quoted word: never a command or option word.
+    return masked;
   };
   while (i < text.length) {
     const ch = text[i];
@@ -1397,21 +1275,32 @@ function maskMessages(text) {
       out += text.slice(i, i + len);
       i += len;
       words = [];
+    } else if (ch === '<' && spec() !== null) {
+      const doc = heredoc(HEREDOC_STDIN_RE, text, i);
+      if (!doc || !harmlessValue(doc.content)) return null;
+      i = doc.stop; // The line break after it ends the segment.
     } else if (ch === '"' || ch === "'" || text.startsWith("@'\n", i)) {
-      const opts = optsFor();
-      const isValue = opts !== null && words.length > 0 && opts.has(words[words.length - 1]);
-      const v = (isValue && messageValue(text, i)) || (ch !== '@' && literalString(text, i));
-      if (!v) return null;
-      if (isValue && harmlessValue(v.content)) out += '"x"';
-      else out += text.slice(i, v.end);
-      words.push('"'); // A quoted word: never a command or option word.
-      i = v.end;
-    } else if (PLAIN_CHAR_RE.test(ch)) {
+      const v = quoted(words[words.length - 1]);
+      if (v === null) return null;
+      out += v;
+    } else if (PLAIN_CHAR_RE.test(ch) || ch === '\\') {
+      const s = spec();
+      const file = s !== null && s.files.has(words[words.length - 1]);
       let w = '';
-      while (i < text.length && PLAIN_CHAR_RE.test(text[i])) w += text[i++];
+      while (i < text.length && (PLAIN_CHAR_RE.test(text[i]) || (file && text[i] === '\\'))) w += text[i++];
+      if (w === '') return null;
+      if (text[i] === '"' || text[i] === "'") {
+        // Attached: `-m"..."`, `--message="..."`.
+        const opt = w.startsWith('--') && w.endsWith('=') ? w.slice(0, -1) : w;
+        if (s === null || !s.opts.has(opt) || (opt === w) === opt.startsWith('--')) return null;
+        const v = quoted(opt);
+        if (v === null) return null;
+        out += v === '"x"' && opt === w ? `${w} ${v}` : `${w}${v}`;
+        continue;
+      }
       if (i < text.length && !WORD_END.includes(text[i])) return null;
-      out += w;
-      words.push(w);
+      out += file ? 'x' : w;
+      words.push(file ? '"' : w);
     } else {
       return null;
     }
@@ -1426,27 +1315,19 @@ const notSimpleReason = (why) => `This command mentions push, pull, merge or reb
 // --------------------------------------------------------------------------
 // A location change on an earlier segment, or `-C <path>` on the call itself,
 // changes the repository a gated call writes to. The segments are walked in
-// order from the payload cwd. A location is `null` (not moved) or a resolved
-// `{ logical, physical }` pair; a target that does not exist now, or whose
-// logical `..` and physical path disagree (a symlink), is UNRESOLVED and a
-// gated call after it blocks.
-//
-// The walk keeps every READING the text allows - at most MAX_STATES of them,
-// each with its own directory, pushd stack and the repositories its gated
-// calls landed in - and a gated call must pass in each one:
-//   - a PowerShell-only spelling (`Set-Location`, `sl`, `chdir`, `CD`, ...)
-//     is "command not found" to a POSIX shell, so it forks a reading where
-//     the directory stays;
-//   - inside an `&&` chain a later segment runs only after the earlier ones
-//     succeeded, so it sees the location after them; but once the chain
-//     ends, any command in it that could fail (anything but a location change,
-//     whose target exists) may have stopped it early, so the next segment
-//     may run in any location the chain passed through.
-// git's `-C` is held to the same rule as `cd`: git chdir()s, which is the
-// physical path on POSIX, but on Windows git and PowerShell resolve `..`
-// lexically on the apparent path, so `-C <link>/..` (or `-C ..` after a `cd`
-// into a link) lands somewhere else there. Where the two readings disagree,
-// the target is UNRESOLVED.
+// ONE reading from the payload cwd: every move runs, in order, and pushd /
+// popd keep a stack. A location is `null` (not moved) or a resolved
+// `{ logical, physical }` pair. Where the reading cannot be trusted, a gated
+// call after it blocks with guidance to run the push/merge on its own:
+//   - a target that does not exist now, or whose logical `..` and physical
+//     path disagree: git's `-C` is held to the same rule as `cd`, and on
+//     Windows git and PowerShell resolve `..` lexically on the apparent path,
+//     so `-C <link>/..` (or `-C ..` after a `cd` into a link) lands
+//     somewhere else there (UNRESOLVED_MOVE);
+//   - a move inside an `&&` chain after a command that may fail, when a
+//     gated call follows once the chain has ended - it runs in either place -
+//     and a move in a command with CRLF line ends (AMBIGUOUS_MOVE).
+// (PowerShell-only spellings and a bare name under CDPATH are not simple.)
 // Moves after the last candidate are not followed. Only the filesystem is
 // read here (existence, real path), never git.
 const UNRESOLVED = Object.freeze({ unresolved: true });
@@ -1502,23 +1383,9 @@ function originOf(ctx) {
   }
 }
 
-// A move applied to one reading: the new reading, or null (unresolved).
-function applyMove(state, move, start) {
-  if (move.op === 'pop') {
-    if (state.stack.length === 0) return null;
-    return { ...state, here: state.stack[state.stack.length - 1], stack: state.stack.slice(0, -1) };
-  }
-  const from = state.here || start();
-  if (from === UNRESOLVED) return null;
-  const next = changeDir(from, move.path);
-  if (next === null) return null;
-  return { ...state, here: next, stack: move.op === 'push' ? [...state.stack, state.here] : state.stack };
-}
-
-// The candidate's effective directory in one reading: its segment's location,
-// then each `-C` of the call in order.
-function candidateLocation(cand, state, start) {
-  let here = state.here;
+// The candidate's effective directory: its segment's location, then each
+// `-C` of the call in order.
+function candidateLocation(cand, here, start) {
   for (const p of cand.inv ? cand.inv.chdirs : []) {
     const from = here || start();
     if (from === UNRESOLVED) return UNRESOLVED;
@@ -1528,13 +1395,8 @@ function candidateLocation(cand, state, start) {
   return here;
 }
 
-const stateKey = (s, ids) => [
-  s.here ? s.here.physical : '',
-  ...s.stack.map((d) => (d ? d.physical : '')),
-  '|', ...[...s.repos].map((r) => ids.get(r)),
-].join('\0');
-
-const UNRESOLVED_MOVE = 'Run git from the target repository directory as a separate command: a cd/pushd/Set-Location/-C target must be a local directory that exists now (and no symlink under ..) before a gated push/merge.';
+const UNRESOLVED_MOVE = 'Run git from the target repository directory as a separate command: a cd/pushd/-C target must be a local directory that exists now (and no link under ..) before a gated push/merge. Run `cd <repository path>` on its own, then the push/merge alone.';
+const AMBIGUOUS_MOVE = 'Run git from the target repository directory as a separate command: where this push/merge runs depends on whether an earlier command succeeds (a cd after another command in an && chain) or on the shell (a cd at the end of a CRLF line). Run `cd <repository path>` on its own, then the push/merge alone.';
 const NOT_A_WORK_TREE = 'The directory this push/merge would run in is not inside a git work tree. Run git from the target repository directory as a separate command.';
 const TARGET_GIT_FAILED = 'Cannot read the repository this push/merge would run in (git failed or timed out). Run git from the target repository directory as a separate command.';
 const MULTI_REPO = 'Run gated operations for one repository per command: split the push/merge for each repository into its own command.';
@@ -1547,15 +1409,11 @@ const elsewhere = (verdict) => ({ ...verdict, elsewhere: true });
 // The (line, ctx) pairs to judge, or a block. Every candidate line holds
 // exactly one candidate here (rule 2 already blocked more than one). A ctx is
 // made once per directory and shared per toplevel, so each repository's git
-// state is read once per command.
-function locateCandidates(lines, candLines, ctx) {
+// state is read once per command. `crlf`: the command had CRLF line ends.
+function locateCandidates(lines, candLines, ctx, crlf) {
   const segs = lines.flatMap((line) => line.segments);
   const candAt = new Map(); // segment -> its line's analysis
   for (const a of candLines) candAt.set(a.cands[0].inv ? a.cands[0].inv.seg : a.cands[0].seg, a);
-  let lastIndex = 0;
-  segs.forEach((seg, i) => {
-    if (candAt.has(seg)) lastIndex = i;
-  });
   let origin;
   const start = () => {
     if (origin === undefined) origin = originOf(ctx);
@@ -1563,12 +1421,10 @@ function locateCandidates(lines, candLines, ctx) {
   };
   const byDir = new Map();
   const byTop = new Map();
-  const ids = new Map([[ctx, 0]]);
-  const placed = new Map(); // line -> Map(ctx -> moved)
 
-  // Where one reading's candidate is judged: a ctx and whether it moved, or a block.
-  const judgeFor = (a, state) => {
-    const loc = candidateLocation(a.cands[0], state, start);
+  // Where a candidate is judged from `here`: a ctx and whether it moved, or a block.
+  const judgeFor = (a, here) => {
+    const loc = candidateLocation(a.cands[0], here, start);
     if (loc === UNRESOLVED) return elsewhere(deny('2', UNRESOLVED_MOVE));
     if (loc === null || (start() !== UNRESOLVED && start().physical === loc.physical)) return { ctx, moved: false };
     if (typeof ctx.at !== 'function') return elsewhere(deny('2', UNRESOLVED_MOVE));
@@ -1580,58 +1436,52 @@ function locateCandidates(lines, candLines, ctx) {
       return elsewhere(deny('2', failed ? TARGET_GIT_FAILED : NOT_A_WORK_TREE));
     }
     if (top === ctx.toplevel) return { ctx, moved: false };
-    if (!byTop.has(top)) {
-      byTop.set(top, there);
-      ids.set(there, ids.size);
-    }
+    if (!byTop.has(top)) byTop.set(top, there);
     return { ctx: byTop.get(top), moved: true };
   };
 
-  let states = [{ here: null, stack: [], repos: new Set() }];
-  let exits = []; // Readings the current `&&` chain may have stopped in.
-  const settle = (list) => {
-    const seen = new Map();
-    for (const s of list) seen.set(stateKey(s, ids), s);
-    if (seen.size > MAX_STATES) return null;
-    return [...seen.values()];
-  };
-  for (let i = 0; i <= lastIndex; i++) {
-    const seg = segs[i];
+  let here = null; // null: not moved.
+  const stack = [];
+  let fallible = false; // A command that may fail ran earlier in this && chain.
+  let conditional = false; // ...and a move followed it in the chain.
+  let skippable = false; // A finished chain may have stopped before its move.
+  let left = candAt.size;
+  const out = [];
+  for (const seg of segs) {
+    if (left === 0) break; // Moves after the last candidate are not followed.
     if (seg.before !== '&&') {
-      states = settle([...exits, ...states]);
-      exits = [];
-      if (!states) return elsewhere(deny('2', UNRESOLVED_MOVE));
+      skippable = skippable || conditional;
+      fallible = false;
+      conditional = false;
     }
     const a = candAt.get(seg);
     if (a) {
-      const next = [];
-      for (const s of states) {
-        const j = judgeFor(a, s);
-        if (j.decision) return j;
-        if (!placed.has(a)) placed.set(a, new Map());
-        placed.get(a).set(j.ctx, j.moved);
-        const repos = new Set(s.repos).add(j.ctx);
-        if (repos.size > 1) return elsewhere(deny('2', MULTI_REPO));
-        next.push({ ...s, repos });
-      }
-      states = next;
+      if (skippable) return elsewhere(deny('2', AMBIGUOUS_MOVE));
+      const j = judgeFor(a, here);
+      if (j.decision) return j;
+      if (out.length > 0 && out[0].ctx !== j.ctx) return elsewhere(deny('2', MULTI_REPO));
+      out.push({ a, ...j });
+      left--;
     }
     if (seg.kind !== 'move') {
-      exits.push(...states); // It may fail and end the chain here.
+      fallible = true;
       continue;
     }
-    const next = [];
-    for (const s of states) {
-      const moved = applyMove(s, seg.move, start);
-      if (moved === null) return elsewhere(deny('2', UNRESOLVED_MOVE));
-      next.push(moved);
-      if (!seg.move.posix) next.push(s); // A POSIX shell does not run it.
+    // A POSIX shell keeps the CR of a CRLF line end in the path: the move
+    // fails there and succeeds in PowerShell.
+    if (crlf) return elsewhere(deny('2', AMBIGUOUS_MOVE));
+    conditional = conditional || fallible;
+    if (seg.move.op === 'pop') {
+      if (stack.length === 0) return elsewhere(deny('2', UNRESOLVED_MOVE));
+      here = stack.pop();
+      continue;
     }
-    states = settle(next);
-    if (!states) return elsewhere(deny('2', UNRESOLVED_MOVE));
+    const from = here || start();
+    const next = from === UNRESOLVED ? null : changeDir(from, seg.move.path);
+    if (next === null) return elsewhere(deny('2', UNRESOLVED_MOVE));
+    if (seg.move.op === 'push') stack.push(here);
+    here = next;
   }
-  const out = [];
-  for (const [a, ctxs] of placed) for (const [judge, moved] of ctxs) out.push({ a, ctx: judge, moved });
   return out;
 }
 
@@ -1676,7 +1526,9 @@ function classify(command, ctx) {
   if (always) return always;
   if (Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) return gateWordFallback(text, TOO_LONG);
   if (!gateWordIn(text)) return allow();
-  const body = stripTrailingOutput(text);
+  // A CRLF line end is read as LF (a lone CR is still not simple).
+  const crlf = text.includes('\r\n');
+  const body = stripTrailingOutput(crlf ? text.replace(/\r\n/g, '\n') : text);
   const masked = maskMessages(body);
   if (masked !== null && !gateWordIn(masked)) return allow(); // Only in a message.
   // The rest of the command is judged with its message values masked.
@@ -1693,7 +1545,7 @@ function classify(command, ctx) {
   // The HEAD movers are judged over the whole command, so this answer is the
   // same for every line: compute it once.
   const commandMover = moverOf(all, 'command');
-  const deferCommit = commandMover === 'commit' && isPlainCommitPush(judged, analyzed);
+  const deferCommit = commandMover === 'commit' && isPlainCommitPush(lines, analyzed);
   const candLines = analyzed.filter((a) => a.cands.length > 0);
   const fetchOnly = commandMover === 'fetch' ? fetchOnlyMovers(all) : null;
   const target = candLines.length === 1 && candLines[0].cands.length === 1 ? syncTarget(candLines[0].cands[0]) : null;
@@ -1705,7 +1557,7 @@ function classify(command, ctx) {
     if (verdict) return verdict;
   }
   if (candLines.length === 0) return allow();
-  const placed = locateCandidates(lines, candLines, ctx);
+  const placed = locateCandidates(lines, candLines, ctx, crlf);
   if (!Array.isArray(placed)) return placed;
   for (const p of placed) {
     const verdict = contextRules(p.a, p.ctx, deferCommit, deferFetch, sole);
