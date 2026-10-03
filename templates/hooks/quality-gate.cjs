@@ -24,7 +24,11 @@
 //   - timing: a directory or link that changes after this check.
 //
 // HOW A COMMAND IS READ (#158). The same text may run under a POSIX shell (Git
-// Bash on Windows) or under PowerShell, so the hook reads an ALLOWLISTED form:
+// Bash on Windows) or under PowerShell. The payload's `tool_name` says which
+// (`shellOf`: `PowerShell` -> PowerShell, `Bash` -> POSIX); then the text is
+// read the way that shell runs it, and when the hook cannot tell, only forms
+// both shells read the same way are accepted. Either way it reads an
+// ALLOWLISTED form:
 //   1. A command with no gate word - `push`, `pull`, `merge` or `rebase` as a
 //      whole word, looked for in the raw text and again with `"` `'` `\`
 //      backtick `^` `$` removed and line continuations folded (`gateWordIn`) -
@@ -42,18 +46,24 @@
 //     single- or double-quoted string is a whole word (or follows `name=`), is
 //     not empty (Windows PowerShell drops an empty argument), and holds only
 //     those characters, `, ; &`, and non-ASCII letters, digits and CJK
-//     punctuation. So no backslash (a Windows path is written with `/`), `$`,
-//     backtick, `|`, `<`, `>`, parentheses, braces, brackets, `#`, `*`, `?`,
-//     `!`, `^`, nested quotes, a lone CR or NUL, and no unquoted `,` (an array
-//     in PowerShell). A CRLF line end is read as LF. Output plumbing at the
-//     very end of the whole command (`stripTrailingOutput`) is dropped first.
+//     punctuation. So no `$`, backtick, `|`, `<`, `>`, parentheses, braces,
+//     brackets, `#`, `*`, `?`, `!`, `^`, nested quotes, a lone CR or NUL, and
+//     no unquoted `,` (an array in PowerShell). A backslash only where the
+//     known shell reads it as itself: inside quotes when the shell is known
+//     (not `\\` or a line-end `\` inside POSIX double quotes), and outside
+//     quotes in PowerShell. A CRLF line end is read as LF. Output plumbing at
+//     the very end of the whole command (`stripTrailingOutput`) is dropped
+//     first. In PowerShell, `A; if ($?) { B }` - B one command with no braces,
+//     `;`, `&`, `|`, `$`, backtick or line break, no `else` after it - is read
+//     as `A && B` (`readPsIfOk`).
 //   - Segments are split on newline, `;` and `&&` only (`||`, `|` and a single
 //     `&` are not simple). `&&` at the end of a line continues on the next.
 //   - Each segment starts with an unquoted command word from a closed list:
 //     `git`, `gh`, a build/test runner (RUNNERS), case-insensitive, or a
-//     location change spelled the way both shells run it - `cd`, `pushd`,
-//     `popd`, in lower case (`Set-Location`, `sl`, `chdir` move in PowerShell
-//     only). No `NAME=value` prefix.
+//     location change - `cd`, `pushd`, `popd` in lower case, and in
+//     PowerShell also `Set-Location` / `sl` / `chdir` / `Push-Location` /
+//     `Pop-Location` in any case (elsewhere they are refused, naming the
+//     equivalent). No `NAME=value` prefix.
 //   - `git`: global options are `-C <path>` (also attached, `-C<path>`) and
 //     `--no-pager` only - no `-c`, `--git-dir`, `--work-tree`, `--exec-path`,
 //     `--namespace`, `--super-prefix`, `--config-env` or anything else. The
@@ -61,12 +71,15 @@
 //     no option that makes git run a command string (`runsCommand`).
 //     `gh`: the subcommand is from GH_SUBCOMMANDS (no `alias`, no extension).
 //     A runner: no gate word in its arguments (`npx -c "git push"`).
-//     A location change: exactly one path; `popd` none.
+//     A location change: exactly one path (in PowerShell optionally after
+//     `-Path` / `-LiteralPath`); `popd` none.
 //   - In `git` / `gh` words: no unquoted single-dash option carrying anything
 //     but letters, digits, `_` and `-` (PowerShell splits `-o:main` into `-o:`
 //     and `main`), no word starting with `@` (splatting), no `--%`.
-//   - A path (`checkPath`) is relative, or absolute with `/` (`C:/…` on
-//     Windows); never a network path (`//host`), drive-relative (`C:x`),
+//   - A path (`checkPath`) is relative, or absolute with `/` (`C:/…` or, where
+//     the backslash is read as itself, `C:\…` on Windows; Git Bash's `/c/…` is
+//     read as `C:/…` in the POSIX reading and refused with that guidance
+//     elsewhere); never a network path (`//host`, `\\host`), drive-relative (`C:x`),
 //     drive-less absolute on Windows, `~…`, `-…`, `+…`, or holding `%`. With
 //     CDPATH set in the hook's environment a `cd` / `pushd` target must
 //     start with `/`, `./` or `../`.
@@ -88,7 +101,10 @@
 //   ALWAYS REFUSED - gate word or not); a command with a gate word that is not
 //   simple; force/delete/`+refspec`/`--mirror`/`--all`/`--branches` pushes
 //   (short bundles such as `-fu` and long abbreviations such as `--forc`
-//   included); a git command from the mover set (commit, reset, checkout,
+//   included) - except a push whose only such flag is `--force-with-lease`
+//   written out, to the branch's own upstream (no refspec or HEAD): that is
+//   judged with the branch, allowed off the trunk and always refused on it;
+//   a git command from the mover set (commit, reset, checkout,
 //   switch, cherry-pick, rebase, revert, am, bisect, update-ref, stash
 //   pop|apply, fetch, and on the same line branch -f|-d|-D|--force) other than
 //   the gated call itself - the set is CLOSED, so status, add, log, diff, tag,
@@ -112,15 +128,26 @@
 //   commit let through is on a feature branch: `git add` / `git commit` and
 //   then a push to the branch's own upstream (`git push [options] [remote]
 //   [HEAD]`) as the last command, and nothing else (`isPlainCommitPush`).
+//   With no location change or git global option in the command, these
+//   movers are judged with the branch instead (`deferralPlan`): plain fetches
+//   next to `git merge|rebase origin/<trunk>` and refspec-less pushes, off the
+//   trunk, with any other command around them; `git checkout -b <x>` /
+//   `git switch -c <x>` chained by `&&` to pushes of HEAD (they land on <x>);
+//   and the trunk sync below with `git checkout|switch <trunk> &&` before it
+//   and `&& git branch -d <x>` after it. Several gated calls may share a line
+//   when all of them are refspec-less pushes and sync merges / rebases (off
+//   the trunk none of them is gated).
 // Rule 3 (pass): `.quality-check-passed` at the repo root with `commit` an
 //   abbreviated prefix of (or equal to) HEAD (`branch` is diagnostic only), or
 //   `commit` an ancestor of HEAD whose `commit..HEAD` diff is harness files
-//   only. Plus the closed set of sync forms on the CURRENT trunk:
-//   `git pull`, `git pull origin <trunk>`, `git merge origin/<trunk>`, each
-//   also with one `--ff-only` - exact word sequences, as the WHOLE command
-//   (another line could create the ref the form reads); the merge form only
-//   while `origin/<trunk>` resolves to the remote-tracking ref (a local tag or
-//   branch of that name is what git would merge instead).
+//   only. Plus the closed set of sync forms on the CURRENT trunk (or the trunk
+//   the command checks out first): `git pull`, `git pull origin <trunk>`,
+//   `git merge origin/<trunk>`, each also with one `--ff-only`, and
+//   `git pull --rebase` while the local trunk has no commit origin's lacks -
+//   exact word sequences, as the WHOLE command apart from the checkout and
+//   `git branch -d` above (another line could create the ref the form reads);
+//   the merge form only while `origin/<trunk>` resolves to the remote-tracking
+//   ref (a local tag or branch of that name is what git would merge instead).
 // Rule 4 (exemption): a non-empty `origin/main...HEAD` diff made up entirely
 //   of harness files. Gate control-plane paths and `Quality Gate Overrides` /
 //   `mutation_budget_minutes` string changes are carved out of both rule 3
@@ -154,9 +181,10 @@
 // Deliberate over-detection, all in the fail-closed direction: any command
 // that mentions a gate word and is not simple is refused, even when it would
 // not push (`grep -rn push src`, a commit message with parentheses); rule 2
-// is evaluated before the branch is known, so it also blocks on a feature
-// branch; a detached HEAD is an UNRESOLVED branch; `git push --force` with no
-// refspec blocks anywhere.
+// outside the plans above is evaluated before the branch is known, so it also
+// blocks on a feature branch; a detached HEAD is an UNRESOLVED branch;
+// `git push --force` with no refspec blocks anywhere. A block decided in
+// another repository names that repository and its branch (`judgedThere`).
 //
 // NESTED SHELLS (H-52). `powershell` / `pwsh` / `cmd` / `bash` are not in the
 // closed list of command words, so a shell nested in the command string
@@ -232,6 +260,11 @@ const RUNNERS = new Set(['npm', 'npx', 'pnpm', 'yarn', 'node', 'gradle', 'gradle
 // would depend on the shell: not simple.
 const MOVE_WORDS = new Map([['cd', 'cd'], ['pushd', 'push'], ['popd', 'pop']]);
 const PS_MOVE_RE = /^(cd|chdir|sl|set-location|pushd|push-location|popd|pop-location)$/i;
+// ...which, read as PowerShell (the shell is known), are moves like these.
+const PS_MOVE_OPS = new Map([
+  ['cd', 'cd'], ['chdir', 'cd'], ['sl', 'cd'], ['set-location', 'cd'],
+  ['pushd', 'push'], ['push-location', 'push'], ['popd', 'pop'], ['pop-location', 'pop'],
+]);
 // The git subcommands a gated command may hold. None of them runs a command
 // string given on the command line once `runsCommand` has had its say; an
 // alias or `config` (which can define one) is not here.
@@ -250,6 +283,19 @@ const EXEC_LONG_OPTS = ['exec', 'receive-pack', 'upload-pack', 'open-files-in-pa
 const PS_SPLIT_RE = /^-[A-Za-z]/; // A word PowerShell reads as a parameter.
 const PS_WHOLE_PARAM_RE = /^-[A-Za-z0-9_-]*$/; // ...that it passes on in one piece.
 const CDPATH_SAFE_RE = /^(\/|\.\.?(\/|$))/;
+
+// The shell the command runs in, from the payload's `tool_name` (`shellOf`):
+// 'powershell' for the PowerShell tool, 'posix' for Bash (Claude Code's Git
+// Bash, Codex's Bash), null when the hook cannot tell - then every form must
+// mean the same thing to both shells. Set by `classify` / `parseSimple` for
+// the duration of one synchronous call.
+let reading = null;
+function shellOf(toolName) {
+  const tool = String(toolName || '').replace(/^.*\./, '');
+  if (tool === 'PowerShell') return 'powershell';
+  if (tool === 'Bash') return 'posix';
+  return null;
+}
 
 // Why a command is not simple, phrased for the reason text.
 class NotSimple extends Error {}
@@ -280,8 +326,11 @@ function lex(text) {
       tokens.push({ sep: '&&' });
       i += 2;
     } else {
+      // PowerShell reads `\` outside quotes as an ordinary character
+      // (`cd C:\work`); a POSIX shell drops it, so there it is not simple.
+      const plain = (c) => PLAIN_CHAR_RE.test(c) || (c === '\\' && reading === 'powershell');
       let word = '';
-      while (i < text.length && PLAIN_CHAR_RE.test(text[i])) word += text[i++];
+      while (i < text.length && plain(text[i])) word += text[i++];
       const bare = word; // The unquoted part.
       let quoted = false;
       if (text[i] === '"' || text[i] === "'") {
@@ -290,11 +339,21 @@ function lex(text) {
         if (close === -1) notSimple('an unterminated quote');
         const body = text.slice(i + 1, close);
         if (body === '') notSimple('an empty quoted argument');
-        for (const c of body) if (!QUOTED_CHAR_RE.test(c)) notSimple(`\`${describe(c)}\` inside quotes`);
+        for (const c of body) {
+          // A quoted `"C:\work"` reads the same in both shells once the shell
+          // is known; only a POSIX double-quoted `\\` (one `\`) and `\` at a
+          // line end (a continuation) read differently, so they are refused.
+          if (c === '\\' && reading !== null) continue;
+          if (!QUOTED_CHAR_RE.test(c)) notSimple(`\`${describe(c)}\` inside quotes`);
+        }
+        if (reading === 'posix' && text[i] === '"' && /\\(\\|\n)/.test(body)) notSimple('`\\\\` or a line continuation inside double quotes');
         word += body;
         quoted = true;
         i = close + 1;
       }
+      if (text[i] === '\\') notSimple(reading === 'posix'
+        ? 'an unquoted backslash - quote a Windows path ("C:\\work") or write it with `/` (C:/work)'
+        : 'a backslash outside quotes - write a path with `/` (C:/work)');
       if (word === '' || (i < text.length && !' \t\n;&'.includes(text[i]))) notSimple(`\`${describe(text[i])}\``);
       // `%` (cmd's variables) and a tilde the shell may expand mark a word
       // whose text is not what runs - rule 2's expansion item.
@@ -311,8 +370,19 @@ function describe(c) {
 }
 
 // Split into lines of segments. A segment records the separator before it
-// (`''` at the start of a line, `;`, `&&`) and after it.
-function parseSimple(text) {
+// (`''` at the start of a line, `;`, `&&`) and after it. `shell`: read the
+// text as that shell runs it (see `reading`); omitted, the current reading.
+function parseSimple(text, shell) {
+  if (shell === undefined) return parseLines(text);
+  const saved = reading;
+  reading = shell;
+  try {
+    return parseLines(text);
+  } finally {
+    reading = saved;
+  }
+}
+function parseLines(text) {
   const lines = [];
   let line = { segments: [] };
   let seg = null;
@@ -348,17 +418,27 @@ function parseSimple(text) {
 }
 
 // A path a location change (`move`) or `-C` may name. Returns it, or refuses.
+// On Windows a path is relative or starts with a drive (`C:/…`, `C:\…`); Git
+// Bash's `/c/…` is read as `C:/…` when the shell is known to be Git Bash.
+const GIT_BASH_DRIVE_RE = /^\/([A-Za-z])(?=\/|$)/;
 function checkPath(p, move) {
   if (/^[~+-]/.test(p) || p.includes('%')) notSimple(`the path \`${p}\``);
-  if (p.startsWith('//')) notSimple('a network path');
+  if (/^[\\/]{2}/.test(p)) notSimple('a network path');
   if (IS_WIN) {
-    if (p.startsWith('/')) notSimple('an absolute path without a drive letter');
-    if (p.includes(':') && !/^[A-Za-z]:\/[^:]*$/.test(p)) notSimple(`the path \`${p}\``);
+    const drive = GIT_BASH_DRIVE_RE.exec(p);
+    if (drive && reading === 'posix') {
+      p = `${drive[1].toUpperCase()}:/${p.slice(3)}`;
+    } else if (drive) {
+      notSimple(`the Git Bash path \`${p}\` - write it as \`${drive[1].toUpperCase()}:/${p.slice(3)}\``);
+    } else if (/^[\\/]/.test(p)) {
+      notSimple('an absolute path without a drive letter');
+    }
+    if (p.includes(':') && !/^[A-Za-z]:[\\/][^:]*$/.test(p)) notSimple(`the path \`${p}\``);
   } else if (p.includes(':')) {
     notSimple(`the path \`${p}\``);
   }
   // bash looks a bare name up in CDPATH before the current directory.
-  if (move && process.env.CDPATH && !CDPATH_SAFE_RE.test(p)) notSimple(`a bare \`cd\` name while CDPATH is set - write \`cd ./${p}\``);
+  if (move && reading !== 'powershell' && process.env.CDPATH && !CDPATH_SAFE_RE.test(p)) notSimple(`a bare \`cd\` name while CDPATH is set - write \`cd ./${p}\``);
   return p;
 }
 
@@ -390,19 +470,30 @@ function checkSegment(seg) {
     if (seg.quoted[i]) continue;
     if (words[i].length > 1 && words[i].startsWith('@')) notSimple(`\`${words[i]}\``);
   }
-  if (MOVE_WORDS.has(words[0])) {
-    const op = MOVE_WORDS.get(words[0]);
+  const op = MOVE_WORDS.get(words[0]) || (reading === 'powershell' && PS_MOVE_OPS.get(first));
+  if (op) {
     seg.kind = 'move';
+    const equivalent = op === 'pop' ? '`popd` alone' : `\`${op === 'push' ? 'pushd' : 'cd'} <path>\``;
     if (op === 'pop') {
-      if (words.length !== 1) notSimple(`arguments to \`${words[0]}\``);
+      if (words.length !== 1) notSimple(`arguments to \`${words[0]}\` - write ${equivalent}`);
       seg.move = { op };
       return;
     }
-    if (words.length !== 2) notSimple(`\`${words[0]}\` without exactly one path`);
-    seg.move = { op, path: checkPath(words[1], true) };
+    // PowerShell's `Set-Location -Path <path>` (or `-LiteralPath`) is the
+    // same move as `Set-Location <path>`.
+    const args = words.slice(1);
+    if (reading === 'powershell' && args.length === 2 && !seg.quoted[1] && /^-(path|literalpath)$/i.test(args[0])) args.shift();
+    if (args.length !== 1 || (args[0].startsWith('-') && !seg.quoted[words.length - 1])) {
+      notSimple(`\`${words[0]}\` without exactly one path - write ${equivalent}`);
+    }
+    seg.move = { op, path: checkPath(args[0], true) };
     return;
   }
-  if (PS_MOVE_RE.test(first)) notSimple(`\`${words[0]}\`, which moves in PowerShell only - write \`cd <path>\``);
+  if (PS_MOVE_RE.test(first)) {
+    const ps = PS_MOVE_OPS.get(first);
+    const equivalent = ps === 'push' ? '`pushd <path>` (and `popd`)' : ps === 'pop' ? '`popd`' : '`cd <path>`';
+    notSimple(`\`${words[0]}\`, which moves in PowerShell only - write ${equivalent}`);
+  }
   if (RUNNERS.has(first)) {
     seg.kind = 'run';
     if (words.slice(1).some((w) => GATE_WORD_RE.test(w))) notSimple(`a gate word in the arguments of \`${words[0]}\``);
@@ -542,6 +633,9 @@ function segmentFacts(seg) {
         ...spec,
         flag: true,
         hard: isHardPushFlag(w),
+        // `--force-with-lease` written out: a rewrite that refuses to drop
+        // commits it has not seen - the everyday update after a rebase.
+        lease: w === '--force-with-lease' || w.startsWith('--force-with-lease='),
         wide: longPrefixOf(w, PUSH_WIDE_LONG),
         value: PUSH_VALUE_OPTS.has(w) || (repo && !w.includes('=')),
         repo,
@@ -610,6 +704,7 @@ function pushCandidate(inv) {
   const seenSrc = new Set();
   let mainCount = 0;
   let hard = false;
+  let forced = false; // A hard flag other than --force-with-lease.
   let repoOpt = false;
   let remote = -1; // The first positional, until --repo says otherwise.
   let specs = 0;
@@ -659,6 +754,7 @@ function pushCandidate(inv) {
         upstream = true;
       }
       if (f.hard) hard = true;
+      if (f.hard && !f.lease) forced = true;
       if (f.wide) matching = true;
       if (f.repo) repoOpt = true;
       if (f.value) i++;
@@ -681,6 +777,10 @@ function pushCandidate(inv) {
     omittedRefspec: specs === 0,
     inv,
     hard,
+    // Only --force-with-lease, on the branch's own upstream: judged with the
+    // branch (allowed off the trunk, always refused on it).
+    lease: hard && !forced && !neverExempt && mainCount === 0 && !unreadable && !matching,
+    toTrunk: mainCount > 0,
     mainSpecs,
     neverExempt,
   };
@@ -840,6 +940,109 @@ function isPlainCommitPush(lines, analyzed) {
     && seg.git.globals.length === 0 && (seg === push || COMMIT_PUSH_SUBS.has(seg.git.sub)));
 }
 
+// The words after a git call's subcommand, or null when the call has a global
+// option or an expanded word (then it is never one of the shapes below).
+function plainArgs(inv) {
+  if (inv.globals.length > 0 || inv.seg.expand.some(Boolean)) return null;
+  return inv.seg.words.slice(inv.start);
+}
+// `git checkout -b|-B <x> [<start>]` / `git switch -c|-C <x> [<start>]`, x not
+// a trunk: the new branch's name, or null.
+function newBranchOf(inv) {
+  const rest = plainArgs(inv);
+  const opts = { checkout: ['-b', '-B'], switch: ['-c', '-C'] }[inv.sub];
+  if (!rest || !opts || !opts.includes(rest[0]) || rest.length < 2 || rest.length > 3) return null;
+  if (rest.slice(1).some((w) => w.startsWith('-')) || isMainBranch(rest[1])) return null;
+  return rest[1];
+}
+// `git checkout <trunk>` / `git switch <trunk>`: the trunk as written, or null.
+function trunkSwitchOf(inv) {
+  const rest = plainArgs(inv);
+  if (!rest || (inv.sub !== 'checkout' && inv.sub !== 'switch') || rest.length !== 1) return null;
+  return isMainBranch(rest[0]) ? rest[0] : null;
+}
+// `git branch -d <x>`, x not a trunk.
+function isBranchDelete(inv) {
+  const rest = plainArgs(inv);
+  return Boolean(rest) && inv.sub === 'branch' && rest.length === 2 && rest[0] === '-d'
+    && !rest[1].startsWith('-') && !isMainBranch(rest[1]);
+}
+// A sync form of either trunk, as written (see `syncForms`).
+const sameWords = (form, words) => form.length === words.length && form.every((x, i) => x === words[i]);
+function syncFormShape(inv) {
+  const rest = plainArgs(inv);
+  return Boolean(rest) && ['main', 'master'].some((t) => syncForms(t).some((f) => sameWords(f, [inv.sub, ...rest])));
+}
+
+// Which movers a command may hold next to its gated calls (`deferralPlan`).
+// Every plan needs a command with no location change and no git global option,
+// so each call runs in the payload cwd's repository. The movers of a plan are
+// not split off by rule 2; `contextRules` judges them with the branch:
+//   sync      - the trunk sync, as the whole command:
+//               [`git checkout|switch <trunk>` &&] <sync form>
+//               [&& `git branch -d <x>`]...; judged on the trunk named (or the
+//               current branch) by the sync forms. `branch` is that trunk.
+//   newBranch - `git checkout -b <x>` (or `switch -c`), then - every segment
+//               joined by `&&` - pushes of HEAD only, with `git add` / `git
+//               commit` and other commands between: the pushes land on <x>,
+//               which is not a trunk. `branch` is <x>.
+//   fetch     - plain fetches (`plainFetch`) next to `git merge|rebase
+//               origin/<trunk>` and refspec-less pushes: allowed off the
+//               trunk; on it only the exact `isPlainTrunkSync` command.
+//   commit    - `isPlainCommitPush`: allowed off the trunk, refused on it.
+// A plan with no kind holds no mover; `multiOk` lets several gated calls
+// stand on one line (all refspec-less pushes and sync merges / rebases, so
+// off the trunk none of them is gated).
+function deferralPlan(text, lines, analyzed, commandMover) {
+  const segs = lines.flatMap((line) => line.segments);
+  const invs = analyzed.flatMap((a) => a.invocations);
+  const cands = analyzed.flatMap((a) => a.cands);
+  if (cands.length === 0) return null;
+  if (segs.some((seg) => seg.kind === 'move' || (seg.kind === 'git' && seg.git.globals.length > 0))) return null;
+  const movers = invs.filter((inv) => moverName(inv, 'line'));
+
+  // sync
+  if (cands.length === 1 && cands[0].kind === 'git' && syncFormShape(cands[0].inv)) {
+    const at = segs.indexOf(cands[0].inv.seg);
+    const before = segs.slice(0, at);
+    const after = segs.slice(at + 1);
+    const inv = (seg) => seg.kind === 'git' && invs.find((i) => i.seg === seg);
+    const trunk = before.length === 1 && inv(before[0]) ? trunkSwitchOf(inv(before[0])) : null;
+    if ((before.length === 0 || (trunk && segs[at].before === '&&'))
+      && after.every((seg) => seg.before === '&&' && inv(seg) && isBranchDelete(inv(seg)))) {
+      const mover = movers.length > 0 ? moverName(movers[0], 'line') : null;
+      return { kind: 'sync', branch: trunk, seg: cands[0].inv.seg, mover };
+    }
+  }
+
+  if (!cands.every((c) => c.mainOnly)) return null;
+  const syncCands = cands.filter((c) => c.kind === 'git');
+  const multiOk = syncCands.every((c) => syncTarget(c) !== null);
+  if (movers.length === 0) return { kind: null, multiOk };
+
+  // newBranch
+  const created = movers.filter((m) => newBranchOf(m) !== null);
+  if (created.length === 1 && syncCands.length === 0
+    && movers.every((m) => m === created[0] || m.sub === 'commit')) {
+    const from = segs.indexOf(created[0].seg);
+    const last = Math.max(...cands.map((c) => segs.indexOf(c.inv.seg)));
+    const chained = segs.slice(from + 1, last + 1).every((seg) => seg.before === '&&');
+    const pushesAfter = cands.every((c) => segs.indexOf(c.inv.seg) > from && !c.inv.chdirs.length);
+    if (chained && pushesAfter) return { kind: 'newBranch', branch: newBranchOf(created[0]), multiOk: true };
+  }
+
+  // fetch
+  if (multiOk && movers.every((m) => plainFetch(m) !== null)) {
+    const target = cands.length === 1 ? syncTarget(cands[0]) : null;
+    const trunkSync = target && isPlainTrunkSync(text, lines) ? { ...fetchOnlyMovers(invs), sub: target.sub } : null;
+    return { kind: 'fetch', trunkSync, multiOk };
+  }
+
+  // commit
+  if (commandMover === 'commit' && isPlainCommitPush(lines, analyzed)) return { kind: 'commit', multiOk: false };
+  return null;
+}
+
 // --------------------------------------------------------------------------
 // Path sets
 // --------------------------------------------------------------------------
@@ -911,7 +1114,11 @@ function controlReason(files) {
 
 const NEED_FLAG = 'Quality check not passed. Run the quality-check skill before merging into main.';
 const STALE = 'Code changed after the last quality check. Re-run the quality-check skill before merging into main.';
-const splitReason = (mover) => `Split this into separate commands: git ${mover} and a gated push/merge in one call are not allowed. Run the git ${mover} command first, then the push/merge on its own.`;
+const splitReason = (mover) => `Split this into separate commands: in one call with git ${mover}, the gate cannot tell which branch or commit the push/merge acts on. Run the git ${mover} command first, then the push/merge on its own.`;
+const COMMIT_PUSH = 'Split this into separate commands: git commit and a push to main/master in one call are refused, because the push to the trunk needs a passing quality check on the new commit, and that commit does not exist until git commit has run. Run git commit on its own, run the quality-check skill, then push.';
+const FORCE = 'Force, delete, --all, --branches and --mirror pushes are never allowed here. Push a plain refspec after a quality check; to update your own feature branch after a rebase, use `git push --force-with-lease` from that branch.';
+const FORCE_TRUNK = 'Force, delete, --all, --branches and --mirror pushes to main/master are always refused, with or without a quality check: they rewrite or delete trunk history that others have already pulled. Push a branch and merge it through a pull request instead.';
+const ONE_OPERATION = 'Run one gated operation per command: split the merge, pull and push apart.';
 // H-49: a harness-only diff that is not exempt only because of the override
 // strings says so, instead of reading like an ordinary code change.
 const overrideReason = (files) => `Quality Gate Overrides / mutation_budget_minutes changed in ${gateConfigFiles(files).join(', ')}: such a change is not harness-exempt. Run the quality-check skill before merging into main.`;
@@ -922,7 +1129,7 @@ function needFlagReason(a, branch) {
   const c = a.cands[0];
   if (c.kind !== 'git' || (c.sub !== 'pull' && c.sub !== 'merge') || !isMainBranch(branch)) return NEED_FLAG;
   const trunk = String(branch).toLowerCase();
-  return `${NEED_FLAG} To sync ${trunk} without a flag, run exactly \`git pull\`, \`git pull origin ${trunk}\` or \`git merge origin/${trunk}\` (optionally with --ff-only) as the whole command.`;
+  return `${NEED_FLAG} To sync ${trunk} without a flag, run exactly \`git pull\`, \`git pull origin ${trunk}\` or \`git merge origin/${trunk}\` (optionally with --ff-only), or \`git pull --rebase\` with no local commits ahead of origin/${trunk}, as the whole command (optionally after \`git checkout ${trunk} &&\` and before \`&& git branch -d <branch>\`).`;
 }
 
 // Rule 3's closed set of sync forms, parameterized by the trunk the session is
@@ -932,49 +1139,49 @@ function needFlagReason(a, branch) {
 // extra flag or a different remote needs a flag. The merge form also needs
 // `origin/<trunk>` to BE the remote-tracking ref: a local tag or branch of
 // that name is what git would merge instead, and a ctx that cannot say is no
-// exemption.
+// exemption. `git pull --rebase` is a sync form only while the local trunk has
+// no commit origin's lacks (then the rebase is a fast-forward).
 const syncForms = (trunk) => [
   ['pull'], ['pull', 'origin', trunk], ['merge', `origin/${trunk}`],
   ['pull', '--ff-only'], ['pull', '--ff-only', 'origin', trunk], ['merge', '--ff-only', `origin/${trunk}`],
+  ['pull', '--rebase'],
 ];
-// `sole`: the whole command is this one segment. Anything next to it - even on
-// another line - can create a ref named `origin/<trunk>` or re-point `origin`
-// after this check has read them.
-function isSyncForm(line, branch, ctx, sole) {
-  if (!sole || line.segments.length !== 1) return false;
-  const w = line.segments[0].words;
+// Only inside a `sync` plan (see `deferralPlan`): nothing else in the command
+// can create a ref named `origin/<trunk>` or re-point `origin` after this
+// check has read them.
+function isSyncForm(seg, branch, ctx) {
+  const w = seg.words;
   if (w.length < 2 || w[0].toLowerCase() !== 'git') return false;
   const trunk = String(branch).toLowerCase();
   const rest = [w[1].toLowerCase(), ...w.slice(2)];
-  const form = syncForms(trunk).find((f) => f.length === rest.length && f.every((x, i) => x === rest[i]));
+  const form = syncForms(trunk).find((f) => sameWords(f, rest));
   if (!form) return false;
+  if (form[1] === '--rebase') return typeof ctx.localAhead === 'function' && ctx.localAhead(trunk) === 0;
   if (form[0] !== 'merge') return true;
   const source = form[form.length - 1];
   return typeof ctx.fullRef === 'function' && ctx.fullRef(source) === `refs/remotes/origin/${trunk}`;
 }
 
-// Rule 2, items 1-5: no ctx is touched, so these also block on a feature
-// branch (deliberate over-detection, see the header). `commandMover` is the
-// whole command's HEAD mover, computed once by the caller.
-function staticRules(a, commandMover, deferCommit = false, deferFetch = null) {
+// Rule 2, items 1-5: no ctx is touched. `commandMover` is the whole command's
+// HEAD mover, computed once by the caller; the movers of a `plan` (see
+// `deferralPlan`) are judged with the branch in `contextRules` instead.
+function staticRules(a, commandMover, plan) {
   if (a.cands.length === 0) return null;
   for (const c of a.cands) {
     if (c.kind !== 'push') continue;
-    if (c.neverExempt || c.hard) {
-      return deny('2', 'Force, delete, --all, --branches and --mirror pushes are never allowed here. Push a plain refspec after a quality check.');
-    }
+    if ((c.neverExempt || c.hard) && !c.lease) return deny('2', c.toTrunk ? FORCE_TRUNK : FORCE);
     if (c.matching) {
       return deny('2', 'A push that writes every matching branch (a `:` refspec or one with no destination) is never allowed here. Push one branch with an explicit refspec, from that branch.');
     }
   }
   const mover = moverOf(a.invocations, 'line') || commandMover;
-  if (mover && !deferCommit && !(deferFetch && mover === 'fetch')) return deny('2', splitReason(mover));
+  if (mover && !(plan && plan.kind)) {
+    return deny('2', mover === 'commit' && a.cands.some((c) => c.kind === 'push') ? COMMIT_PUSH : splitReason(mover));
+  }
   if (a.expansion) {
     return deny('2', 'Write refs without shell expansion (no %VAR% word and no word starting with ~).');
   }
-  if (a.cands.length > 1) {
-    return deny('2', 'Run one gated operation per command: split the merge, pull and push apart.');
-  }
+  if (a.cands.length > 1 && !(plan && plan.multiOk)) return deny('2', ONE_OPERATION);
   return null;
 }
 
@@ -1034,38 +1241,46 @@ function rule3Flag(ctx, noFlag) {
   return deny('3', overrideOnly(since) ? overrideReason(since.files) : STALE);
 }
 
-// Everything that needs ctx. Always returns a decision.
-function contextRules(a, ctx, deferCommit = false, deferFetch = null, sole = false) {
-  const branch = ctx.branch;
+// Everything that needs ctx. Always returns a decision. `plan` is the
+// command's `deferralPlan` (null when it is not one).
+function contextRules(a, ctx, plan = null) {
+  // A plan that switches branch judges its calls on the branch it switches
+  // to, without reading the current one.
+  const branch = plan && plan.branch ? plan.branch : ctx.branch;
   if (!branch) {
     // Includes a detached HEAD: an unresolved branch with a candidate blocks.
     return deny('5', 'Cannot verify the current branch. Check out a branch, then re-run the command.');
   }
   const gated = a.cands.filter((c) => !c.mainOnly || isMainBranch(branch));
   if (gated.length === 0) return allow();
-  if (deferCommit) {
-    return deny('2', splitReason('commit'));
+  if (gated.length > 1) return deny('2', ONE_OPERATION);
+  if (gated[0].kind === 'push' && gated[0].hard) return deny('2', FORCE_TRUNK);
+  const kind = plan ? plan.kind : null;
+  if (kind === 'commit') return deny('2', COMMIT_PUSH);
+  if (kind === 'newBranch') return deny('2', splitReason('checkout')); // Its branch is never a trunk.
+  if (kind === 'fetch') {
+    // On the trunk only the daily trunk sync: a plain fetch, then a merge
+    // whose source really is the remote-tracking ref - a local tag or branch
+    // named `origin/<trunk>` is what git would merge instead, and a ctx that
+    // cannot answer is no exemption - or a rebase, judged by the flag below.
+    const sync = plan.trunkSync;
+    if (!sync) return deny('2', splitReason('fetch'));
+    if (sync.sub === 'merge') {
+      const trunk = String(branch).toLowerCase();
+      const target = syncTarget(a.cands[0]);
+      const ok = target !== null && target.trunk === trunk && sync.trunks.every((t) => t === trunk)
+        && typeof ctx.fullRef === 'function' && ctx.fullRef(target.source) === `refs/remotes/origin/${trunk}`;
+      return ok ? allow() : deny('2', splitReason('fetch'));
+    }
   }
-  if (deferFetch && deferFetch.sub === 'merge') {
-    // The trunk sync after a plain fetch (see `plainFetch`): only on that trunk,
-    // and only when the merge source really is the remote-tracking ref - a
-    // local tag or branch named `origin/<trunk>` is what git would merge
-    // instead. A ctx that cannot answer is no exemption.
-    const trunk = String(branch).toLowerCase();
-    const target = syncTarget(a.cands[0]);
-    const ok = isMainBranch(branch) && target !== null && target.trunk === trunk
-      && deferFetch.trunks.every((t) => t === trunk)
-      && typeof ctx.fullRef === 'function' && ctx.fullRef(target.source) === `refs/remotes/origin/${trunk}`;
-    return ok ? allow() : deny('2', splitReason('fetch'));
-  }
-  // A plain fetch and then `git rebase origin/<trunk>`: off the trunk it was
-  // allowed above (a rebase is gated only on the trunk); on the trunk it is
-  // judged like any other gated call, by the flag below.
 
   const reverse = reverseRefspec(gated, branch); // Rule 2 item 6, ahead of every exemption.
   if (reverse) return reverse;
 
-  if (isMainBranch(branch) && isSyncForm(a.line, branch, ctx, sole)) return allow(); // Rule 3, sync form.
+  if (kind === 'sync') {
+    if (isSyncForm(plan.seg, branch, ctx)) return allow(); // Rule 3, sync form.
+    if (plan.mover) return deny('2', splitReason(plan.mover));
+  }
 
   const base = ctx.diffSinceBase;
   if (base === null) {
@@ -1146,6 +1361,36 @@ function stripTrailingOutput(text) {
   cut(TRAILING_PIPE_RE);
   while (cut(TRAILING_REDIRECT_RE));
   return body;
+}
+
+// PowerShell 5.1 has no `&&`; `A; if ($?) { B }` is how it is written there,
+// and it runs B exactly when A succeeded. Read as PowerShell, that exact
+// shape - B one command with no braces, `;`, `&`, `|`, `$`, backtick or line
+// break, and no `else` after it - is read as `A && B`. Text inside quotes is
+// left alone.
+const PS_IF_OK_RE = /;[ \t]*if[ \t]*\([ \t]*\$\?[ \t]*\)[ \t]*\{([^{}\n;&|$`]+)\}(?![ \t]*[^ \t\n;])(?!\s*(?:;\s*)?else)/iy;
+function readPsIfOk(text) {
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < text.length;) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === ';') {
+      PS_IF_OK_RE.lastIndex = i;
+      const m = PS_IF_OK_RE.exec(text);
+      if (m && m[1].trim() !== '') {
+        out += ` && ${m[1].trim()}`;
+        i = PS_IF_OK_RE.lastIndex;
+        continue;
+      }
+    }
+    out += ch;
+    i++;
+  }
+  return out;
 }
 
 // Message values. A gate word that only appears in the message of
@@ -1308,7 +1553,7 @@ function maskMessages(text) {
   return out;
 }
 
-const notSimpleReason = (why) => `This command mentions push, pull, merge or rebase but is not in the simple form the quality gate can judge (${why}), so run the git/gh push or merge as a separate command - optionally after \`cd <path>\` or as \`git -C <path>\` - with forward slashes and without variables, special characters in quotes, or other shell constructs. A command that does not push or merge should avoid those words (for a commit message, use git commit -F <file>).`;
+const notSimpleReason = (why) => `This command mentions push, pull, merge or rebase but is not in the simple form the quality gate can judge (${why}), so run the git/gh push or merge as a separate command - optionally after \`cd <path>\` or as \`git -C <path>\` - without variables, special characters in quotes, or other shell constructs. A command that does not push or merge should avoid those words; for a commit message or a PR body that holds them, write the text to a file and use \`git commit -F <file>\` or \`gh pr create --body-file <file>\`.`;
 
 // --------------------------------------------------------------------------
 // Where each gated call runs (#158)
@@ -1327,7 +1572,8 @@ const notSimpleReason = (why) => `This command mentions push, pull, merge or reb
 //   - a move inside an `&&` chain after a command that may fail, when a
 //     gated call follows once the chain has ended - it runs in either place -
 //     and a move in a command with CRLF line ends (AMBIGUOUS_MOVE).
-// (PowerShell-only spellings and a bare name under CDPATH are not simple.)
+// (PowerShell-only spellings outside PowerShell and a bare name under CDPATH
+// are not simple.)
 // Moves after the last candidate are not followed. Only the filesystem is
 // read here (existence, real path), never git.
 const UNRESOLVED = Object.freeze({ unresolved: true });
@@ -1406,8 +1652,9 @@ const MULTI_REPO = 'Run gated operations for one repository per command: split t
 // fail-open, which is about the payload cwd alone.
 const elsewhere = (verdict) => ({ ...verdict, elsewhere: true });
 
-// The (line, ctx) pairs to judge, or a block. Every candidate line holds
-// exactly one candidate here (rule 2 already blocked more than one). A ctx is
+// The (line, ctx) pairs to judge, or a block. A candidate line holds exactly
+// one candidate here, or several only under a `deferralPlan`, which has no
+// move at all - so the line is placed by its first candidate. A ctx is
 // made once per directory and shared per toplevel, so each repository's git
 // state is read once per command. `crlf`: the command had CRLF line ends.
 function locateCandidates(lines, candLines, ctx, crlf) {
@@ -1520,15 +1767,24 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 // git call failed is recorded on `ctx.state` by the getters themselves, never
 // by classify, and is read only by `main()`, which turns the single "not inside
 // a git repository" case into a fail-open.
-function classify(command, ctx) {
-  const text = String(command || '');
+function classify(command, ctx, shell = null) {
+  const saved = reading;
+  reading = shell;
+  try {
+    return classifyText(String(command || ''), ctx);
+  } finally {
+    reading = saved;
+  }
+}
+function classifyText(text, ctx) {
   const always = alwaysDeny(text);
   if (always) return always;
   if (Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) return gateWordFallback(text, TOO_LONG);
   if (!gateWordIn(text)) return allow();
   // A CRLF line end is read as LF (a lone CR is still not simple).
   const crlf = text.includes('\r\n');
-  const body = stripTrailingOutput(crlf ? text.replace(/\r\n/g, '\n') : text);
+  const stripped = stripTrailingOutput(crlf ? text.replace(/\r\n/g, '\n') : text);
+  const body = reading === 'powershell' ? readPsIfOk(stripped) : stripped;
   const masked = maskMessages(body);
   if (masked !== null && !gateWordIn(masked)) return allow(); // Only in a message.
   // The rest of the command is judged with its message values masked.
@@ -1545,25 +1801,28 @@ function classify(command, ctx) {
   // The HEAD movers are judged over the whole command, so this answer is the
   // same for every line: compute it once.
   const commandMover = moverOf(all, 'command');
-  const deferCommit = commandMover === 'commit' && isPlainCommitPush(lines, analyzed);
-  const candLines = analyzed.filter((a) => a.cands.length > 0);
-  const fetchOnly = commandMover === 'fetch' ? fetchOnlyMovers(all) : null;
-  const target = candLines.length === 1 && candLines[0].cands.length === 1 ? syncTarget(candLines[0].cands[0]) : null;
-  const deferFetch = fetchOnly && target && isPlainTrunkSync(judged, lines) ? { ...fetchOnly, sub: target.sub } : null;
-  // The sync forms (rule 3) need the WHOLE command to be that one segment.
-  const sole = lines.length === 1 && lines[0].segments.length === 1;
+  const plan = deferralPlan(judged, lines, analyzed, commandMover);
   for (const a of analyzed) {
-    const verdict = staticRules(a, commandMover, deferCommit, deferFetch);
+    const verdict = staticRules(a, commandMover, plan);
     if (verdict) return verdict;
   }
+  const candLines = analyzed.filter((a) => a.cands.length > 0);
   if (candLines.length === 0) return allow();
   const placed = locateCandidates(lines, candLines, ctx, crlf);
   if (!Array.isArray(placed)) return placed;
   for (const p of placed) {
-    const verdict = contextRules(p.a, p.ctx, deferCommit, deferFetch, sole);
-    if (verdict.decision === 'block') return p.moved ? elsewhere(verdict) : verdict;
+    const verdict = contextRules(p.a, p.ctx, plan);
+    if (verdict.decision === 'block') return p.moved ? elsewhere(judgedThere(verdict, p.ctx)) : verdict;
   }
   return allow();
+}
+
+// A block decided in another repository (a `cd` / `-C` moved the call) says
+// which repository and branch it judged.
+function judgedThere(verdict, there) {
+  const where = `This push/merge was judged in ${there.toplevel || 'another repository'} on branch ${there.branch || '(unknown)'}`;
+  const why = verdict.rule === '3' ? ': it updates main/master there, and that repository has no current quality-check flag. ' : ': ';
+  return { ...verdict, reason: `${where}${why}${verdict.reason}` };
 }
 
 // --------------------------------------------------------------------------
@@ -1700,6 +1959,15 @@ function makeCtx(cwd) {
         return r.ok ? r.out.trim() || null : null;
       });
     },
+    // Commits on the local trunk that origin's trunk lacks, or null when git
+    // cannot say (read only for `git pull --rebase` on the trunk).
+    localAhead(trunk) {
+      return once(`ahead:${trunk}`, () => {
+        const r = git(['rev-list', '--count', `refs/remotes/origin/${trunk}..refs/heads/${trunk}`]);
+        const n = r.ok ? Number.parseInt(r.out.trim(), 10) : NaN;
+        return Number.isInteger(n) ? n : null;
+      });
+    },
     get branch() {
       return once('branch', () => {
         const r = git(['branch', '--show-current']);
@@ -1786,6 +2054,7 @@ function main() {
       return;
     }
     let command;
+    let shell = null;
     let cwd = process.cwd();
     try {
       // Windows producers may prefix JSON with a UTF-8 BOM. Strip only that
@@ -1794,6 +2063,7 @@ function main() {
       const raw = payload && payload.tool_input ? payload.tool_input.command : undefined;
       if (typeof raw !== 'string') throw new Error('tool_input.command is not a string');
       command = raw;
+      shell = shellOf(payload.tool_name);
       if (typeof payload.cwd === 'string' && fs.existsSync(payload.cwd)) cwd = payload.cwd;
     } catch (e) {
       // Rule 5, fail-open #1: never block on a payload the hook cannot read -
@@ -1805,7 +2075,7 @@ function main() {
     const ctx = makeCtx(cwd);
     let verdict;
     try {
-      verdict = classify(command, ctx);
+      verdict = classify(command, ctx, shell);
     } catch (e) {
       // A classifier bug must not become a bypass: fall back to the gate words.
       process.stderr.write(`quality-gate: classifier error (${e && e.message}); judging on gate words alone.\n`);
@@ -1822,6 +2092,6 @@ function main() {
   });
 }
 
-module.exports = { classify, parseSimple };
+module.exports = { classify, parseSimple, shellOf };
 
 if (require.main === module) main();
