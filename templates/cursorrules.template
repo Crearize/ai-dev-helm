@@ -36,7 +36,9 @@ Ask the user only when:
 
 1. The answer cannot be determined after investigation
 2. An unexpected situation causes a loop or prevents reliable progress
-3. A substantive design decision needs authorization that has not already been given in the conversation
+3. The Design Gate approval is still pending (Design Confirmation Rules), or a substantive decision outside the approved design has not been authorized in the conversation
+
+Approval from the user is required only for: design approval, exceeding review limits, a release, closing a security advisory (GHSA), and a merge that an adopter rule requires the user to approve. Do not ask the user to run commands or do operations; run them yourself and verify.
 
 Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
 
@@ -52,11 +54,11 @@ Explore existing context first and batch the questions that are still needed int
 2. Send the user one message with the design, the review findings and how each was resolved.
 3. Stop until the user explicitly approves. A request to implement is not approval of a design that did not exist yet.
 
-This applies to bounded changes too; only typo fixes and obviously correct few-line changes with no design choice are exempt. After approval, do not ask again after writing the spec or reviewing the plan. The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
+This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again after writing the spec or reviewing the plan. The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
 
 ### Subagent Model Selection
 
-Use `documents/development/harness-runtime.md` for the shared model table, live tool parameter names and review reservations. This table describes delegation; it does not prohibit implementation by the current parent model. Use Claude Opus / Sonnet 5.5 or later only (never Haiku or older Claude models), and do not use GPT-6 Luna. Preserve intentional project-specific model choices when upgrading. Quality reviewers retain the required capability and check independent specifications and actual behavior.
+Use `documents/development/harness-runtime.md` for the shared model table, live tool parameter names and review reservations. This table describes delegation; it does not prohibit implementation by the current parent model. Use Claude Opus / Sonnet 5.5 or later only (never Haiku or older Claude models), and do not use GPT-6 Luna. This applies only to the models you choose for agents, subagents and delegation; model IDs that product code or product configuration calls (the product's own LLM features) are out of scope and must not be rewritten. Do not add project-specific overrides of agent model choices; the table in harness-runtime.md is the source of truth. Quality reviewers retain the required capability and check independent specifications and actual behavior.
 
 ### Execution and Review
 
