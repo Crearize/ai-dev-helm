@@ -587,6 +587,7 @@ ai-dev-helm/
 │   │   ├── review-docs.md      #     ドキュメントレビュー
 │   │   ├── review-infra.md     #     インフラ/CI レビュー
 │   │   ├── review-performance.md #    パフォーマンスレビュー
+│   │   ├── review-security.md    #    Web アプリ基本対策のセキュリティレビュー
 │   │   ├── review-requirements.md #   要件・仕様整合性レビュー
 │   │   └── review-prompt.md    #     統合レビュー指示
 │   ├── lint/                   #   横断・汎用の事前ビルド Lint 資産（ast-grep ルール群ほか）
@@ -674,6 +675,7 @@ your-project/
 │   ├── review-docs.md              #   ドキュメントレビューガイド
 │   ├── review-infra.md             #   インフラレビューガイド
 │   ├── review-performance.md       #   パフォーマンスレビューガイド
+│   ├── review-security.md       #   Web アプリ基本対策のセキュリティレビューガイド
 │   ├── review-requirements.md      #   要件・仕様整合性レビューガイド
 │   └── review-prompt.md            #   統合レビュー指示
 │
@@ -757,6 +759,7 @@ your-project/
 | **review-docs.md** | ドキュメントレビューの観点。構造の一貫性（見出しレベル、目次）、技術的正確性（コード例の動作確認、リンク切れ）、CLAUDE.md との整合性、DB 設計ドキュメント（テーブル定義、インデックス、外部キー） |
 | **review-infra.md** | インフラ/CI レビューの観点。GitHub Actions（バージョン固定、timeout 設定、最小権限、シークレット管理）、Docker（マルチステージビルド、非 root ユーザー、ヘルスチェック）、ビルド設定（依存バージョン固定、脆弱性チェック）、セキュリティ（ハードコード秘密鍵の検出、CORS/SSL 設定） |
 | **review-performance.md** | パフォーマンスレビューの観点。アルゴリズム計算量（O(n²) の混入、ループ内の重複計算）、DB/クエリ性能（N+1、不要カラム取得、ページネーション）、メモリ・リソース使用、フロントエンドの再レンダリング・バンドルサイズ |
+| **review-security.md** | Web アプリの基本対策（S-1〜S-6）のレビュー観点。本番依存の監査結果、セキュリティヘッダの基準値と全経路の確認、外部 CSS・フォント・スクリプトの自前配信、ログイン失敗の応答の区別不能性と仮パスワードの期限、認証済み API の `Cache-Control: no-store`、メソッド許可リストと 405。統合レビュアー・セキュリティエンジニアが使う |
 | **review-requirements.md** | 要件・仕様整合性レビューの観点。Issue との整合（実装内容・スコープ逸脱）、受け入れ基準の充足とテストによる証明、要件に記載されたエッジ条件の処理 |
 
 ---
