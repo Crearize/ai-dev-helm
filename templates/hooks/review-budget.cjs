@@ -18,14 +18,16 @@ const FOLLOWUP = /^(followup_task|send_message|send_input|resume_agent|SendMessa
 const REVIEW_ROLE_NAME = /(?:^|[\s_/:.-])(?:falsification-qa|security-engineer|requirements-analyst|performance-engineer)(?:$|[\s_/:.-])/i;
 const REVIEW_WORD = /\breview(?:er|ers|ing)?\b|[a-z]Review(?:er)?\b|レビュ[ーア]/;
 // A description is a review when it starts or ends with a review word. Fixing review findings and review-named artifacts are not.
-const REVIEW_ARTIFACT = /^(?:review(?:[-_]|(?=[A-Z]))(?:budget|feature|hook|tool|ui|page|screen|logic|module|service|api|settings)|review\s+(?:fix(?:es)?|comments?|findings?|feedback)\b|レビュー[\s_-]?(?:機能|基盤|予算|フック|画面|ツール|ロジック|設定|指摘|コメント|結果))/i;
+const REVIEW_ARTIFACT = /^(?:review(?:[-_]|(?=[A-Z]))(?:budget|feature|hook|tool|ui|page|screen|logic|module|service|api|settings)|review\s+(?:fix(?:es)?|follow-?ups?|comments?|findings?|feedback)\b|レビュー(?:[\s_-]?(?:機能|基盤|予算|フック|画面|ツール|ロジック|設定|コメント|結果)|の?[\s_-]?(?:指摘|対応|反映|修正)))/i;
+const FIX_LEAD = /^(?:fix(?:es|ed)?|address(?:ed|ing)?|apply|resolve[sd]?|handle|incorporate)\b/i; // acting on review output, not dispatching a reviewer
 const REVIEW_START = /^(?:(?:code|design|plan|requirements|verification|visual|integrated)[ -])?(?:review(?:er|ing)?\b|レビュ[ーア])|^(?:コード|設計|計画|要件|検証|デザイン|統合)レビュー/i;
 const REVIEW_END = /(?:\breview(?:er|ing)?|レビュー|レビュア)[\s.。]*$/i;
 const isReviewName = (name) => REVIEW_ROLE_NAME.test(name) || REVIEW_WORD.test(name);
 function isReviewDescription(text) {
   const d = String(text || '').trim();
   if (!d) return false;
-  const rest = d.replace(/^(?:code|design|plan|requirements|verification|visual|integrated)[ -]/i, '');
+  if (FIX_LEAD.test(d)) return false;
+  const rest = d.replace(/^(?:(?:code|design|plan|requirements|verification|visual|integrated|quality)[ -]|(?:コード|設計|計画|要件|検証|デザイン|統合|品質))/i, '');
   return (REVIEW_START.test(d) && !REVIEW_ARTIFACT.test(rest)) || REVIEW_END.test(d);
 }
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
@@ -77,11 +79,8 @@ function validState(state, branch) {
   return true;
 }
 
-function processAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
-}
-
-// A lock is removed automatically only when it is older than 10 minutes and the process that wrote it is gone.
+// A lock older than 10 minutes is removed whatever its content (the hook holds it for seconds). The stale lock is first
+// renamed to a unique name, and only the process whose rename succeeded proceeds, so a fresh lock is never removed.
 function acquireLock(lock) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -90,17 +89,20 @@ function acquireLock(lock) {
       return fd;
     } catch (error) {
       if (error.code === 'EEXIST' && attempt === 0) {
-        let info;
-        try { info = JSON.parse(fs.readFileSync(lock, 'utf8')); } catch { /* unreadable: not recoverable */ }
-        if (info && Number.isInteger(info.pid) && info.pid > 0 && Number.isFinite(info.at) &&
-            Date.now() - info.at > STALE_LOCK_MS && !processAlive(info.pid)) {
-          process.stderr.write('review-budget: removed a stale lock (older than 10 minutes, its process no longer exists)\n');
-          try { fs.unlinkSync(lock); } catch { /* another process may have removed it */ }
+        let old = false;
+        try { old = Date.now() - fs.statSync(lock).mtimeMs > STALE_LOCK_MS; } catch { continue; } // gone already: retry
+        if (old) {
+          const moved = `${lock}.stale-${process.pid}-${crypto.randomBytes(6).toString('hex')}`;
+          try {
+            fs.renameSync(lock, moved);
+            process.stderr.write('review-budget: removed a stale lock (older than 10 minutes)\n');
+            try { fs.unlinkSync(moved); } catch { /* best effort */ }
+          } catch { /* another process won the race */ }
           continue;
         }
       }
       throw new Error('Review budget lock is held by another process; do not delete or edit it and do not work around it. ' +
-        'A lock older than 10 minutes whose process is gone is removed automatically. If it persists, report it to the owner and wait. ' + error.code);
+        'A lock older than 10 minutes is removed automatically. If it persists, report it to the owner and wait. ' + error.code);
     }
   }
 }

@@ -26,7 +26,7 @@ When the design is complete, complete these steps in order before writing any im
 
 Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines. A fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. State what you will change before making an exempt change.
 
-None of these replaces the gate: your own self-check, a request to implement given before the design existed, a plan review, or the final quality-check. If the reservation is denied, report the reason and ask the user how to proceed.
+None of these replaces the gate: your own self-check, a request to implement given before the design existed, a plan review, or the final quality-check. If the reservation is denied, follow the hook's message; ask the owner for approval only when a review limit is reached, then run extend yourself.
 
 Once the user approves, do not ask again when updating the spec or writing the plan.
 

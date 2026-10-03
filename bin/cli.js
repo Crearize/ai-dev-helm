@@ -253,16 +253,24 @@ yargs(hideBin(process.argv))
       .option('reason', { type: 'string', describe: 'extend: the owner approval, quoted (10-500 characters)' }),
     (argv) => {
       try {
+        const words = [argv.action]; // rebuilt from parsed values so --phase=design works too
+        for (const key of ['phase', 'roles', 'limit', 'rounds', 'reason']) if (argv[key] !== undefined) words.push(`--${key}`, String(argv[key]));
         // Prefer the project's own copy of the hook (same state, same rules as the hook that gates reviews).
         const script = findProjectReviewBudget(process.cwd());
         if (script) {
-          const run = require('node:child_process').spawnSync(process.execPath, [script, ...process.argv.slice(3)], { stdio: 'inherit' });
+          // A project hook from 3.2.x has no extend; it would read stdin as a hook event instead of failing.
+          if (argv.action === 'extend' && !/function extendLimit/.test(require('node:fs').readFileSync(script, 'utf8'))) {
+            console.error('Error: the project review-budget hook is older and does not support extend; run harness-upgrade to update it.');
+            process.exitCode = 1;
+            return;
+          }
+          const run = require('node:child_process').spawnSync(process.execPath, [script, ...words], { stdio: ['ignore', 'inherit', 'inherit'] });
           process.exitCode = run.status === null ? 1 : run.status;
           return;
         }
         console.error('Warning: no project review-budget script found (.ai-dev-helm.json reviewBudgetScript, .claude/hooks, .codex/hooks); using the bundled one.');
         const budget = require('../templates/hooks/review-budget.cjs');
-        console.log(JSON.stringify(budget.runCommand(process.argv.slice(3)), null, 2));
+        console.log(JSON.stringify(budget.runCommand(words), null, 2));
       } catch (error) {
         console.error(`Error: ${error.message}`);
         process.exitCode = 1;
