@@ -88,7 +88,7 @@ git worktree add "${WORKTREE_PATH}" "${BRANCH_NAME}"
 
 作成後は対象 worktree に移動し、以降の変更はその中だけで行う。
 
-**スキルのリンク**: `.claude/skills` 等は Git に追跡されないリンクのため、worktree には引き継がれない。作成後に worktree の中で `npx @crearize/ai-dev-helm link-skills` を実行する（無いリンクだけを作る。Windows は junction）。リンクが無いと配布スキルが読まれない。
+**スキルのリンク**: `.claude/skills` 等は `.gitignore`（`/.claude/skills` など）で追跡対象外にしているリンクのため、worktree には引き継がれない。作成後に worktree の中で `npx @crearize/ai-dev-helm link-skills` を実行する（無いリンクだけを作る。Windows は junction）。リンクが無いと配布スキルが読まれない。
 
 ---
 
@@ -248,7 +248,7 @@ git branch -d "<branch-name>"   # マージ済みを確認してから削除。�
 **Windows で削除に失敗する場合**（`node_modules` の長いパスなど）。対象は `.worktrees/<name>` の中だけにする。
 
 1. `git config core.longpaths true`
-2. 失敗したら `cmd /c rmdir /s /q "\\?\<絶対パス>\.worktrees\<name>\node_modules"`（`\?\` 形式の絶対パス）で長いパスを消す
+2. 失敗したら、先頭を `\\?\` にした絶対パス（`\\?\<絶対パス>\.worktrees\<name>\node_modules`）で長いパスを消す。Git Bash では `/c` がパスに変換されるため `cmd //c rmdir /s /q "\\?\<絶対パス>\.worktrees\<name>\node_modules"` と書く（PowerShell なら `Remove-Item -LiteralPath "\\?\<絶対パス>\.worktrees\<name>\node_modules" -Recurse -Force`）
 3. そのあと `git worktree remove --force ".worktrees/<name>"` と `git worktree prune` を実行する
 
 `.worktrees/<name>` の外は消さない。

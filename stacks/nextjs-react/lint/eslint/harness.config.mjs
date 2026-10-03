@@ -42,7 +42,10 @@ import globals from 'globals';
 async function optional(name) {
   try {
     return (await import(name)).default;
-  } catch {
+  } catch (err) {
+    // Skip only when the plugin package itself is absent; rethrow anything else (broken install, a plugin dependency missing) so security rules do not silently disappear.
+    const self = err && err.code === 'ERR_MODULE_NOT_FOUND' && String(err.message).includes(`Cannot find package '${name}'`);
+    if (!self) throw err;
     console.warn(`[ai-dev-helm] ${name} is not installed; its rules are skipped`); // eslint-disable-line no-console
     return null;
   }
