@@ -1,3 +1,5 @@
+> **Harness note:** This harness does not use Haiku. Read every Haiku example in the text below as Sonnet 5.5.
+
 # Skill authoring best practices
 
 > Learn how to write effective Skills that agents can discover and use successfully.
