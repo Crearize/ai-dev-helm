@@ -311,7 +311,7 @@ Low リスクの変更、および領域テーブルの Step 3 欄が `-` の領
 
 ## Step 4: 体制レビュー（全て必須）
 
-**レビュー起動前の受付**: `documents/development/harness-runtime.md` を読み、配布済みの `node .claude/hooks/review-budget.cjs begin --phase quality --roles ...`（Codexのみなら `.codex`）で、今回のロール一式を一度だけ予約する。返された各 `markers` の行を対応するレビュアーの prompt / message の先頭に置く。起動名に `reviewer` を含める。再検証・既存レビュアーへの追加依頼も新しい一巡として予約する。上限拒否時は自己延長・名前変更・別CLI起動で回避しない。
+**レビュー起動前の受付**: `documents/development/harness-runtime.md` を読み、配布済みの `node .claude/hooks/review-budget.cjs begin --phase quality --roles ...`（Codexのみなら `.codex`）で、今回のロール一式を一度だけ予約する。返された各 `markers` の行を対応するレビュアーの prompt / message の先頭に置く。起動名に `reviewer` を含める。再検証・既存レビュアーへの追加依頼も新しい一巡として予約する。上限拒否時は自己延長・名前変更・別CLI起動で回避しない（オーナーの承認後だけ `review-budget extend` を使う）。
 
 **上限の対象はレビューのみ**: Step 2〜3 の失敗で Step 4 を実施しなかった工程はレビュー回数に数えない。実装・探索・通常テストはこの上限では止めず、原因に基づく修正と再実行を続ける。工程番号 `total_cycles` とレビュー一巡の `round` を区別し、予約の phase / round を該当サイクルの `notes` に記録する。
 
@@ -563,7 +563,7 @@ Step 1 で決まったレビュアーのサブエージェントを Agent ツー
 - **統合指摘の対応後の判定**:
   - 高/中指摘が残っていない → サイクル終了、Step 5（追加テスト提案）へ
   - それ以外で レビュー回数 < 上限（Step 4 未実施の工程は数えない） → **次サイクル**（Step 2 から再実行）。Step 4 は下記「サイクルと `review_mode`」に従う
-  - **停滞**（直前サイクルと同一箇所・同一内容の高指摘が再度残った）または **上限到達** → ユーザーに判断を仰ぐ。選択肢は ①残存を受容して通す（`gate_override` に記録）②方針を変えて追加サイクル（上限は同数。変更する方針をユーザーに明示させ `cycle_extensions` に記録する。ただし記録だけでは予約上限は解除されず、状態管理は `harness-runtime.md` に従いユーザーが行う。方針の変更がない再実行は認めない）③中断。`cycle_abort_reason` に `cycle_limit` / `stagnation` を記録する
+  - **停滞**（直前サイクルと同一箇所・同一内容の高指摘が再度残った）または **上限到達** → ユーザーに判断を仰ぐ。選択肢は ①残存を受容して通す（`gate_override` に記録）②方針を変えて追加サイクル（上限は同数。変更する方針をユーザーに明示させ `cycle_extensions` に記録する。ただし記録だけでは予約上限は解除されない。承認を得たらエージェントが `review-budget extend` を実行し（`--reason` に承認の文を引用）、同じ文を `cycle_extensions` に記録してから新しい一巡を予約する。ユーザーに状態の操作は頼まない。上限の後にコードを変えた場合は、`gate_override` ではなく `extend` で一巡を足してレビューを受ける。方針の変更がない再実行は認めない）③中断。`cycle_abort_reason` に `cycle_limit` / `stagnation` を記録する
   - **構造的停滞**（1サイクルで同一クラスの高指摘 — 同一ファイル群ではなく、同一の機構・同一の設計判断に起因すると統合時に判定できる指摘 — が quality-policy §5 の閾値以上出た場合）→ 修正を続けず構造的問題として報告し、`cycle_abort_reason: "structural"` を記録してユーザーの判断を仰ぐ。選択肢は ①設計に戻す ②受容して通す（`gate_override`）③中断（方針変更による追加サイクルは選択肢に含めない — 数値・判定基準は quality-policy §5 を正とする）
 - レビュー回数上限・停滞検出・構造的停滞の定義は quality-policy §5 を正とする（**数値は本スキルに置かない**）
 

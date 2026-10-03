@@ -19,7 +19,7 @@
 | `mutation` | `Mutation` | フェーズ2必須 [^lifecycle] | Step 5（`test-recommendation` スキル）によるミューテーションテストの提案・実行結果（quality-policy.md §2）。詳細は § Mutation オブジェクト を参照 |
 | `test_design` | `TestDesign` | フェーズ2必須 [^lifecycle] | Step 3 のテスト設計メモ（`test-design` スキル）との照合結果（quality-policy.md §4）。詳細は § TestDesign オブジェクト を参照 |
 | `gate_parameter_overrides` | `GateParameterOverrides \| null` | 必須（発生時） [^lifecycle] | ミューテーションテストの実行時間バジェットを既定値から上書きした場合の記録（quality-policy.md §2「上書きの契約」）。上書きがなければ `null`。**打ち切り承認を記録する `gate_override` とは別物**（詳細は § GateParameterOverrides オブジェクト を参照） |
-| `gate_override` | `GateOverride \| null` | 必須（発生時） [^lifecycle] | サイクル上限到達・停滞でサイクルを打ち切ったにもかかわらずユーザーの明示承認のもとで完了扱いとした場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6）。**ゲートパラメータの上書きを記録する `gate_parameter_overrides` とは別物** |
+| `gate_override` | `GateOverride \| null` | 必須（発生時） [^lifecycle] | サイクル上限到達・停滞でサイクルを打ち切ったにもかかわらずユーザーの明示承認のもとで完了扱いとした場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6）。最後のレビュー以降にコードの変更が無く、残った指摘を受け入れる場合専用（上限の後にコードを変えたなら `review-budget extend` で一巡を足してレビューを受ける）。**ゲートパラメータの上書きを記録する `gate_parameter_overrides` とは別物** |
 | `risk_level_downgrade` | `RiskLevelDowngrade \| null` | 必須（発生時） [^lifecycle] | `test-design` メモの自己判定より低いリスクレベルを Step 1 で採用した場合の記録。該当がなければ `null`（記録なしの引き下げは不可 — `quality-check` SKILL.md Step 1） |
 | `_notes` | `string[]` | 任意 | 運用上の観測事実の記録先（ポート占有確認の結果 — #119、サブエージェント中断の時刻と影響 — #120 など）。各要素は記録元のステップを示す `[Step N]` を先頭に付ける（例: `"[Step 1] E2E 用ポート 3000 を他プロジェクトが占有中。Step 5 で停止予定"`）。該当がなければ省略または空配列 |
 

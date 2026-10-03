@@ -5,6 +5,19 @@ const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const { printHeader } = require('../lib/utils');
 
+// H-10: locate the review-budget script installed in the project (config key, then .claude, then .codex).
+function findProjectReviewBudget(cwd) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const candidates = [];
+  try {
+    const config = JSON.parse(fs.readFileSync(path.join(cwd, '.ai-dev-helm.json'), 'utf8'));
+    if (typeof config.reviewBudgetScript === 'string' && config.reviewBudgetScript) candidates.push(path.resolve(cwd, config.reviewBudgetScript));
+  } catch { /* no config */ }
+  candidates.push(path.join(cwd, '.claude', 'hooks', 'review-budget.cjs'), path.join(cwd, '.codex', 'hooks', 'review-budget.cjs'));
+  return candidates.find((file) => fs.existsSync(file));
+}
+
 yargs(hideBin(process.argv))
   .scriptName('ai-dev-helm')
   .usage('$0 <command> [options]')
@@ -230,19 +243,34 @@ yargs(hideBin(process.argv))
   )
   .command(
     'review-budget <action>',
-    'Reserve or inspect review-only round budgets (shared by Claude Code and Codex)',
+    'Reserve, extend or inspect review-only round budgets (shared by Claude Code and Codex)',
     (yargs) => yargs
-      .positional('action', { choices: ['begin', 'status'], type: 'string' })
-      .option('phase', { choices: ['requirements', 'design', 'plan', 'quality'], type: 'string' })
+      .positional('action', { choices: ['begin', 'status', 'extend'], type: 'string' })
+      .option('phase', { choices: ['requirements', 'design', 'plan', 'quality', 'production', 'mutation'], type: 'string' })
       .option('roles', { type: 'string', describe: 'Comma-separated review roster' })
-      .option('limit', { type: 'number', describe: 'Lower review ceiling (1-3); cannot raise an existing ceiling' }),
+      .option('limit', { type: 'number', describe: 'Lower review ceiling (1-3); cannot raise an existing ceiling' })
+      .option('rounds', { type: 'number', describe: 'extend: rounds to add after the owner approved exceeding the limit (1-3)' })
+      .option('reason', { type: 'string', describe: 'extend: the owner approval, quoted (10-500 characters)' }),
     (argv) => {
-      const budget = require('../templates/hooks/review-budget.cjs');
       try {
-        const result = argv.action === 'status' ? budget.status() : budget.beginRound({
-          phase: argv.phase, roles: argv.roles?.split(','), limit: argv.limit,
-        });
-        console.log(JSON.stringify(result, null, 2));
+        const words = [argv.action]; // rebuilt from parsed values so --phase=design works too
+        for (const key of ['phase', 'roles', 'limit', 'rounds', 'reason']) if (argv[key] !== undefined) words.push(`--${key}`, String(argv[key]));
+        // Prefer the project's own copy of the hook (same state, same rules as the hook that gates reviews).
+        const script = findProjectReviewBudget(process.cwd());
+        if (script) {
+          // A project hook from 3.2.x has no extend; it would read stdin as a hook event instead of failing.
+          if (argv.action === 'extend' && !/function extendLimit/.test(require('node:fs').readFileSync(script, 'utf8'))) {
+            console.error('Error: the project review-budget hook is older and does not support extend; run harness-upgrade to update it.');
+            process.exitCode = 1;
+            return;
+          }
+          const run = require('node:child_process').spawnSync(process.execPath, [script, ...words], { stdio: ['ignore', 'inherit', 'inherit'] });
+          process.exitCode = run.status === null ? 1 : run.status;
+          return;
+        }
+        console.error('Warning: no project review-budget script found (.ai-dev-helm.json reviewBudgetScript, .claude/hooks, .codex/hooks); using the bundled one.');
+        const budget = require('../templates/hooks/review-budget.cjs');
+        console.log(JSON.stringify(budget.runCommand(words), null, 2));
       } catch (error) {
         console.error(`Error: ${error.message}`);
         process.exitCode = 1;

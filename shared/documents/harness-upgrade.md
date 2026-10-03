@@ -54,6 +54,15 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 
 更新後は、小さな実装依頼でも設計レビューの予約・依頼と、ユーザーへのレビュー依頼が行われること、各ツールで実際に選ばれるモデルが上記になっていることを実際の読込元で確認します。
 
+## review-budget の更新（3.3.0）
+
+- phase `production`（制作時のデザインレビュー）と `mutation`（ミューテーション分類の検証）が加わった。独自のローカル回避策（`--phase quality` の読み替え、ミューテーション用の独自スクリプト）は、動作を確かめてから外す。
+- `requirements` / `design` / `plan` / `production` の予約は main / master 上で拒否される。先にタスクブランチを作る。
+- `HELM_REVIEW:` のマーカーは message / prompt の 1 行目だけが有効。レビュー語を含まない実装の依頼は、予約なしで通る。
+- Claude Code の hook の matcher に `SendMessage` が加わった。`init` の再実行で更新される（Codex の matcher は変わらず、信頼の再確認は要らない）。
+- 上限を超えるときは、オーナーの承認後にエージェントが `review-budget extend` を実行する。「状態ファイルを退避する」手順は不要になった。
+- 配布した hook（`.claude/hooks` と `.codex/hooks`）は全コピーを同時に更新する。古い hook は `extensions` を持つ状態を不正と判定する。
+
 ## 計測の範囲
 
 `quality-context --cycle N` は `measurements.json` に生成処理の実測時間と取得時点のファイルハッシュを保存します。並列エージェント時間やタスク全体の時間には換算しません。棚卸し失敗は `inventory_error` に記録し、追加の品質ゲートにしません。
