@@ -97,7 +97,7 @@ Step 4: Review cycle (roster sized by change content - integrated reviewer alway
     |
 Step 5: Additional-test proposal (test-recommendation skill: heuristics recommend
         mutation/E2E runs with rationale, record it as a proposal for the owner;
-        it is not an approval gate and does not block work; declines are recorded - except an executed E2E that fails
+        it is not an approval gate and does not block work; approved runs execute, declines are recorded - except an executed E2E that fails
         must be fixed)
     |
 Step 6: Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
