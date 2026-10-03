@@ -166,6 +166,9 @@ High / Medium リスクの変更では、実装前に `test-design` スキルで
 | `status` | `"verified" \| "retroactive" \| "out_of_scope" \| "not_required"` | 必須 | 照合結果の種別。`verified`: 実装前に作成済みのメモとテストを Step 3 で照合し充足を確認 / `retroactive`: メモが存在せず Step 3 で `test-design` を遡及実行し、洗い出した不足テストを補完 / `out_of_scope`: 変更領域別ステップ適用テーブルで Step 3 が `-` の領域のため対象外（quality-policy.md §2 マトリクス優先順位原則）/ `not_required`: Low リスクの変更のため不要 |
 | `memo_path` | `string \| null` | 必須 | テスト設計メモのパス（`docs/superpowers/plans/*-test-design.md` のグロブで発見される命名規則。`test-design` スキルの仕様）。`status` が `verified` / `retroactive` の場合は必須。`out_of_scope` / `not_required` では `null` |
 | `gaps_addressed` | `number` | 必須 | 照合・遡及実行で洗い出し補完した不足テストの件数。不足がなければ `0`。`out_of_scope` / `not_required` では `0` |
+| `reason` | `string` | `out_of_scope` では必須 | 対象外とした理由（任意の記録として他の status でも書いてよい） |
+
+**製品のコードを含まない変更（ハーネスの更新を含む）**: `test_design: {"status":"out_of_scope","reason":"<理由>","memo_path":null,"gaps_addressed":0}` と記録する。`retroactive` は、製品のコードのテストを実装の後に設計した場合だけに使う（ハーネス更新の記録に使わない）。
 
 ### GateParameterOverrides オブジェクト
 

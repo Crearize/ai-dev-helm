@@ -88,6 +88,8 @@ git worktree add "${WORKTREE_PATH}" "${BRANCH_NAME}"
 
 作成後は対象 worktree に移動し、以降の変更はその中だけで行う。
 
+**スキルのリンク**: `.claude/skills` 等は Git に追跡されないリンクのため、worktree には引き継がれない。作成後に worktree の中で `npx @crearize/ai-dev-helm link-skills` を実行する（無いリンクだけを作る。Windows は junction）。リンクが無いと配布スキルが読まれない。
+
 ---
 
 ## Step 3: ポートレジストリ
@@ -242,6 +244,14 @@ git worktree remove ".worktrees/<worktree-name>"
 git worktree prune
 git branch -d "<branch-name>"   # マージ済みを確認してから削除。破棄時のみ -D を使用
 ```
+
+**Windows で削除に失敗する場合**（`node_modules` の長いパスなど）。対象は `.worktrees/<name>` の中だけにする。
+
+1. `git config core.longpaths true`
+2. 失敗したら `cmd /c rmdir /s /q "\\?\<絶対パス>\.worktrees\<name>\node_modules"`（`\?\` 形式の絶対パス）で長いパスを消す
+3. そのあと `git worktree remove --force ".worktrees/<name>"` と `git worktree prune` を実行する
+
+`.worktrees/<name>` の外は消さない。
 
 メインチェックアウト直下の `.worktrees/.ports.json` から該当 worktree の割当を削除する。
 
