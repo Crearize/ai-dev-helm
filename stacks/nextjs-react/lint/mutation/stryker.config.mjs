@@ -16,6 +16,8 @@
 // as reference information and triages survivors with the user
 // (quality-policy.md §2). Do not add gate numbers to this file.
 
+import os from 'node:os';
+
 export default {
   // --- runner (product tunes: swap for jest products) --------------------
   // vitest products use @stryker-mutator/vitest-runner. A jest product sets
@@ -30,6 +32,8 @@ export default {
   // so mutation:diff never reaches a file mutation:full would not mutate.
   mutate: [
     'src/**/*.{ts,tsx}',
+    // Next.js middleware lives at the project root (src/middleware.ts is covered above).
+    'middleware.ts',
     '!src/**/*.d.ts',
     '!src/**/*.{test,spec}.{ts,tsx}',
     '!src/**/__tests__/**',
@@ -41,6 +45,13 @@ export default {
     '!build/**',
     '!coverage/**',
   ],
+
+  // --- run budget --------------------------------------------------------
+  // Half the cores (at least 1): Stryker's default (cores - 1) saturates the
+  // machine and starves the test runner. The dry run executes the whole suite
+  // once; 5 minutes (Stryker's default) is too short for a real product.
+  concurrency: Math.max(1, Math.floor(os.availableParallelism() / 2)),
+  dryRunTimeoutMinutes: 15,
 
   // --- mutator set (lean by default) -------------------------------------
   // Only behaviour-changing mutators stay enabled. The excluded ones mostly
@@ -78,6 +89,12 @@ export default {
   // Mirrors PIT's stable-path approach (timestampedReports = false).
   jsonReporter: {
     fileName: 'reports/mutation/mutation.json',
+  },
+
+  // Pinned like the json report so an empty diff scope can remove a stale
+  // html report at a known path (see changed-ranges.mjs).
+  htmlReporter: {
+    fileName: 'reports/mutation/mutation.html',
   },
 
   // --- incremental (the full run's own cache) ----------------------------

@@ -9,7 +9,7 @@ lint/
   README.md                 # this file
   README-<stack>.md         # per-stack wiring guide (only for selected stacks)
   ast-grep/
-    <category>/             # generic, stack-independent rule groups
+    <category>/             # generic rule groups (rules copied per selected stack)
       *.yml                 # ast-grep rules
       README.md             # what the group catches and why
     <stack>/                # stack-specific ast-grep rules (e.g. nextjs-react/)
@@ -21,7 +21,7 @@ lint/
     ast-grep/               # generated rules that fill gaps; add to sgconfig.yml ruleDirs
 ```
 
-Which directories you have depends on the stacks selected during `init`; the generic `ast-grep/<category>/` groups are always present. Everything except `lint/product/` is package-managed (see Updating); `lint/product/` is yours to own.
+Which directories you have depends on the stacks selected during `init`; the generic `ast-grep/<category>/` groups are always present as directories, but their rules are selected per stack by language (Java rules with `java-springboot`, JS/TS rules with `nextjs-react`; no stack selected copies all). A JS product that does not select `nextjs-react` gets no JS rules. Everything except `lint/product/` is package-managed (see Updating); `lint/product/` is yours to own.
 
 ## Opting in and out
 

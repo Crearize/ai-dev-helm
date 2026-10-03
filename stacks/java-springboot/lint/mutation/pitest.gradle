@@ -20,28 +20,46 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 
+def mutationBasePackage = project.findProperty('mutationBasePackage')?.toString()?.trim()
+// Only a requested mutation task needs the property. Throwing for every build
+// would break test/build/bootRun/checkstyle in products that apply this script
+// (e.g. from `subprojects { }`) before they have set it. Task names are part of
+// Gradle's configuration-cache key, same approach as mutationDiffRequested below.
+def mutationTaskRequested = gradle.startParameter.taskNames.any {
+    def n = it.tokenize(':').last()
+    n == 'pitest' || n == 'mutationFull' || n == 'mutationDiff'
+}
+if (!mutationBasePackage && mutationTaskRequested) {
+    throw new GradleException('mutationBasePackage is not set - add mutationBasePackage=<base package, e.g. com.example.product> to gradle.properties (or pass -PmutationBasePackage=...)')
+}
+
 pitest {
-    // Pin the PIT core version. junit5PluginVersion 1.2.1 (below) requires PIT
-    // core 1.16 or newer; the gradle-pitest-plugin's older default core (1.15.0)
-    // crashes against it with NoSuchMethodError on TestUnitExecutionListener.
-    // Pinning here keeps the JUnit 5 companion and core compatible regardless of
-    // the plugin version the product happens to resolve. (Execution-verified
-    // against a real Spring Boot project during phase 4.)
-    pitestVersion = '1.16.1'
+    // Pin the PIT core version. The gradle-pitest-plugin's older default core
+    // (1.15.0) crashes against the JUnit 5 companion with NoSuchMethodError on
+    // TestUnitExecutionListener, so core and companion are pinned together here
+    // regardless of the plugin version the product happens to resolve.
+    // 1.25.9 reads Java 25 class files (major 69); the earlier pin 1.16.1 failed
+    // with "Unsupported class file major version 69". Execution-verified on
+    // Java 25 in a real Spring Boot project (OlbaDataMatching).
+    pitestVersion = '1.25.9'
 
     // JUnit 5 support. Spring Boot tests run on JUnit 5 (Jupiter), so PIT needs
     // its JUnit 5 companion plugin to discover and run them.
-    junit5PluginVersion = '1.2.1'
+    junit5PluginVersion = '1.2.3'
 
     // Write the analysis classpath to a file rather than the command line. On
     // Windows a large Spring classpath overflows the command-line length limit
     // (CreateProcess error=206); this avoids it and is harmless on other OSes.
     useClasspathFile = true
 
-    // Scope of classes to mutate. lint-scaffolding replaces __BASE_PACKAGE__ with
-    // the product base package (see the README). Full-scope by default; the
-    // mutationDiff entry point below narrows this to the changed classes.
-    targetClasses = ['__BASE_PACKAGE__.*']
+    // Scope of classes to mutate: the product base package, read from the
+    // `mutationBasePackage` Gradle property (set it in gradle.properties; see the
+    // README). The snippet is never edited in place, so re-running init cannot
+    // silently revert the scope. Full-scope by default; the mutationDiff entry
+    // point below narrows this to the changed classes.
+    if (mutationBasePackage) {
+        targetClasses = ["${mutationBasePackage}.*".toString()]
+    }
 
     // Behaviour-changing mutators only: Conditionals Boundary, Negate
     // Conditionals, Math, Increments, Invert Negatives, Void Method Calls and
@@ -118,11 +136,11 @@ def mutationDiffScoped = false
 if (mutationDiffRequested) {
     def mutationDiffBase = project.findProperty('mutationDiffBase')?.toString()
     if (!mutationDiffBase) {
-        throw new org.gradle.api.GradleException('mutationDiff requires -PmutationDiffBase=<base ref>, e.g. -PmutationDiffBase=origin/main')
+        throw new GradleException('mutationDiff requires -PmutationDiffBase=<base ref>, e.g. -PmutationDiffBase=origin/main')
     }
     if (mutationDiffBase.startsWith('-')) {
         // A revision must never be able to smuggle a git option.
-        throw new org.gradle.api.GradleException("mutationDiffBase must be a git revision, got: ${mutationDiffBase}")
+        throw new GradleException("mutationDiffBase must be a git revision, got: ${mutationDiffBase}")
     }
     def mergeBase
     try {
@@ -131,7 +149,7 @@ if (mutationDiffRequested) {
             commandLine 'git', 'merge-base', mutationDiffBase, 'HEAD'
         }.standardOutput.asText.get().trim()
     } catch (Exception e) {
-        throw new org.gradle.api.GradleException("[mutationDiff] cannot resolve the merge base of ${mutationDiffBase} and HEAD - is the base ref fetched? (git fetch origin main)", e)
+        throw new GradleException("[mutationDiff] cannot resolve the merge base of ${mutationDiffBase} and HEAD - is the base ref fetched? (git fetch origin main)", e)
     }
     def changedSources = providers.exec {
         workingDir = projectDir
@@ -468,7 +486,7 @@ tasks.register('mutationDiff') {
         // the narrowing applied (e.g. via a Gradle task-name abbreviation)
         // must fail loudly rather than pass a full-scope run off as a diff.
         if (!mutationDiffScoped) {
-            throw new org.gradle.api.GradleException('mutationDiff ran without its diff scope applied - invoke it by its full name: gradle mutationDiff -PmutationDiffBase=origin/main')
+            throw new GradleException('mutationDiff ran without its diff scope applied - invoke it by its full name: gradle mutationDiff -PmutationDiffBase=origin/main')
         }
     }
 }
