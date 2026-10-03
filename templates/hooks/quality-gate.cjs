@@ -373,9 +373,11 @@ function checkSegment(seg) {
   if (seg.quoted[0]) notSimple('a quoted command word');
   if (words[0].includes('=')) notSimple('an environment assignment');
   for (let i = 0; i < words.length; i++) {
+    // PowerShell's stop-parsing token, quoted or not: the rest of the line
+    // is passed on verbatim, with `%VAR%` expanded and quotes left in.
+    if (words[i] === '--%') notSimple('`--%`');
     if (seg.quoted[i]) continue;
     if (words[i].length > 1 && words[i].startsWith('@')) notSimple(`\`${words[i]}\``);
-    if (words[i] === '--%') notSimple('`--%`');
   }
   if (MOVE_WORDS.has(first)) {
     const op = MOVE_WORDS.get(first);
@@ -1167,7 +1169,10 @@ function literalString(text, i) {
   return { end: close + 1, content };
 }
 // The text with message values masked, or null when it cannot be read.
+// After PowerShell's stop-parsing token `--%` quotes no longer delimit a
+// value, so a command holding it anywhere is never masked.
 function maskMessages(text) {
+  if (text.includes('--%')) return null;
   let out = '';
   let words = []; // The current segment's unquoted words so far.
   let i = 0;
