@@ -1,0 +1,12 @@
+{
+  "session_id": "01a0fe34-2cc9-7973-872b-b07c8123fda2",
+  "turn_id": "01a0fe34-2d1d-7173-8d7f-a2b5f3dcf79c",
+  "transcript_path": "<redacted>",
+  "cwd": "<repo>",
+  "hook_event_name": "PreToolUse",
+  "model": "gpt-6-astra",
+  "permission_mode": "bypassPermissions",
+  "tool_name": "Bash",
+  "tool_input": { "command": "git push origin main" },
+  "tool_use_id": "exec-9280e552-4679-456e-958d-a388887c0bb8"
+}

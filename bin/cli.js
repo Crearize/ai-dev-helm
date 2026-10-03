@@ -193,6 +193,24 @@ yargs(hideBin(process.argv))
     }
   )
   .command(
+    'codex-trust',
+    'Read-only check that Codex trusts the project and its .codex/hooks.json hooks (exit 0 ok, 1 action required, 2 unreadable)',
+    (yargs) => yargs
+      .option('dir', { type: 'string', describe: 'Project directory', default: process.cwd() })
+      .option('codex-home', { type: 'string', describe: 'Codex config location to read (default: CODEX_HOME, then ~/.codex)' }),
+    (argv) => {
+      try {
+        const { checkCodexTrust } = require('../lib/codex-trust');
+        const result = checkCodexTrust({ projectDir: argv.dir, codexHome: argv.codexHome });
+        console.log(result.lines.join('\n'));
+        process.exitCode = result.exitCode;
+      } catch (error) {
+        console.error(`Error: ${error.message}`);
+        process.exitCode = 2;
+      }
+    }
+  )
+  .command(
     'quality-report',
     'Normalize historical quality report findings to stdout without modifying the input',
     (yargs) => yargs.option('input', { type: 'string', demandOption: true, describe: 'Quality report JSON file' }),
@@ -231,7 +249,7 @@ yargs(hideBin(process.argv))
       }
     }
   )
-  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, quality-report, or review-budget')
+  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, codex-trust, quality-report, or review-budget')
   .strict()
   .help()
   .version()

@@ -79,7 +79,8 @@
 //   Substring matches never count: `feature/main-nav` and `main:feature-x` are
 //   not candidates. A refspec carrying `%` or a leading `~` is a candidate
 //   because its destination cannot be read.
-// Rule 2 (blocked with no exemption): a command with a gate word that is not
+// Rule 2 (blocked with no exemption): an unreadable PowerShell script (see
+//   ALWAYS REFUSED - gate word or not); a command with a gate word that is not
 //   simple; force/delete/`+refspec`/`--mirror`/`--all`/`--branches` pushes
 //   (short bundles such as `-fu` and long abbreviations such as `--forc`
 //   included); a git
@@ -149,13 +150,85 @@
 // branch; a detached HEAD is an UNRESOLVED branch; `git push --force` with no
 // refspec blocks anywhere.
 //
+// NESTED SHELLS (H-52). `powershell` / `pwsh` / `cmd` / `bash` are not in the
+// closed list of command words, so a shell nested in the command string
+// (`powershell -Command "..."`, `pwsh -c '...'`, `cmd /c "..."`,
+// `bash -lc "..."`, nested two deep) is never simple: when a gate word is
+// visible anywhere in it, it is refused with the same guidance, whatever the
+// branch and the flag. That includes a push the flag would let through when
+// run directly - `powershell -Command "git push origin main"` with a flag on
+// HEAD is refused; run `git push origin main` itself. The nested text is not
+// unwrapped and classified.
+//
+// ALWAYS REFUSED (`alwaysDeny`, checked before the gate words, so with or
+// without one). A PowerShell script the gate cannot read - an encoded one, or
+// one PowerShell reads from its standard input. This is a TEXT RULE, not a
+// parse: where a word sits (which command, group, quoted string or script
+// handed to another shell) does not count. The whole command is read in lower
+// case as written, and again with line continuations (`\`, a backtick or `^`
+// right before a line break) folded away - each shell's alone and all three
+// together - so a name or a parameter split across lines is read whole, and
+// a character that is no continuation where the command runs (`a\` in
+// PowerShell or cmd, `a^` in PowerShell or a POSIX shell) does not glue the
+// next line to its word. Each is read with quote characters (ASCII and
+// U+2018-U+201E), a `$` right before one, backticks and carets removed,
+// twice: once with backslashes removed and once with them turned into `/`.
+// These readings are made again with shell expansions that may be empty
+// removed first (`${...}`, `$@`, `$*`, `$1`, `$name` and the like, and cmd's
+// `%name%`), so one placed inside a name or a parameter does not hide it; any
+// reading refuses, and each costs time linear in the text. A reading is cut
+// into tokens at blanks (CR, LF, tab and NBSP included) and at `| & ; < > ( ) { }`,
+// an input redirection (`<`, `0<`, `<<`, `<<<`, `<(`) and an output process
+// substitution (`>(`) kept as one token. A PowerShell token is one whose last
+// component (after `/`, `=` or `:`; for cmd's glued `/c` and `/k`, also
+// without that letter) is `powershell` or `pwsh`, alone or joined to more
+// with `-`, `_` or `.` (`pwsh-preview`, `powershell_ise`), with or without
+// `.exe`, or the Windows short name `powers~N`. With at least one PowerShell
+// token, the command is refused when
+//   - a token after the first one is an encoded-command parameter: one or two
+//     of `-`, `/`, U+2013-U+2015, then `ec` or any leading part of
+//     `encodedcommand` from `e`, optionally with `:<value>` (the spellings
+//     powershell.exe 5.1 and pwsh 7 accept, and a few more);
+//   - a token after the first one is a lone dash (`-Command -`, `-File -`,
+//     `powershell -`) or a parameter given `:-`, in a reading with the
+//     expansions kept (`-Name "$a-$b"` leaves a lone dash once they are
+//     removed);
+//   - a pipe (`|`, `|&`; `||` counted too) comes before the last one, across
+//     newlines, separators and groups, since its output may be the script;
+//   - an input redirection, an output process substitution or `coproc`
+//     appears anywhere.
+// The rule over-refuses on purpose - a miss is a hole, a refusal only costs a
+// rephrase: a search term or a message that mentions these PowerShell
+// spellings (`rg "pwsh|powershell"`, `git commit -m "... pwsh -enc ..."`), a
+// later `-e` that belongs to another program or to the script
+// (`pwsh -File build.ps1 -e prod`), a pipeline earlier in the same command
+// before a PowerShell script is run. Rerun such a command without the
+// PowerShell text, or split it into separate commands. Out of its reach (see
+// below): character-code escapes (`$'\x70wsh'`), brace expansion
+// (`pw{s..s}h`), `Start-Process -ArgumentList`, a PowerShell started on
+// another machine or container (`ssh`, `docker exec`), a script assembled
+// from variables or read from a file.
+//
 // Nothing here can see through, and none of these is treated as a gap:
 //   - a gate word spelled so that it is not in the text: `git $'\x70'ush`,
-//     `git pus{h..h}`, `gh pr me{r..r}ge`, an encoded PowerShell command, a
-//     percent-encoded `gh api` endpoint;
+//     `git pus{h..h}`, `gh pr me{r..r}ge`, a percent-encoded `gh api`
+//     endpoint;
 //   - a wrapper: a script, an npm script, a git or shell alias or a function
 //     defined in an earlier tool call (one defined in the same command is not
 //     simple), `xargs`, `env -S`;
+//   - indirect execution whose text holds no gate word, or holds it only in a
+//     form that is refused as not simple anyway - the contents are not read:
+//     PowerShell's `Invoke-Expression` / `iex`, `Start-Process`, a script
+//     block `& { ... }`, the contents of `-File <path>`; another language's
+//     inline code (`node -e`, `python -c`, `ruby -e`, `perl -e`, ...);
+//     `eval`, `source`, `. <file>`; `xargs`, `find -exec`; an alias or a
+//     function; a string kept in an environment variable and expanded later;
+//   - an encoded or stdin PowerShell script whose text the ALWAYS REFUSED
+//     rule does not see: `powershell` / `pwsh` or the parameter spelled with
+//     character-code escapes (`$'\x70wsh'`) or brace expansion
+//     (`pw{s..s}h`); `Start-Process -ArgumentList`; a PowerShell started on
+//     another machine or in a container (`ssh`, `docker exec`); a script
+//     assembled from variables or read from a file;
 //   - a refspec that lives in configuration: `remote.<name>.push`,
 //     `push.default = matching`, `branch.<n>.merge`;
 //   - other merge APIs: `gh api graphql` with `mergePullRequest`, `gh repo
@@ -1080,14 +1153,147 @@ function gateWordFallback(text, reason) {
 }
 
 // --------------------------------------------------------------------------
+// Always refused: a PowerShell script the gate cannot read (H-52)
+// --------------------------------------------------------------------------
+// See ALWAYS REFUSED in the header. A text rule, read the same wherever the
+// words sit: nothing here parses the command.
+const UNREADABLE_PS = 'An encoded or stdin PowerShell script cannot be read by the quality gate, so it is refused whether or not it pushes or merges. Run the script as plain text instead. This check reads the command text only: if the command merely mentions PowerShell (a search term, a message) or pipes something earlier in the same command before running a PowerShell script, rerun it without the PowerShell text, or split it into separate commands.';
+// Removed before reading: a `$` right before a quote (`$'...'`), then quote
+// characters (ASCII and U+2018-U+201E), backticks and carets.
+const DOLLAR_QUOTE_RE = /\$(?=['"\u2018-\u201E])/g;
+const NOISE_RE = /['"\u2018-\u201E`^]/g;
+// A token: an input redirection (`<`, `0<`, `<<`, `<<<`, `<&`, `<(`), an
+// output process substitution (`>(`), one of `| & ; > ( ) { }`, or a run of
+// other characters up to a blank (`\s`: CR, LF, tab and NBSP included) or one
+// of those.
+const TOKEN_RE = /\d*<+[&(]?|>\(|[|&;>(){}]|[^\s|&;<>(){}]+/g;
+// Tokens through which a PowerShell may be given its input.
+const feedsInput = (token) => token.includes('<') || token === '>(' || token === 'coproc';
+// `powershell`, `pwsh`, `pwsh-preview`, `powershell_ise`, `pwsh-7.4`, with or
+// without `.exe`, and the Windows short name `powers~1.exe` (the text is
+// already in lower case).
+const PS_NAME_RE = /^(?:(?:powershell|pwsh)(?:[-_.][a-z0-9_.-]*)?|powers~[0-9]+)(?:\.exe)?$/;
+// A parameter: one or two of `-`, `/`, U+2013-U+2015, its name, `:value`.
+const PS_PARAM_RE = /^[-\/\u2013-\u2015]{1,2}([a-z]+)(?::.*)?$/;
+// A script read from standard input: a lone dash, or a parameter given `:-`.
+const PS_STDIN_RE = /^[-\u2013-\u2015]$|^[-\/\u2013-\u2015]{1,2}[a-z]+:[-\u2013-\u2015]$/;
+
+// The last component after `/`, `=` or `:` (a path, `NAME=pwsh`,
+// `-Shell:pwsh`); after `/`, also without a leading `c` or `k`, for cmd's
+// `/c` and `/k` glued to the command (`cmd /cpwsh`).
+function isPowerShellToken(token) {
+  const parts = token.split(/[/=:]/);
+  const last = parts[parts.length - 1];
+  return PS_NAME_RE.test(last) || (parts.length > 1 && /^[ck]/.test(last) && PS_NAME_RE.test(last.slice(1)));
+}
+
+// `ec`, or any leading part of `encodedcommand` from `e`.
+function isEncodedParam(token) {
+  const m = PS_PARAM_RE.exec(token);
+  return m !== null && (m[1] === 'ec' || 'encodedcommand'.startsWith(m[1]));
+}
+
+// One normalized reading of the command; `stdin`: whether a lone dash or a
+// parameter given `:-` counts in it.
+function unreadablePsIn(text, stdin) {
+  const tokens = text.match(TOKEN_RE) || [];
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (!isPowerShellToken(tokens[i])) continue;
+    if (first === -1) first = i;
+    last = i;
+  }
+  if (first === -1) return false;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (feedsInput(token)) return true; // Input redirected, anywhere.
+    if (token === '|' && i < last) return true; // Input may flow into a PowerShell.
+    if (i > first && ((stdin && PS_STDIN_RE.test(token)) || isEncodedParam(token))) return true;
+  }
+  return false;
+}
+
+// Line continuations - `\` (POSIX shell), a backtick (PowerShell) or `^`
+// (cmd) right before a line break. The text is read as written, then with
+// each shell's continuation folded away alone and with all three folded: a
+// name or a parameter split across lines is read whole, and a character that
+// is no continuation in the shell running the command (`a\` or `a^` in
+// PowerShell, `a^` in a POSIX shell) does not glue the next line to its word
+// (cmd's `^` is included here, unlike LINE_CONTINUATION_RE for the gate
+// words).
+const CONTINUATION_FOLDS = [/\\\r?\n/g, /`\r?\n/g, /\^\r?\n/g, /[\\`^]\r?\n/g];
+// Shell expansions that may expand to nothing: `${...}` (no `{`, `}`, `$` or
+// line break inside), `$@`, `$*`, `$#`, `$?`, `$$`, `$!`, `$0`-`$9`, `$-`,
+// `$name` (the text is in lower case), and cmd's `%name%`. Removed in an
+// additional reading only. Every attempt stops at the next `$`, `%`, blank or
+// line break, so the removal is linear (`${[^}]*}` rescanned the rest of the
+// text for each unclosed `${`).
+const EXPANSION_RE = /\$\{[^{}$\n]*\}|\$[@*#?$!0-9-]|\$[a-z_][a-z0-9_]*|%[^%\s]*%/g;
+
+function alwaysDeny(text) {
+  const lower = text.toLowerCase();
+  const sources = [lower];
+  for (const fold of CONTINUATION_FOLDS) {
+    const folded = lower.replace(fold, '');
+    if (!sources.includes(folded)) sources.push(folded);
+  }
+  for (const source of sources) {
+    const unexpanded = source.replace(EXPANSION_RE, '');
+    // A lone dash counts only with the expansions kept (`"$a-$b"`).
+    const bodies = unexpanded === source ? [[source, true]] : [[source, true], [unexpanded, false]];
+    for (const [body, stdin] of bodies) {
+      const plain = body.replace(DOLLAR_QUOTE_RE, '').replace(NOISE_RE, '');
+      for (const reading of [plain.replace(/\\/g, ''), plain.replace(/\\/g, '/')]) {
+        if (unreadablePsIn(reading, stdin)) return deny('2', UNREADABLE_PS);
+      }
+    }
+  }
+  return null;
+}
+
+// --------------------------------------------------------------------------
 // Everyday forms that need not be refused
 // --------------------------------------------------------------------------
 // Output plumbing at the very END of the whole command - ` 2>&1`,
 // ` >/dev/null`, ` 2>/dev/null`, and finally `| tail -N` / `| head -N` - is
 // dropped before the command is parsed. Exactly these spellings, nowhere else.
-const TRAILING_OUTPUT_RE = /(?:[ \t]+(?:2>&1|2?>\/dev\/null))*(?:[ \t]*\|[ \t]*(?:tail|head)[ \t]+-[1-9][0-9]{0,5})?[ \t\n]*$/;
+// The longest suffix of the form
+//   ([ \t]+(2>&1|2>/dev/null|>/dev/null))* ([ \t]*|[ \t]*(tail|head)[ \t]+-N)? [ \t\n]*
+// (N: 1-9 then up to five digits) is read backwards from the end, so the
+// cost is linear in what is dropped (a regular expression anchored with `$`
+// retried that from every blank of a long run).
+const TRAILING_REDIRECTS = ['2>&1', '2>/dev/null', '>/dev/null'];
+const isBlank = (ch) => ch === ' ' || ch === '\t';
 function stripTrailingOutput(text) {
-  return text.replace(TRAILING_OUTPUT_RE, '');
+  let end = text.length;
+  while (end > 0 && (isBlank(text[end - 1]) || text[end - 1] === '\n')) end--;
+  let pos = end;
+  // `| tail -N` / `| head -N`.
+  let j = end;
+  while (j > 0 && text[j - 1] >= '0' && text[j - 1] <= '9') j--;
+  if (end - j >= 1 && end - j <= 6 && text[j] !== '0' && text[j - 1] === '-') {
+    let k = j - 1;
+    const word = k;
+    while (k > 0 && isBlank(text[k - 1])) k--;
+    if (k < word && k >= 4 && (text.slice(k - 4, k) === 'tail' || text.slice(k - 4, k) === 'head')) {
+      k -= 4;
+      while (k > 0 && isBlank(text[k - 1])) k--;
+      if (k > 0 && text[k - 1] === '|') {
+        k--;
+        while (k > 0 && isBlank(text[k - 1])) k--;
+        pos = k;
+      }
+    }
+  }
+  // ` 2>&1`, ` 2>/dev/null`, ` >/dev/null`, each after at least one blank.
+  for (;;) {
+    const r = TRAILING_REDIRECTS.find((s) => pos - s.length > 0 && text.endsWith(s, pos) && isBlank(text[pos - s.length - 1]));
+    if (!r) break;
+    pos -= r.length;
+    while (pos > 0 && isBlank(text[pos - 1])) pos--;
+  }
+  return text.slice(0, pos);
 }
 
 // Message values. A gate word that only appears in the message of
@@ -1466,6 +1672,8 @@ function locateCandidates(lines, candLines, ctx) {
 // a git repository" case into a fail-open.
 function classify(command, ctx) {
   const text = String(command || '');
+  const always = alwaysDeny(text);
+  if (always) return always;
   if (Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) return gateWordFallback(text, TOO_LONG);
   if (!gateWordIn(text)) return allow();
   const body = stripTrailingOutput(text);

@@ -42,6 +42,7 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 3. 有効な hook に BOM 付き入力を渡し、通常入力と同じ拒否結果になることを確認する。gate の pure `classify` または捨てられるテストリポジトリで行い、本物の main へ push して試さない。
 4. feature の単純な `git commit ... && git push [remote]` は許可、main/master と `git switch main && git push`、`git rebase origin/main main && git push` などは拒否されることを確認する。PowerShell 5.1 では `&&` 自体が未対応なので、文字列として classifier を検証する。
 5. 通常の品質チェック、独自ゲート、重要な E2E / 実動作テストが引き続き機能することを確認する。回避策は代替修正が検証できてから整理する。
+6. Codex を使う導入先では、`/hooks` で `.codex/hooks.json` のフックを信頼するまで、quality-gate も review-budget も動かない（警告も出ない）。更新で `hooks.json` が変わったら（matcher・command・timeout・順序）、再び信頼する（`.cjs` の中身だけの更新では信頼は外れない）。信頼は Codex の設定の場所（`CODEX_HOME`）ごとに記録されるので、Codex のアカウント・設定の場所を切り替えたら（orca のアカウントの切り替えなど）、切り替えた先でも信頼する。`npx @crearize/ai-dev-helm codex-trust --dir <導入先> [--codex-home <設定の場所>]` で、プロジェクトとフックが信頼されているかを読み取りだけで確かめ、終了コード 0 になるまで対応する。
 
 ## 設計ゲートとモデル表の更新
 
