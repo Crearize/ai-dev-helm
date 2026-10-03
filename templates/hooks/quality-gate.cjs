@@ -165,9 +165,14 @@
 // one PowerShell reads from its standard input. This is a TEXT RULE, not a
 // parse: where a word sits (which command, group, quoted string or script
 // handed to another shell) does not count. The whole command is read in lower
-// case with quote characters (ASCII and U+2018-U+201E), a `$` right before
-// one, backticks and carets removed, twice: once with backslashes removed and
-// once with them turned into `/`; either reading refuses. It is cut into
+// case with line continuations folded away (`\`, a backtick or `^` right
+// before a line break, so a name or a parameter split across lines is read
+// whole), then with quote characters (ASCII and U+2018-U+201E), a `$` right
+// before one, backticks and carets removed, twice: once with backslashes
+// removed and once with them turned into `/`. Both readings are made again
+// with shell expansions that may be empty removed first (`${...}`, `$@`,
+// `$*`, `$1`, `$name` and the like, and cmd's `%name%`), so one placed inside
+// a name or a parameter does not hide it; any reading refuses. It is cut into
 // tokens at blanks (CR, LF, tab and NBSP included) and at `| & ; < > ( ) { }`,
 // an input redirection (`<`, `0<`, `<<`, `<<<`, `<(`) and an output process
 // substitution (`>(`) kept as one token. A PowerShell token is one whose last
@@ -1202,10 +1207,23 @@ function unreadablePsIn(text) {
   return false;
 }
 
+// A line continuation - `\` (POSIX shell), a backtick (PowerShell) or `^`
+// (cmd) right before a line break - is folded away first, so a name or a
+// parameter split across lines is read whole (cmd's `^` is included here,
+// unlike LINE_CONTINUATION_RE for the gate words).
+const ALWAYS_LINE_CONTINUATION_RE = /[\\`^]\r?\n/g;
+// Shell expansions that may expand to nothing: `${...}`, `$@`, `$*`, `$#`,
+// `$?`, `$$`, `$!`, `$0`-`$9`, `$-`, `$name` (the text is in lower case), and
+// cmd's `%name%`. Removed in an additional reading only.
+const EXPANSION_RE = /\$\{[^}]*\}|\$[@*#?$!0-9-]|\$[a-z_][a-z0-9_]*|%[^%\s]*%/g;
+
 function alwaysDeny(text) {
-  const plain = text.toLowerCase().replace(DOLLAR_QUOTE_RE, '').replace(NOISE_RE, '');
-  for (const reading of [plain.replace(/\\/g, ''), plain.replace(/\\/g, '/')]) {
-    if (unreadablePsIn(reading)) return deny('2', UNREADABLE_PS);
+  const folded = text.toLowerCase().replace(ALWAYS_LINE_CONTINUATION_RE, '');
+  for (const source of [folded, folded.replace(EXPANSION_RE, '')]) {
+    const plain = source.replace(DOLLAR_QUOTE_RE, '').replace(NOISE_RE, '');
+    for (const reading of [plain.replace(/\\/g, ''), plain.replace(/\\/g, '/')]) {
+      if (unreadablePsIn(reading)) return deny('2', UNREADABLE_PS);
+    }
   }
   return null;
 }
