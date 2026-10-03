@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.3.0](https://github.com/Crearize/ai-dev-helm/compare/v3.2.1...v3.3.0) (2026-10-03)
 
 
+### Migration
+
+* Java projects: add `mutationBasePackage=<base package>` to `gradle.properties` before re-running init (the PIT target package is no longer edited in place).
+* Re-running init no longer overwrites adopter-edited rules, review guides or lint configs; it writes `<file>.ai-dev-helm-new` next to them, and the harness-upgrade procedure has the AI merge and remove them.
+
 ### Added
 
 * **init:** non-interactive mode, harness-owned vs adopter-editable re-init ([#183](https://github.com/Crearize/ai-dev-helm/issues/183)) ([c978153](https://github.com/Crearize/ai-dev-helm/commit/c978153ae40ef3c7244beaa01019a13ff47947b6)), closes [#165](https://github.com/Crearize/ai-dev-helm/issues/165) [#133](https://github.com/Crearize/ai-dev-helm/issues/133)
