@@ -65,6 +65,35 @@ public class Violation {
     public void fqnLeadingEmptySegment() {
     }
 
+    // Violation 11: the fully-qualified annotation name is the same
+    // annotation to javac and to Checkstyle's SuppressWarningsHolder (#160) -
+    // blanket "all" on a type silences every check in the whole class
+    @java.lang.SuppressWarnings("all")
+    public static class FullyQualifiedOnType {
+    }
+
+    // Violation 12: whitespace between the qualified name's parts is legal Java
+    @java . lang . SuppressWarnings({"all"})
+    public void fullyQualifiedSpaced() {
+    }
+
+    // Violation 13: a block comment between the parts is legal Java too - the
+    // rule must compare the name's tokens, not the annotation's source text
+    @java/**/.lang.SuppressWarnings("all")
+    public void fullyQualifiedBlockComment() {
+    }
+
+    // Violation 14: block and line comments, with the name split over lines
+    @java./* x */lang. // y
+    SuppressWarnings("all")
+    public void fullyQualifiedLineComment() {
+    }
+
+    // Violation 15: fully-qualified annotation with a bare preset module name
+    @java.lang.SuppressWarnings("IllegalCatch")
+    public void fullyQualifiedBareModuleName() {
+    }
+
     // Near miss: a correctly-formed reference must not be flagged here (the
     // ok fixture is the false-positive guard; this is a sanity check that the
     // rule does not over-fire within the same file as real violations)

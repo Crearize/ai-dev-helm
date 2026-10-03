@@ -34,6 +34,29 @@ public class Ok {
         }
     }
 
+    // OK: the fully-qualified annotation with a plain literal (#160)
+    @java.lang.SuppressWarnings("checkstyle:IllegalCatch")
+    public void fullyQualifiedLiteral() {
+        try {
+            risky();
+        } catch (RuntimeException e) {
+            // 境界宣言: fully-qualified literal boundary
+        }
+    }
+
+    // OK: a SuppressWarnings type from another package is not
+    // java.lang.SuppressWarnings - Checkstyle ignores it, so a non-literal
+    // value on it suppresses nothing and must not be flagged
+    @com.example.SuppressWarnings(MARKER)
+    public void otherPackageConstant() {
+    }
+
+    @com/* x */.example.SuppressWarnings(MARKER)
+    public void otherPackageConstantWithComment() {
+    }
+
+    private static final String MARKER = "unrelated";
+
     private void risky() {
     }
 

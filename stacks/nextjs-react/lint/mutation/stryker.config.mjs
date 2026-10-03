@@ -82,10 +82,13 @@ export default {
 
   // --- incremental (the full run's own cache) ----------------------------
   // This cache is FULL-RUN state. The diff config (stryker.diff.config.mjs)
-  // never reads or writes it: it always points `incrementalFile` at its own
-  // diff-only cache (reports/mutation/stryker-incremental.diff.json) and
-  // keeps `incremental` off unless MUTATION_INCREMENTAL=1 opts the
-  // re-measurement in (see changed-ranges.mjs).
+  // never reads or writes it: it points `incrementalFile` at its own
+  // diff-only cache (reports/mutation/stryker-incremental.diff.json), or -
+  // when that cache is refused (#159: reports/mutation/ resolves outside the
+  // run directory, or a link or directory sits in the cache's place) - drops
+  // `incrementalFile` altogether with `incremental: false`. It keeps
+  // `incremental` off unless MUTATION_INCREMENTAL=1 opts the re-measurement
+  // in (see changed-ranges.mjs).
   incremental: true,
   incrementalFile: 'reports/mutation/stryker-incremental.json',
 

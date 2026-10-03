@@ -60,6 +60,37 @@ public class Violation {
         }
     }
 
+    // Violation 6: the fully-qualified annotation name with a constant (#160)
+    @java.lang.SuppressWarnings(ILLEGAL_CATCH)
+    public void fullyQualifiedConstant() {
+        try {
+            risky();
+        } catch (RuntimeException e) {
+            // handled
+        }
+    }
+
+    // Violation 7: a comment inside the qualified name, with a field access
+    @java/**/.lang.SuppressWarnings(Constants.ILLEGAL_CATCH)
+    public void fullyQualifiedCommentFieldAccess() {
+        try {
+            risky();
+        } catch (RuntimeException e) {
+            // handled
+        }
+    }
+
+    // Violation 8: spaced and line-split qualified name, with a concatenation
+    @java . lang . // y
+    SuppressWarnings("checkstyle:" + "IllegalCatch")
+    public void fullyQualifiedSpacedConcatenation() {
+        try {
+            risky();
+        } catch (RuntimeException e) {
+            // handled
+        }
+    }
+
     private void risky() {
     }
 }
