@@ -165,15 +165,19 @@
 // one PowerShell reads from its standard input. This is a TEXT RULE, not a
 // parse: where a word sits (which command, group, quoted string or script
 // handed to another shell) does not count. The whole command is read in lower
-// case with line continuations folded away (`\`, a backtick or `^` right
-// before a line break, so a name or a parameter split across lines is read
-// whole), then with quote characters (ASCII and U+2018-U+201E), a `$` right
-// before one, backticks and carets removed, twice: once with backslashes
-// removed and once with them turned into `/`. Both readings are made again
-// with shell expansions that may be empty removed first (`${...}`, `$@`,
-// `$*`, `$1`, `$name` and the like, and cmd's `%name%`), so one placed inside
-// a name or a parameter does not hide it; any reading refuses. It is cut into
-// tokens at blanks (CR, LF, tab and NBSP included) and at `| & ; < > ( ) { }`,
+// case as written, and again with line continuations (`\`, a backtick or `^`
+// right before a line break) folded away - each shell's alone and all three
+// together - so a name or a parameter split across lines is read whole, and
+// a character that is no continuation where the command runs (`a\` in
+// PowerShell or cmd, `a^` in PowerShell or a POSIX shell) does not glue the
+// next line to its word. Each is read with quote characters (ASCII and
+// U+2018-U+201E), a `$` right before one, backticks and carets removed,
+// twice: once with backslashes removed and once with them turned into `/`.
+// These readings are made again with shell expansions that may be empty
+// removed first (`${...}`, `$@`, `$*`, `$1`, `$name` and the like, and cmd's
+// `%name%`), so one placed inside a name or a parameter does not hide it; any
+// reading refuses, and each costs time linear in the text. A reading is cut
+// into tokens at blanks (CR, LF, tab and NBSP included) and at `| & ; < > ( ) { }`,
 // an input redirection (`<`, `0<`, `<<`, `<<<`, `<(`) and an output process
 // substitution (`>(`) kept as one token. A PowerShell token is one whose last
 // component (after `/`, `=` or `:`; for cmd's glued `/c` and `/k`, also
@@ -186,7 +190,9 @@
 //     `encodedcommand` from `e`, optionally with `:<value>` (the spellings
 //     powershell.exe 5.1 and pwsh 7 accept, and a few more);
 //   - a token after the first one is a lone dash (`-Command -`, `-File -`,
-//     `powershell -`) or a parameter given `:-`;
+//     `powershell -`) or a parameter given `:-`, in a reading with the
+//     expansions kept (`-Name "$a-$b"` leaves a lone dash once they are
+//     removed);
 //   - a pipe (`|`, `|&`; `||` counted too) comes before the last one, across
 //     newlines, separators and groups, since its output may be the script;
 //   - an input redirection, an output process substitution or `coproc`
@@ -1187,8 +1193,9 @@ function isEncodedParam(token) {
   return m !== null && (m[1] === 'ec' || 'encodedcommand'.startsWith(m[1]));
 }
 
-// One normalized reading of the command.
-function unreadablePsIn(text) {
+// One normalized reading of the command; `stdin`: whether a lone dash or a
+// parameter given `:-` counts in it.
+function unreadablePsIn(text, stdin) {
   const tokens = text.match(TOKEN_RE) || [];
   let first = -1;
   let last = -1;
@@ -1202,27 +1209,44 @@ function unreadablePsIn(text) {
     const token = tokens[i];
     if (feedsInput(token)) return true; // Input redirected, anywhere.
     if (token === '|' && i < last) return true; // Input may flow into a PowerShell.
-    if (i > first && (PS_STDIN_RE.test(token) || isEncodedParam(token))) return true;
+    if (i > first && ((stdin && PS_STDIN_RE.test(token)) || isEncodedParam(token))) return true;
   }
   return false;
 }
 
-// A line continuation - `\` (POSIX shell), a backtick (PowerShell) or `^`
-// (cmd) right before a line break - is folded away first, so a name or a
-// parameter split across lines is read whole (cmd's `^` is included here,
-// unlike LINE_CONTINUATION_RE for the gate words).
-const ALWAYS_LINE_CONTINUATION_RE = /[\\`^]\r?\n/g;
-// Shell expansions that may expand to nothing: `${...}`, `$@`, `$*`, `$#`,
-// `$?`, `$$`, `$!`, `$0`-`$9`, `$-`, `$name` (the text is in lower case), and
-// cmd's `%name%`. Removed in an additional reading only.
-const EXPANSION_RE = /\$\{[^}]*\}|\$[@*#?$!0-9-]|\$[a-z_][a-z0-9_]*|%[^%\s]*%/g;
+// Line continuations - `\` (POSIX shell), a backtick (PowerShell) or `^`
+// (cmd) right before a line break. The text is read as written, then with
+// each shell's continuation folded away alone and with all three folded: a
+// name or a parameter split across lines is read whole, and a character that
+// is no continuation in the shell running the command (`a\` or `a^` in
+// PowerShell, `a^` in a POSIX shell) does not glue the next line to its word
+// (cmd's `^` is included here, unlike LINE_CONTINUATION_RE for the gate
+// words).
+const CONTINUATION_FOLDS = [/\\\r?\n/g, /`\r?\n/g, /\^\r?\n/g, /[\\`^]\r?\n/g];
+// Shell expansions that may expand to nothing: `${...}` (no `{`, `}`, `$` or
+// line break inside), `$@`, `$*`, `$#`, `$?`, `$$`, `$!`, `$0`-`$9`, `$-`,
+// `$name` (the text is in lower case), and cmd's `%name%`. Removed in an
+// additional reading only. Every attempt stops at the next `$`, `%`, blank or
+// line break, so the removal is linear (`${[^}]*}` rescanned the rest of the
+// text for each unclosed `${`).
+const EXPANSION_RE = /\$\{[^{}$\n]*\}|\$[@*#?$!0-9-]|\$[a-z_][a-z0-9_]*|%[^%\s]*%/g;
 
 function alwaysDeny(text) {
-  const folded = text.toLowerCase().replace(ALWAYS_LINE_CONTINUATION_RE, '');
-  for (const source of [folded, folded.replace(EXPANSION_RE, '')]) {
-    const plain = source.replace(DOLLAR_QUOTE_RE, '').replace(NOISE_RE, '');
-    for (const reading of [plain.replace(/\\/g, ''), plain.replace(/\\/g, '/')]) {
-      if (unreadablePsIn(reading)) return deny('2', UNREADABLE_PS);
+  const lower = text.toLowerCase();
+  const sources = [lower];
+  for (const fold of CONTINUATION_FOLDS) {
+    const folded = lower.replace(fold, '');
+    if (!sources.includes(folded)) sources.push(folded);
+  }
+  for (const source of sources) {
+    const unexpanded = source.replace(EXPANSION_RE, '');
+    // A lone dash counts only with the expansions kept (`"$a-$b"`).
+    const bodies = unexpanded === source ? [[source, true]] : [[source, true], [unexpanded, false]];
+    for (const [body, stdin] of bodies) {
+      const plain = body.replace(DOLLAR_QUOTE_RE, '').replace(NOISE_RE, '');
+      for (const reading of [plain.replace(/\\/g, ''), plain.replace(/\\/g, '/')]) {
+        if (unreadablePsIn(reading, stdin)) return deny('2', UNREADABLE_PS);
+      }
     }
   }
   return null;
