@@ -231,13 +231,9 @@ npx @crearize/ai-dev-helm init --yes                                   # 既定�
 npx @crearize/ai-dev-helm init --project-name my-app --tools claude-code,codex --stacks <stack> --skills all
 ```
 
-- `--skills` は `all` / `superpowers` / `project` / プロジェクトスキル名のカンマ区切り。`--stacks` は未指定なら、選べるスタックが 1 つのときだけそれを使う
-- 再実行しても、内容が違うファイル（`documents/development/`、`.github/` のレビューガイド、スキル、`lint/`、ルール）は上書きしません。新しい版を `<file>.ai-dev-helm-new` として隣に置き、最後に `ACTION REQUIRED` で一覧を出します。差分を見て取り込むか、不要なら削除してください。以前の「黙って上書き」に頼っていた手順は、このファイルを確認する手順に変わります
+- `--skills` は `all` / `superpowers` / `project` / プロジェクトスキル名のカンマ区切り。`--stacks` は未指定なら、選べるスタックが 1 つのときだけそれを使う（`--yes` で複数あるときは「選ばなかった」と表示）
+- 再実行時の扱いは 2 種類です。ハーネス所有のファイル（`skills/`、`documents/development/`、`.github/review-prompt.md`、フック、Codex エージェント、PR テンプレート）は常に最新版で上書きします。利用者が編集する前提のファイル（`.claude/rules/`・`.codex/rules/`、`.github/review-*.md`（`review-prompt.md` 以外）、`lint/`）は、`init` が書いた内容の sha256 を `.ai-dev-helm.json` の `files` に記録し、編集されていなければ更新、編集済み・記録なし（3.2.x からの更新など）なら上書きせず `<file>.ai-dev-helm-new` に新しい版を置いて、最後に `ACTION REQUIRED` で一覧を出します。取り込みは AI が `harness-upgrade.md` の手順で行い、オーナーの作業はありません。`*.ai-dev-helm-new` は `.gitignore` に追加されます
 - `.gitignore` では、`/.worktrees/` のようなルート固定の行を同じものとして扱い、旧 `reports/mutation/` は `**/reports/mutation/` に置き換えます
-
-## スキル一覧
-
-スキルは AI に「どうやって作業するか」を教える手順書です。Claude Code では `/スキル名` で呼び出せます。
 
 ### 1.12.x からの移行
 
@@ -286,6 +282,10 @@ Select options (space-separated): 1 2 3
 - `npm publish`, `pnpm publish`, `yarn publish`
 
 ---
+
+## スキル一覧
+
+スキルは AI に「どうやって作業するか」を教える手順書です。Claude Code では `/スキル名` で呼び出せます。
 
 ### superpowers スキル（開発プロセス）
 

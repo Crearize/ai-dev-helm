@@ -35,6 +35,16 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 
 削除・修正の対象は、親の実装禁止、固定委譲、コードを再執筆させる詳細計画、重複レビュー、自己改善の必須完了条件です。ドメインの不変条件、テスト期待値の根拠、実ブラウザ確認、ブランチ・ファイル所有・予算・権限の保護は維持します。Low リスクの QA 1体化と GitHub へのゲート移管は今回の変更に含みません。
 
+## `.ai-dev-helm-new` の取り込み
+
+`init` の再実行後、利用者が編集する前提のファイル（`.claude/rules/`、`.codex/rules/`、`.github/review-*.md`（`review-prompt.md` 以外）、`lint/`）のうち、編集済み、または前回の `init` の記録（`.ai-dev-helm.json` の `files`）が無いもの（3.2.x からの更新など）は上書きされず、隣に `<file>.ai-dev-helm-new` が置かれ、`ACTION REQUIRED` に一覧が出ます。AI が次を行います。オーナーの作業はありません。
+
+1. 各 `.ai-dev-helm-new` を対応するファイルと比べ、プロジェクト独自の内容（lint-scaffolding が書いた節、カスタマイズ）は残し、上流の変更は取り込む。
+2. 取り込んだら `.ai-dev-helm-new` を削除する。
+3. 変更をコミットする。
+
+スキル・`documents/development/`・`review-prompt.md`・フックはハーネス所有のため、常に上書きされます（独自の変更は `harness-upgrade` の他の節に従い移植する）。
+
 ## 更新後の確認
 
 1. 適用元のリリース・コミット、適用前後の診断結果、維持した独自差分を既存の更新記録へ残す。記録上の版だけを先に上げない。
