@@ -23,9 +23,8 @@
 //   - build steps: a push inside an npm script, a Gradle task and the like;
 //   - configuration: `remote.<name>.push`, `push.default = matching` (a
 //     refspec-less push's `@{push}` is read - H-19(d)); a trunk ref moved by
-//     anything but the three rewrite forms of rule 1 (`git update-ref
-//     --stdin`, `git branch -M`, `.git/refs` written directly, an `origin`
-//     re-pointed with `git remote set-url`);
+//     anything but the two rewrite forms of rule 1 (`git update-ref`, `git branch -M`, `.git/refs` written
+//     directly, an `origin` re-pointed with `git remote set-url`);
 //   - timing: a directory or link that changes after this check.
 //
 // HOW A COMMAND IS READ (#158). The same text may run under a POSIX shell (Git
@@ -39,7 +38,7 @@
 //      backtick `^` `$` removed and line continuations folded (`gateWordIn`) -
 //      is allowed at once. No git runs, nothing is parsed. So is one whose gate
 //      words are all inside a literal message value (`maskMessages`). The
-//      exception is a trunk rewrite (`trunkWriteIn`: `branch`, `update-ref`
+//      exception is a trunk rewrite (`trunkWriteIn`: `branch`
 //      or `fetch` with `main` / `master` in the text): it is parsed too, and
 //      allowed when it is not simple.
 //   2. A command WITH a gate word is judged only when it is SIMPLE
@@ -104,8 +103,8 @@
 //   `<remote>/main|master` - H-19(d)); a push that writes every matching
 //   branch (`--all`, `--branches`, `--mirror`, a refspec with no destination
 //   such as `:`) on any branch. Trunk rewrites, on any branch (H-13, H-19(c)):
-//   `git branch -f|--force <trunk> [<start>]`, `git update-ref [-d]
-//   refs/heads/<trunk> …`, `git fetch <remote> [+]<src>:<trunk>` - each alone
+//   `git branch -f|--force <trunk> [<start>]`,
+//   `git fetch <remote> [+]<src>:<trunk>` - each alone
 //   in its command, with no other gated call.
 //   Substring matches never count: `feature/main-nav` and `main:feature-x` are
 //   not candidates. A refspec carrying `%` or a leading `~` is a candidate
@@ -269,11 +268,10 @@ function gateWordIn(text) {
   if (GATE_WORD_RE.test(text)) return true;
   return GATE_WORD_RE.test(text.replace(LINE_CONTINUATION_RE, '').replace(ESCAPE_CHARS_RE, ''));
 }
-// The second screen (H-13, H-19(c)): `git branch -f`, `git update-ref` and
-// `git fetch` move the trunk without a gate word. A command holding one of
-// those words and a trunk name is parsed too; when it is not simple it is
+// The second screen (H-13, H-19(c)): `git branch -f` and `git fetch` move the trunk without a gate word. A command
+// holding one of those words and a trunk name is parsed too; when it is not simple it is
 // allowed (only an ordinary, simple trunk rewrite is judged).
-const TRUNK_WRITE_RE = /(?<![A-Za-z-])(?:branch|update-ref|fetch)(?![A-Za-z-])/i;
+const TRUNK_WRITE_RE = /(?<![A-Za-z-])(?:branch|fetch)(?![A-Za-z-])/i;
 const TRUNK_NAME_RE = /(?<![A-Za-z0-9_-])(?:main|master)(?![A-Za-z0-9_-])/i;
 const trunkWriteIn = (text) => TRUNK_WRITE_RE.test(text) && TRUNK_NAME_RE.test(text);
 
@@ -746,18 +744,17 @@ function repoName(text) {
 // to - with `never` for a delete or a forced fetch, or null when the call is
 // not one of these forms.
 //   git branch -f|--force <trunk> [<start>]
-//   git update-ref [-d] refs/heads/<trunk> [<new>]
 //   git fetch <remote> [+]<src>:[refs/heads/]<trunk>
 const positionalsOf = (inv, valueOpts) => {
   const out = [];
   const opts = [];
   const { words } = inv.seg;
   for (let i = inv.start; i < words.length; i++) {
-    if (words[i].startsWith('-')) {
+    if (words[i].startsWith('-') && words[i] !== '-') {
       opts.push(words[i]);
       if (valueOpts.has(words[i])) i++;
     } else {
-      out.push(words[i]);
+      out.push(words[i] === '-' ? '@{-1}' : words[i]); // a lone `-` is the previous branch
     }
   }
   return { pos: out, opts };
@@ -768,13 +765,6 @@ function trunkWrite(inv) {
     if (!opts.some((o) => o === '-f' || o === '--force') || opts.some((o) => /^(-[mMcC]|--move|--copy)$/.test(o))) return null;
     if (pos.length < 1 || pos.length > 2 || !isMainBranch(pos[0])) return null;
     return { trunk: pos[0], ref: pos[1] || 'HEAD' };
-  }
-  if (inv.sub === 'update-ref') {
-    const { pos, opts } = positionalsOf(inv, new Set(['-m']));
-    const m = /^refs\/heads\/(main|master)$/i.exec(pos[0] || '');
-    if (!m || opts.includes('--stdin')) return null;
-    if (opts.includes('-d')) return { trunk: m[1], never: true };
-    return pos[1] ? { trunk: m[1], ref: pos[1] } : null;
   }
   if (inv.sub === 'fetch') {
     const { pos } = positionalsOf(inv, new Set(['--depth', '--deepen', '-j', '--jobs', '-o', '--server-option']));
@@ -1163,8 +1153,7 @@ const GATE_CONFIG_PATTERNS = [/(^|\/)CLAUDE\.md$/, /(^|\/)AGENTS\.md$/, /^\.curs
 // hooks and their registration. A diff touching any of them is never exempt -
 // an unreviewed edit here disables the gate as effectively as weakening a
 // threshold. Case-INSENSITIVE: on Windows/macOS `.claude/Hooks/quality-gate.cjs`
-// is the same real file, and a case variant used to ride the (case-sensitive)
-// harness exemption. The skills under `.claude/skills` (a link, or a real copy
+// is the same real file. The skills under `.claude/skills` (a link, or a real copy
 // in some adopters - H-48) are control plane only where the patterns above name
 // them; the `.claude/skills` node itself is, so re-pointing the link is caught.
 const GATE_CONTROL_PATTERNS = [
@@ -1235,7 +1224,7 @@ const ONE_OPERATION = 'Run one gated operation per command: split the merge, pul
 const ONE_SOURCE = 'Merge or rebase one branch at a time on main/master (no --onto): run `git merge <branch>` with a single source.';
 const pullSource = (trunk) => `On ${trunk}, a \`git pull\` from another branch brings in commits the gate cannot check. Run \`git fetch\`, then \`git merge <remote>/<branch>\` once the quality-check skill has passed on that branch - or use one of the sync forms (\`git pull\`, \`git pull origin ${trunk}\`).`;
 const diverged = (trunk, ref) => `${trunk} has commits that ${ref} does not have, so the result would not be the commit the quality check ran on. Merge ${trunk} into the branch (or rebase it onto ${trunk}), re-run the quality-check skill there, then integrate.`;
-const integrateReason = (trunk, ref) => `The quality-check flag here does not cover ${ref}: the flag must name the commit that ${trunk} receives. Run the quality-check skill on ${ref} in this checkout, then integrate it. From a separate worktree of the branch, without a remote, run \`git push . HEAD:${trunk}\` there instead (see the branch-workflow skill).`;
+const integrateReason = (trunk, ref, noRemote) => `The quality-check flag here does not cover ${ref}: the flag must name the commit that ${trunk} receives. Run the quality-check skill on ${ref} in this checkout, then integrate it.${noRemote ? ` From a separate worktree of the branch, run \`git push . HEAD:${trunk}\` there instead (see the branch-workflow skill).` : ''}`;
 const TRUNK_NEVER = 'Deleting main/master or force-fetching into it is never allowed here. Integrate a branch with `git merge`, a pull request, or - without a remote - `git push . HEAD:main` from the checked branch.';
 const FETCH_INTO_TRUNK = 'A fetch into main/master from another remote branch cannot be checked here. Fetch the branch, run the quality-check skill on it, then integrate it (`git merge`, a pull request, or `git push . HEAD:main`).';
 const otherRepo = (repo, origin) => `This gh call names another repository (${repo}) than this checkout's origin (${origin || 'none'}), so this checkout's quality-check flag says nothing about it. Run it from that repository's own directory, without -R / --repo, after its quality check.`;
@@ -1399,7 +1388,7 @@ function judgeTrunkMove(ctx, trunk, ref, reasons) {
 
 // The source a `git merge` / `git rebase` / `git pull` on the trunk brings in
 // (H-11): `{ ref }`, `{ head: true }` when none is written or it is origin's
-// trunk (judged against HEAD as before), or `{ deny }`.
+// trunk (judged against HEAD), or `{ deny }`.
 const SOURCE_VALUE_OPTS = new Set([
   '-m', '-F', '-s', '-X', '--message', '--file', '--strategy', '--strategy-option', '--into-name', '--cleanup',
 ]);
@@ -1472,14 +1461,14 @@ function contextRules(a, ctx, plan = null) {
   const resolves = typeof ctx.resolveCommit === 'function';
   if (cand.kind === 'write') {
     if (cand.ref === undefined) return cand.sameName ? allow() : deny('2', FETCH_INTO_TRUNK);
-    const why = integrateReason(cand.trunk, cand.ref);
+    const why = integrateReason(cand.trunk, cand.ref, ctx.hasRemote === false);
     return resolves ? judgeTrunkMove(ctx, cand.trunk, cand.ref, { noFlag: why, stale: why }) : rule3Flag(ctx, why);
   }
   if (cand.kind === 'git') {
     const source = integrationSource(cand, branch);
     if (source.deny) return source.deny;
     if (source.ref !== undefined && resolves) {
-      const why = integrateReason(branch, source.ref);
+      const why = integrateReason(branch, source.ref, ctx.hasRemote === false);
       const noFlag = SYNC_SOURCE_RE.test(source.ref) ? needFlagReason(a, branch) : why;
       return judgeTrunkMove(ctx, branch, source.ref, { noFlag, stale: why });
     }
@@ -1495,9 +1484,9 @@ function contextRules(a, ctx, plan = null) {
   if (baseControl.length > 0) noFlag = controlReason(baseControl);
   else if (overrideOnly(base)) noFlag = overrideReason(base.files);
   const verdict = rule3Flag(ctx, noFlag);
-  // A trunk push from a feature branch, or `gh pr merge`, can go through a
-  // pull request instead.
-  const offTrunk = cand.kind === 'gh' || (cand.kind === 'push' && !isMainBranch(branch));
+  // A trunk push from a feature branch can go through a pull request instead
+  // (`gh pr merge` already has one).
+  const offTrunk = cand.kind === 'push' && !isMainBranch(branch);
   if (verdict.decision !== 'block' || verdict.rule !== '3' || !offTrunk) return verdict;
   const prefix = cand.kind === 'push' && cand.mainOnly ? PUSH_TARGET : '';
   return { ...verdict, reason: `${prefix}${verdict.reason.replace(/\.$/, '')}${PR_HINT}` };
@@ -1965,6 +1954,7 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 //                 like diffSinceFlag for the range r. A ctx without
 //                 resolveCommit (a test stub) judges merges against HEAD.
 //   pushTarget    `@{push}` (`origin/main`), or null/undefined.
+//   hasRemote     false when the repository has no remote.
 //   originRepo    origin's `owner/repo` in lower case, or null.
 //   cwd           the payload cwd (absolute path) - where the location walk
 //                 starts. Missing: every move is UNRESOLVED.
@@ -2255,6 +2245,13 @@ function makeCtx(cwd) {
       return once('push', () => {
         const r = git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{push}']);
         return r.ok ? r.out.trim() || null : null;
+      });
+    },
+    // True when the repository has no remote at all.
+    get hasRemote() {
+      return once('remotes', () => {
+        const r = git(['remote']);
+        return r.ok ? r.out.trim() !== '' : true;
       });
     },
     // H-19(a): origin's `owner/repo` (lower case), or null.

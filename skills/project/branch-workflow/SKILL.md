@@ -63,7 +63,7 @@ main への取り込みは quality-check を完走してから行う。quality-g
 4. main のチェックアウトで `git switch main` を実行する
 5. `.quality-check-passed` を削除する
 
-`git branch -f main <feature>`・`git update-ref refs/heads/main <feature>`・`git fetch . <feature>:main` も、フラグが `<feature>` の先端を指していれば通るが、手順は上の 1 つにそろえる。
+`git branch -f main <feature>`・`git fetch . <feature>:main` も、フラグが `<feature>` の先端を指していれば通るが、手順は上の 1 つにそろえる。
 
 ## PR作成時の必須事項
 
