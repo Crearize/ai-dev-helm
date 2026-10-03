@@ -3,6 +3,7 @@
 // Applies the harness-owned overlays in scripts/skill-overlays to a transformed
 // skills tree.
 //
+//   node scripts/apply-skill-overlays.js check  <upstream_skills_dir>
 //   node scripts/apply-skill-overlays.js apply  <upstream_skills_dir> <dest_dir>
 //   node scripts/apply-skill-overlays.js update <upstream_skills_dir> <upstream_version>
 //
@@ -59,7 +60,7 @@ if (mode === 'update') {
   }
   fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`Updated manifest for upstream ${b}: ${Object.keys(manifest.files).length} overlays.`);
-} else if (mode === 'apply') {
+} else if (mode === 'check' || mode === 'apply') {
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
   const keys = overlayKeys();
   const unlisted = keys.filter((key) => !(key in manifest.files));
@@ -71,6 +72,8 @@ if (mode === 'update') {
     const upstream = path.join(a, key);
     if (expected === null) {
       if (overlay.prepend) fail(`Prepend overlay ${key} needs an upstream file hash`);
+      // A harness-owned file: upstream shipping the same name is drift.
+      if (exists(upstream)) drifted.push(`${key}: now exists upstream (harness-owned file, overlay based on upstream ${manifest.upstreamVersion})`);
       continue;
     }
     if (!exists(upstream)) drifted.push(`${key}: removed upstream (overlay based on upstream ${manifest.upstreamVersion})`);
@@ -78,6 +81,10 @@ if (mode === 'update') {
   }
   if (drifted.length) {
     fail(`Upstream drift in files that harness overlays own (overlays are based on upstream v${manifest.upstreamVersion}). Compare each file between upstream v${manifest.upstreamVersion} and the new release, port what matters into scripts/skill-overlays, then run \`node scripts/apply-skill-overlays.js update <upstream_skills_dir> <version>\`:\n  ${drifted.join('\n  ')}`);
+  }
+  if (mode === 'check') {
+    console.log(`No upstream drift (${Object.keys(manifest.files).length} overlays).`);
+    process.exit(0);
   }
   for (const key of Object.keys(manifest.files)) {
     const overlay = overlayFor(key);
@@ -88,5 +95,5 @@ if (mode === 'update') {
     console.log(`  Applied overlay: ${key}`);
   }
 } else {
-  fail('usage: apply-skill-overlays.js apply <upstream_skills_dir> <dest_dir> | update <upstream_skills_dir> <version>');
+  fail('usage: apply-skill-overlays.js check <upstream_skills_dir> | apply <upstream_skills_dir> <dest_dir> | update <upstream_skills_dir> <version>');
 }

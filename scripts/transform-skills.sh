@@ -38,6 +38,19 @@ EXCLUDE_PATTERNS=(
     "test-*.md"
 )
 
+# Validate the upstream before touching the destination.
+for skill in "${SKILLS[@]}"; do
+    if [ ! -d "$SRC/$skill" ]; then
+        echo "::error::Required upstream skill not found: $skill" >&2
+        exit 1
+    fi
+done
+
+# Check overlay drift before touching the destination: a drift failure must
+# leave it exactly as it was.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+node "$SCRIPT_DIR/apply-skill-overlays.js" check "$SRC"
+
 for skill in "${SKILLS[@]}"; do
     skill_src="$SRC/$skill"
     skill_dest="$DEST/$skill"
@@ -91,7 +104,6 @@ find "$DEST" -name '*.helm-sed-bak' -type f -delete
 
 # Upstream files nest code fences inside fenced prompt templates, which breaks
 # rendering in some Markdown viewers. Widen the outer fences after copying.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 find "$DEST" -name '*.md' -print0 | xargs -0 "$SCRIPT_DIR/fix-nested-fences.sh"
 
 # Files the harness does not ship: executing-plans/scripts (task-start/task-done

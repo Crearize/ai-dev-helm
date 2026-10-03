@@ -76,16 +76,23 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          bash scripts/transform-skills.sh             /tmp/superpowers/skills             skills/superpowers 2>&1 | tee /tmp/transform.log
+          bash scripts/transform-skills.sh /tmp/superpowers/skills skills/superpowers 2>&1 | tee /tmp/transform.log
 
       - name: Report upstream drift
         if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'failure'
         run: |
           TITLE="superpowers upstream drift v${LATEST_VERSION}"
+          if grep -q 'Upstream drift' /tmp/transform.log; then
+            SUMMARY="上流 superpowers v${LATEST_VERSION} の同期で、ハーネスが持つ overlay の基にした上流ファイルが変わっていました。"
+            ACTION="対応: scripts/skill-overlays/README.md の手順で、差分を読んで overlay に取り込み、manifest を更新してください。"
+          else
+            SUMMARY="上流 superpowers v${LATEST_VERSION} の同期が失敗しました（上流のずれ以外の原因の可能性があります）。"
+            ACTION="対応: 実行ログで失敗の原因を確認してください。"
+          fi
           {
-            echo "上流 superpowers v${LATEST_VERSION} の同期で、ハーネスが持つ overlay の基にした上流ファイルが変わっていました。"
+            echo "$SUMMARY"
             echo
-            echo "対応: scripts/skill-overlays/README.md の手順で、差分を読んで overlay に取り込み、manifest を更新してください。"
+            echo "$ACTION"
             echo
             echo "実行ログ: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo
@@ -124,6 +131,17 @@ jobs:
         run: |
           echo "$LATEST_VERSION" > .superpowers-version
         env:
+          LATEST_VERSION: ${{ steps.latest.outputs.version }}
+
+      - name: Close resolved drift issue
+        if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'success'
+        run: |
+          EXISTING=$(gh issue list --state open --label superpowers-sync --json number,title --jq '[.[] | select(.title | startswith("superpowers upstream drift"))][0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --comment "v${LATEST_VERSION} の同期が成功したため閉じます: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
 
       - name: Create Pull Request
