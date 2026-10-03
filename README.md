@@ -210,7 +210,7 @@ Next steps:
 
 #### 適用バージョンの記録（`.ai-dev-helm.json`）
 
-init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成されます。取り込んだ ai-dev-helm のバージョン・ツール・スタック・適用日時が記録されるため、「今このプロジェクトは何バージョンを取り込んでいるか」をいつでも確認でき、次回の同期時に差分確認の起点として使えます。init を再実行すると最新の内容で上書きされます。
+init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成されます。取り込んだ ai-dev-helm のバージョン・ツール・スタック・適用日時が記録されるため、「今このプロジェクトは何バージョンを取り込んでいるか」をいつでも確認でき、次回の同期時に差分確認の起点として使えます。init を再実行すると最新の内容で上書きされます（このファイルのみ。下記の「再実行時の扱い」参照）。
 
 ```json
 {
@@ -269,6 +269,19 @@ Select options (space-separated): 1 2 3
 - `npm publish`, `pnpm publish`, `yarn publish`
 
 ---
+
+### 非対話モードと再実行時の扱い
+
+質問に答えられない環境（CI・AI エージェント）では、オプションで全部指定します。TTY が無く必須の値（`--project-name`、`--tools`）が欠けていると、質問せずに終了コード 1 で終わります。
+
+```bash
+npx @crearize/ai-dev-helm init --yes                                   # 既定値: プロジェクト名=ディレクトリ名、ツール=claude-code、スキル=all
+npx @crearize/ai-dev-helm init --project-name my-app --tools claude-code,codex --stacks <stack> --skills all
+```
+
+- `--skills` は `all` / `superpowers` / `project` / プロジェクトスキル名のカンマ区切り。`--stacks` は未指定なら、選べるスタックが 1 つのときだけそれを使う
+- 再実行しても、内容が違うファイル（`documents/development/`、`.github/` のレビューガイド、スキル、`lint/`、ルール）は上書きしません。新しい版を `<file>.ai-dev-helm-new` として隣に置き、最後に `ACTION REQUIRED` で一覧を出します。差分を見て取り込むか、不要なら削除してください。以前の「黙って上書き」に頼っていた手順は、このファイルを確認する手順に変わります
+- `.gitignore` では、`/.worktrees/` のようなルート固定の行を同じものとして扱い、旧 `reports/mutation/` は `**/reports/mutation/` に置き換えます
 
 ## スキル一覧
 
