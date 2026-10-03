@@ -1,0 +1,7 @@
+{
+  "comment": "How Windows PowerShell passes an unquoted `-C../other` to a native command (#158). Recorded by running the probe below on Windows 11 with Windows PowerShell 5.1.26100; lib/quality-gate.test.js re-runs the probe on every Windows run (powershell and, when present, pwsh) and checks the live argv is one of the two forms the hook reads as the same path.",
+  "probe": "node -e \"console.log(JSON.stringify(process.argv.slice(1)))\" -- -C../other push origin main",
+  "observed": {
+    "powershell-5.1.26100": ["-C", "../other", "push", "origin", "main"]
+  }
+}
