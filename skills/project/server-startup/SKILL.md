@@ -39,7 +39,7 @@ worktree内で作業している場合は、`worktree-parallel` スキルで渡�
 ```bash
 # ポート確認と停止
 netstat -ano | grep ":[PORT] " | grep LISTENING
-# LISTENINGがあれば → taskkill //PID <PID> //F
+# LISTENINGがあれば → taskkill //PID <PID> //F（Git Bash では `/PID` が MSYS のパス変換で壊れるので `//` と書く。詳細は documents/development/windows-shell.md）
 ```
 
 **Windows（PowerShell）:**
@@ -93,7 +93,8 @@ worktree内では、渡されたポートレジストリのフロントエンド
 **Windows（MSYS/Git Bash）:**
 ```bash
 netstat -ano | grep ":[PORT] " | grep LISTENING
-# LISTENINGがあれば → taskkill //PID <PID> //F //T
+# LISTENINGがあれば → taskkill //PID <PID> //F //T（`//` の理由は同上）
+# 停止後は netstat -ano | grep ":[PORT] .*LISTEN" が空になることでポート解放を確認する
 ```
 
 **Windows（PowerShell）:**

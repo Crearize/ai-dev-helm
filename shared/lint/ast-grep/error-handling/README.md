@@ -35,7 +35,7 @@ These three rules are not A3 detection - they guard against abuse of the
 Checkstyle line-level suppression mechanism (`SuppressWarningsFilter` /
 `SuppressWarningsHolder`) that backs A3 enforcement itself, so a suppression
 cannot silently widen into a blanket exemption. See
-`stacks/java-springboot/lint/README.md` ("Line-level suppression (#117)") for
+`lint/README-java-springboot.md` once installed (source: `stacks/java-springboot/lint/README.md`, "Line-level suppression (#117)") for
 the full abuse surface and the operating convention these rules enforce.
 
 - `no-blanket-suppress-warnings-java` - flags any `@SuppressWarnings` string

@@ -26,7 +26,7 @@ Development policies, standards, and processes for this project.
 
 | 項目 | 充足箇所 |
 |---|---|
-| 1 Issue とブランチ | `CLAUDE.md.template` Critical Rules Level 0 / 1、quick-checklist |
+| 1 Issue とブランチ | `CLAUDE.md`（ルートの規則）Critical Rules Level 0 / 1、quick-checklist |
 | テストは根拠を添えれば信用 / ミューテーションは必須でない | quality-policy §2（提案ベース・非ブロック） |
 | 通過判定は根拠を添える | quality-check SKILL.md「実装 Agent の自己申告を Quality Gate にしない」（脚注参照） |
 
@@ -114,6 +114,13 @@ docs/[document-name]       # Documentation
 refactor/[target]          # Refactoring
 test/[test-target]         # Test additions/fixes
 ```
+
+#### Working without Issues (optional)
+A project that does not use GitHub Issues keeps the rest of this policy unchanged:
+- Branch name is `<type>/<description>` (no Issue number); omit `closes #N` from commits and PRs.
+- `implementation-report` finds the plan by branch name only when there is no Issue.
+- The default `branch-naming` lint pattern does not require an Issue number. A project that wants one overrides `pattern` (see `lint-scaffolding`).
+- The "Create GitHub Issue" and "Issue number required" rules in the three entry files apply only to projects that use Issues.
 
 ### PR Creation and Review
 1. Meaningful commit units

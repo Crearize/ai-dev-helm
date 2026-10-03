@@ -35,6 +35,10 @@ This project uses the [superpowers](https://github.com/obra/superpowers) skill s
 3. **Create a Pull Request** — PRs require at least **1 reviewer approval** before merging
 4. **Stale reviews are automatically dismissed** — If you push new commits after receiving approval, the review resets
 
+## Keeping the README in sync with the quality-check contract
+
+`README.md` restates, for users, the merge-gate contract defined in `skills/project/quality-check/SKILL.md` (the SKILL is the single source). When you change the "最重要ルール" section of the SKILL, update the matching part of the README in the same PR. This rule is for this repository only and is not shipped in the SKILL.
+
 ## Versioning Policy
 
 This project follows [Semantic Versioning](https://semver.org/):

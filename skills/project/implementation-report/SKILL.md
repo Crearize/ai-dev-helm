@@ -16,7 +16,7 @@ PR作成時に実装レポートを生成するスキル。`quality-check` ス�
 ## 前提条件
 
 - `quality-check` スキルが完了し `.quality-check-report.json` が存在すること
-- `.quality-check-report.json` が見つからない場合はエラーとし、先に `quality-check` スキルを実行するよう促す
+- `.quality-check-report.json` が見つからない場合はエラーとし、先に `quality-check` スキルを実行するよう促す。例外: 差分がハーネスのみの免除（quality-check「ハーネスのみ変更の免除」）に当たる場合はエラーにしない（Step 1 を参照）
 
 ---
 
@@ -42,13 +42,13 @@ Step 5: PR descriptionに実装レポートを含めてPR作成
 
 > フォーマットの詳細は [`_schemas/quality-check-report.schema.md`](../_schemas/quality-check-report.schema.md) を参照。
 
-**ファイルが存在しない場合**: エラーを出力し、先に `quality-check` スキルを実行するよう促して処理を中断する。
+**ファイルが存在しない場合**: 差分（`git diff --name-only origin/main...HEAD`）がハーネスのみの免除に当たるときは、レポートに「品質チェック: 免除（ハーネスのみの変更。変更ファイルの一覧）」と書いて作成を続ける。それ以外はエラーを出力し、先に `quality-check` スキルを実行するよう促して処理を中断する。
 
 ---
 
 ## Step 2: 実装計画ドキュメントを検索・参照
 
-`docs/superpowers/plans/` 配下の計画ドキュメントを検索し、現在のブランチ・Issue に関連する計画を特定する。
+`docs/superpowers/plans/` 配下の計画ドキュメントを検索し、現在のブランチ・Issue に関連する計画を特定する（Issue を使わない運用では、ブランチ名だけで探す）。
 
 - **計画ドキュメントが見つかった場合**: その内容を参照する
 - **見つからない場合**: 会話コンテキスト内の計画情報を使用し、レポートに「計画ドキュメント参照不可（会話コンテキストから生成）」と注記する
