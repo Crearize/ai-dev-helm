@@ -45,6 +45,9 @@ Full text: `documents/development/development-policy.md` §1.0.
 | Parallel worktree development | `worktree-parallel` | Worktree placement, ports, env setup, cleanup |
 | Recurring process issue or explicit improvement task | `self-improvement` | Optional; not a completion gate |
 
+
+Bundled skills live at `skills/superpowers/<name>/SKILL.md` (Claude: `.claude/skills/superpowers/...`) and are authoritative. If `superpowers:<name>` resolves to an external plugin or returns `Unknown skill`, read the local SKILL.md directly.
+
 ### Design Confirmation Rules
 
 Explore existing context first and batch the questions that are still needed into one message. Scale design detail to the uncertainty and impact of the change, but not the gate below.
@@ -55,7 +58,7 @@ Explore existing context first and batch the questions that are still needed int
 2. Send the user one message with the design, the review findings and how each was resolved.
 3. Stop until the user explicitly approves. A request to implement is not approval of a design that did not exist yet.
 
-This applies to bounded changes too; only typo fixes and obviously correct few-line changes with no design choice are exempt. After approval, do not ask again after writing the spec or reviewing the plan. The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
+This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again after writing the spec or reviewing the plan. The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
 
 ### Plan Execution Rules
 
@@ -67,7 +70,7 @@ This applies to bounded changes too; only typo fixes and obviously correct few-l
 
 ### Subagent Model Selection
 
-Use `documents/development/harness-runtime.md` for the shared model table, live tool parameter names and review reservations. This table describes delegation; it does not prohibit implementation by the current parent model. Use Claude Opus / Sonnet 5.5 or later only (never Haiku or older Claude models), and do not use GPT-6 Luna. Preserve intentional project-specific model choices when upgrading. Quality reviewers retain the required capability and check independent specifications and actual behavior.
+Use `documents/development/harness-runtime.md` for the shared model table, live tool parameter names and review reservations. This table describes delegation; it does not prohibit implementation by the current parent model. Use Claude Opus / Sonnet 5.5 or later only (never Haiku or older Claude models), and do not use GPT-6 Luna. This applies only to the models you choose for agents, subagents and delegation; model IDs that product code or product configuration calls (the product's own LLM features) are out of scope and must not be rewritten. Do not add project-specific overrides of agent model choices; the table in harness-runtime.md is the source of truth. Quality reviewers retain the required capability and check independent specifications and actual behavior.
 
 ---
 
@@ -93,8 +96,8 @@ Step 4: Review cycle (roster sized by change content - integrated reviewer alway
         fixes with a single verification reviewer)
     |
 Step 5: Additional-test proposal (test-recommendation skill: heuristics recommend
-        mutation/E2E runs with rationale, the user decides, approved runs execute;
-        declines are recorded and never block - except an executed E2E that fails
+        mutation/E2E runs with rationale, record it as a proposal for the owner;
+        it is not an approval gate and does not block work; approved runs execute, declines are recorded - except an executed E2E that fails
         must be fixed)
     |
 Step 6: Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
@@ -111,8 +114,8 @@ The hook is a static classifier of the command line - it never resolves what act
 - Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.claude/**`, `.codex/**`, `.cursor/**`, `skills/project/**`, `skills/superpowers/**`, `.github/review-*.md`, `documents/development/coding-rules/**`) skip the gate and the quality check entirely. **Carve-out**: a diff that changes gate parameters - the `Quality Gate Overrides` keys below - is NOT exempt, even inside those paths, and neither is a diff touching **gate control-plane files** (the `quality-check` skill and its schemas, `test-recommendation`, the hook body/registration and its `.codex`/`.cursor` copies, `.claude`/`.codex`/`.cursor` `agents/`/`commands/`/`prompts/`/`rules/` directories, `.codex/config.toml`, the MCP registration files, and `.claude/settings.json` / `.claude/settings.local.json` in their entirety - the full set is defined once in the `quality-check` skill's "ハーネスのみ変更の免除" section). These must go through quality-check; the hook enforces the same carve-out and blocks such diffs with `Gate control-plane changed:`.
 - **Trunk names are fixed to `main` / `master`**; products using another trunk name are not gated by the hook and rely on the `permissions.deny` layer and convention.
 - **Worktree main** (#116): if the session's working directory is not the worktree, a merge into that worktree's main made through a statically resolvable `cd` / `pushd` / `-C` is judged with that worktree's branch and flag, and one made through a move the hook cannot resolve is blocked; any other route (a script, for example) is invisible to this hook. If the session's working directory is the worktree, that main is gated normally. The hook evaluates in the session's working directory and reads the flag from that repository root (a worktree's own root when the session's working directory is a worktree). The only correct procedure for merging into a `main` checked out in a git worktree is to run `/quality-check` to completion in a session whose working directory is that worktree, creating the flag inside the worktree, then merge from there.
-- Candidate operations combined with other commands can still trigger unconditional blocks. A single-line plain `git commit ... && git push [remote]` with omitted refspec is allowed on a feature branch only, without expansion, relocation, redirection or extra commands. Other combinations keep the conservative rule; see the skill for the exact contract.
-- **Simple form and relocation** (#158): a command that mentions `push` / `pull` / `merge` / `rebase` is judged only in a simple form; anything else is refused with guidance (a false refusal only costs a rerun). Run the push/merge as its own command - optionally after `cd <path>` / `Set-Location <path>` or as `git -C <path> ...` - with forward slashes, without variables, without special characters inside quotes, and without other shell constructs (pipes, redirects, `||`, subshells, blocks). Simple means: segments joined only by newlines, `;` or `&&`; each starting with `git`, `gh`, a location change, or a build/test runner; `git` with no global option other than `-C <path>` / `--no-pager`. In a simple command, location changes and `-C` are followed in order: the same repository is judged as usual, another repository with ITS OWN branch and flag, and a target that does not exist now blocks. A command that does not push or merge should avoid those words (write such a commit message with `git commit -F <file>`). The exact definition lives in the `quality-check` skill.
+- **Everyday commands that never touch the trunk are allowed** next to other git commands: on a feature branch `git add` / `git commit` then `git push`; `git fetch && git rebase origin/main` (with further commands after it) and `git push --force-with-lease` to the branch's own upstream; `git checkout -b <x> && ... && git push -u origin HEAD`. Syncing the trunk from origin needs no flag: `git pull` / `git pull --ff-only` / `git pull origin <trunk>` / `git merge [--ff-only] origin/<trunk>`, `git pull --rebase` while the local trunk has no commits ahead of origin, optionally after `git checkout <trunk> &&` and followed by `&& git branch -d <x>`. A push to the trunk still needs the flag, a commit chained with a push on the trunk is refused (the push needs the quality check on the new commit), and a force push to the trunk is always refused. Other combinations keep the conservative rule; see the skill for the exact contract.
+- **Simple form and relocation** (#158): a command that mentions `push` / `pull` / `merge` / `rebase` is judged only in a simple form; anything else is refused with guidance (a false refusal only costs a rerun). Run the push/merge as its own command - optionally after `cd <path>` or as `git -C <path> ...` - without variables, without special characters inside quotes, and without other shell constructs (pipes, redirects, `||`, subshells, blocks). Simple means: segments joined only by newlines, `;` or `&&`; each starting with `git`, `gh`, a location change (`cd` / `pushd` / `popd`) or a build/test runner; `git` with no global option other than `-C <path>` / `--no-pager`. The hook reads the command as the tool's shell runs it (`tool_name`): from the PowerShell tool, `Set-Location` / `sl` / `Push-Location` / `Pop-Location`, unquoted `C:\...` paths and `A; if ($?) { B }` (read as `A && B`) are judged; from Bash, quoted `"C:\..."` paths and Git Bash's `/c/...` (read as `C:/...`) are; a path written `C:/...` works everywhere. In a simple command, location changes and `-C` are followed in order: the same repository is judged as usual, another repository with ITS OWN branch and flag, and a target that does not exist now - or a place that depends on whether an earlier command in an `&&` chain succeeded - blocks. A command that does not push or merge should avoid those words (write such a commit message or PR body to a file and use `git commit -F <file>` / `gh pr create --body-file <file>`). The exact definition lives in the `quality-check` skill.
 - If main advanced independently after the flag was issued, the merged main (feature + main combined) is unverified: the merge may succeed but the push to main is blocked. Re-run `/quality-check` on the merged main, then push.
 - **Nested shells and unreadable PowerShell**: a push/merge written inside another shell (`powershell -Command "..."`, `pwsh -c`, `cmd /c`, `bash -c`) is not simple and is refused even with a valid flag - run the push/merge itself as its own command. An encoded or stdin PowerShell script is refused whether or not it mentions those words.
 
@@ -216,7 +219,9 @@ Ask the user only when:
 
 1. The answer cannot be determined after investigation
 2. An unexpected situation causes a loop or prevents reliable progress
-3. A substantive design decision needs authorization that has not already been given in the conversation
+3. The Design Gate approval is still pending (Design Confirmation Rules), or a substantive decision outside the approved design has not been authorized in the conversation
+
+Approval from the user is required only for: design approval, exceeding review limits, a release, closing a security advisory (GHSA), and a merge that an adopter rule requires the user to approve. Do not ask the user to run commands or do operations; run them yourself and verify.
 
 Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
 
