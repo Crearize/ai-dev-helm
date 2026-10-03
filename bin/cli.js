@@ -158,8 +158,7 @@ yargs(hideBin(process.argv))
         })
         .option('base', {
           type: 'string',
-          describe: 'Base ref the diff is taken against',
-          default: 'origin/main',
+          describe: 'Base ref the diff is taken against. Default: origin/main (or origin/master); without a remote-tracking trunk, the local main (or master)',
         })
         .option('out', {
           type: 'string',
