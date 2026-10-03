@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0](https://github.com/Crearize/ai-dev-helm/compare/v3.2.1...v3.3.0) (2026-10-03)
+
+
+### Added
+
+* **init:** non-interactive mode, harness-owned vs adopter-editable re-init ([#183](https://github.com/Crearize/ai-dev-helm/issues/183)) ([c978153](https://github.com/Crearize/ai-dev-helm/commit/c978153ae40ef3c7244beaa01019a13ff47947b6)), closes [#165](https://github.com/Crearize/ai-dev-helm/issues/165) [#133](https://github.com/Crearize/ai-dev-helm/issues/133)
+* **security:** web app baseline rules, review viewpoints and dependency audit ([#177](https://github.com/Crearize/ai-dev-helm/issues/177)) ([f66025f](https://github.com/Crearize/ai-dev-helm/commit/f66025f90f8c8cc94e5a6583dcd6a56ec2d0cc00)), closes [#168](https://github.com/Crearize/ai-dev-helm/issues/168)
+* **skills:** sync superpowers 6.4.2 via owned overlays ([#178](https://github.com/Crearize/ai-dev-helm/issues/178)) ([152ab55](https://github.com/Crearize/ai-dev-helm/commit/152ab55a083485d8ffe397601e41e272c7e6f778)), closes [#165](https://github.com/Crearize/ai-dev-helm/issues/165)
+
+
+### Fixed
+
+* **cli:** link-skills, inventory warnings, hook-selftest and path fixes ([#185](https://github.com/Crearize/ai-dev-helm/issues/185)) ([c1d83f9](https://github.com/Crearize/ai-dev-helm/commit/c1d83f90663580a17ee3f4807ecd0606cf468da0)), closes [#165](https://github.com/Crearize/ai-dev-helm/issues/165) [#138](https://github.com/Crearize/ai-dev-helm/issues/138)
+* **mutation:** Java 25 PIT setup, per-stack lint rules and Stryker defaults ([#182](https://github.com/Crearize/ai-dev-helm/issues/182)) ([d24cdfa](https://github.com/Crearize/ai-dev-helm/commit/d24cdfacd9d47c63910ae3b2cb400d54115afbbb)), closes [#167](https://github.com/Crearize/ai-dev-helm/issues/167)
+* **quality-gate:** bind the flag to what trunk receives and cover the PowerShell tool ([#187](https://github.com/Crearize/ai-dev-helm/issues/187)) ([6079df3](https://github.com/Crearize/ai-dev-helm/commit/6079df3d8d1ee5c830d7d190aab0a04df95a4535)), closes [#162](https://github.com/Crearize/ai-dev-helm/issues/162) [#163](https://github.com/Crearize/ai-dev-helm/issues/163)
+* **quality-gate:** simplify the gate and allow everyday commands ([#181](https://github.com/Crearize/ai-dev-helm/issues/181)) ([244d3de](https://github.com/Crearize/ai-dev-helm/commit/244d3de98541d93d9c3860a17178a62c8494833f)), closes [#162](https://github.com/Crearize/ai-dev-helm/issues/162)
+* **review-budget:** AI-run extend, stale-lock recovery and fewer false denials ([#180](https://github.com/Crearize/ai-dev-helm/issues/180)) ([6afeb9a](https://github.com/Crearize/ai-dev-helm/commit/6afeb9abef9032951a9ef166c48d12ae93516419)), closes [#161](https://github.com/Crearize/ai-dev-helm/issues/161)
+
+
+### Documentation
+
+* **harness:** model policy, Design Gate exemptions and owner-approval scope ([#184](https://github.com/Crearize/ai-dev-helm/issues/184)) ([f04ef4c](https://github.com/Crearize/ai-dev-helm/commit/f04ef4c864b7f93b18ae565e084ad5a4d7ea6cb9)), closes [#164](https://github.com/Crearize/ai-dev-helm/issues/164)
+* **skills:** references, Windows shell guide and disciplines from incidents ([#186](https://github.com/Crearize/ai-dev-helm/issues/186)) ([da0a26e](https://github.com/Crearize/ai-dev-helm/commit/da0a26e7e22ea8e846027f3572a1fe397182d34e)), closes [#166](https://github.com/Crearize/ai-dev-helm/issues/166) [#145](https://github.com/Crearize/ai-dev-helm/issues/145) [#146](https://github.com/Crearize/ai-dev-helm/issues/146) [#147](https://github.com/Crearize/ai-dev-helm/issues/147) [#148](https://github.com/Crearize/ai-dev-helm/issues/148)
+
 ## [3.2.1](https://github.com/Crearize/ai-dev-helm/compare/v3.2.0...v3.2.1) (2026-10-03)
 
 
