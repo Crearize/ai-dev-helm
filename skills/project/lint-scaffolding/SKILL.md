@@ -115,6 +115,8 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 | ArchUnit（`lint/archunit/`） | `archunit-junit5` を testImplementation に追加し、テンプレートを `src/test/java/` 配下へコピーして `__BASE_PACKAGE__` をプロダクトのベースパッケージに置換する（`lint/README-java-springboot.md`） |
 | 横断リンター | `@crearize/ai-dev-helm` を devDependency に追加し、`npx ai-dev-helm lint` を組み込む。プロダクトルートに `.ai-dev-helm-lint.json` を生成し、カバレッジマップの採否に応じて各チェック（secrets / commented-code / todo-deadline / import-exists / file-naming / branch-naming / commit-message）の `enabled` と `exclude` グロブを設定する。終了コードは 0 = 問題なし / 1 = 違反あり / 2 = 実行エラー |
 
+branch-naming の既定 `pattern` は Issue 番号を要求しない。番号を必須にしたい導入先は `.ai-dev-helm-lint.json` の `branch-naming.pattern` を上書きする（例: `^(feat|fix|chore|docs|refactor|test|ci|perf)/[a-z0-9._-]+-[0-9]+$`。`feat/foo-bar` は違反、`feat/foo-bar-123` は通る）。
+
 配線対象の資産は package 管理されている（init 再実行で上書きされる）。**プロダクト固有の調整は資産ファイルの編集ではなく、自プロダクトの設定側（ESLint の上書き・sgconfig の選択等）で行う。**
 
 **抑制機構を配線するときのチェックリスト（#118）**

@@ -47,7 +47,7 @@ A quick-reference checklist for AI tools when working on development tasks.
 
 ### Final Confirmation
 - [ ] Related documentation consistency verified
-- [ ] **Self-improvement candidates reviewed** (applied / skipped / not required)
+- [ ] (Optional) Self-improvement candidates noted (not a completion condition)
 - [ ] PR created (with /implementation-report, closes #[issue-number])
 
 ## Documentation Update Checks

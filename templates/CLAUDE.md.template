@@ -65,7 +65,7 @@ This applies to bounded changes too. Exemption: a typo fix that involves no desi
 1. Choose direct implementation or bounded delegation by total effort: planning, handoff, repeated exploration, integration and rework. A capable parent may implement small or medium tasks directly. Delegate independent work when parallelism or context isolation helps; delegation is not a completion requirement.
 2. Keep plans proportional: scope, affected contracts, independent test oracles and validation. Do not write the implementation twice as detailed plan code and then a transcription task. Local plan files under `docs/superpowers/plans/` are not committed; clean them up after merge.
 3. During implementation, use self-checks and tests. Final quality review belongs to `quality-check`; do not add per-task reviewer loops or a second whole-branch review. Design/plan document reviews follow quality-policy §5.5. Review depth follows risk and uncertainty; the current review roster is retained pending comparison.
-4. Respect user budgets. Estimate agent use when delegating; report a material overrun against the agreed budget. Resume interrupted agents after inspecting their committed/uncommitted work and restating ownership. Do not restore, stash or clean another task's files.
+4. Respect user budgets. Estimate agent use when delegating; report a material overrun against the agreed budget. Resume interrupted agents after inspecting their committed/uncommitted work and restating ownership. Do not restore, stash or clean another task's files. One writing agent or session per worktree; see `worktree-parallel`.
 5. Verify external platform limits against official documentation when the design relies on them.
 
 ### Subagent Model Selection
@@ -156,8 +156,8 @@ The hook is a static classifier of the command line - it never resolves what act
 
 **AI automatically executes the following:**
 
-1. **Create GitHub Issue** - `gh issue create` to get Issue number
-2. **Create branch** - `git checkout -b [type]/[description]-[issue-number]`
+1. **Create GitHub Issue** (in projects that use Issues) - `gh issue create` to get Issue number
+2. **Create branch** - `git checkout -b [type]/[description]-[issue-number]` (omit the number when the project does not use Issues)
 3. **Include Issue/branch/PR in plans** - Phase 0: Issue/branch creation, final Phase: PR creation
 4. **Execution method** - Choose parent implementation or bounded delegation according to Plan Execution Rules; preserve the same final quality gate.
 5. **Run /quality-check before merging into main** - Required before `gh pr merge`, `git merge` on main, or a direct push to main. Feature-branch pushes need no check
@@ -166,7 +166,7 @@ The hook is a static classifier of the command line - it never resolves what act
 
 1. **Branch check before work** - `git branch --show-current` to confirm not on main
 2. **No work on main** - Always create a new branch
-3. **Issue number required** - Branch name: `[type]/[description]-[issue-number]`
+3. **Issue number required** (in projects that use Issues) - Branch name: `[type]/[description]-[issue-number]`
 4. **New error codes must be documented** - Add to error code list immediately
 5. **Server ports are fixed** - Stop existing processes, use only configured ports, and stop servers after work
 
@@ -208,6 +208,8 @@ When the execution shell is PowerShell (default on Windows), bash idioms fail. F
 4. **No `/dev/null`** - redirect with `2>$null` or pipe to `Out-Null`
 5. **Quote paths containing spaces** and prefer `Join-Path` for path construction
 6. **Complex one-liners break easily** (quoting, `?:` operator is PowerShell 7+ only) - write a temporary script file and execute it instead
+
+More Windows shell rules (Git Bash path conversion, `taskkill`, encodings): `documents/development/windows-shell.md`
 
 ---
 

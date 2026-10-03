@@ -19,6 +19,8 @@ SuperPowers の `using-git-worktrees` で分離ワークスペースを確保し
 - worktree はリポジトリルートの `.worktrees/` 配下に作成する
 - worktree 名はブランチ名の `/` を `-` に置換したものにする
 - worktree 内のエージェントは自分の worktree 外のファイルを変更しない
+- 書き込みをするエージェントやセッションは、1 つの worktree に 1 つだけ。HEAD や index を共有しない
+- 他の作業のファイルを stash・restore・clean しない
 - worktree でサーバーを起動する場合は、必ずメインチェックアウト直下のポートレジストリで割り当てられたポートのみを使う
 - 作業完了後は `git worktree remove` と `git worktree prune` で孤児状態を残さない
 
