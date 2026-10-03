@@ -38,8 +38,20 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import globals from 'globals';
-import react from 'eslint-plugin-react';
-import reactHooks from 'eslint-plugin-react-hooks';
+// Optional plugins: loaded dynamically so a missing install warns and drops that rule group instead of failing the whole config.
+async function optional(name) {
+  try {
+    return (await import(name)).default;
+  } catch (err) {
+    // Skip only when the plugin package itself is absent; rethrow anything else (broken install, a plugin dependency missing) so security rules do not silently disappear.
+    const self = err && err.code === 'ERR_MODULE_NOT_FOUND' && String(err.message).includes(`Cannot find package '${name}'`);
+    if (!self) throw err;
+    console.warn(`[ai-dev-helm] ${name} is not installed; its rules are skipped`); // eslint-disable-line no-console
+    return null;
+  }
+}
+const react = await optional('eslint-plugin-react');
+const reactHooks = await optional('eslint-plugin-react-hooks');
 
 import noForwardref from './rules/no-forwardref.js';
 import oneComponentPerFile from './rules/one-component-per-file.js';
@@ -70,6 +82,8 @@ export default [
       '**/build/**',
       '**/coverage/**',
       '**/out/**',
+      '.worktrees/**',
+      'lint/mutation/**',
     ],
   },
 
@@ -138,23 +152,28 @@ export default [
   // react plugin needs a version; set it explicitly because React is a peer
   // of the product, not installed alongside this preset.
   // ---------------------------------------------------------------------
-  {
-    files: ALL_SOURCE_FILES,
-    plugins: {
-      react,
-      'react-hooks': reactHooks,
-    },
-    settings: {
-      react: { version: '19.0' },
-    },
-    rules: {
-      'react/no-danger': 'error',
-      'react/jsx-no-script-url': 'error',
-      'react/jsx-no-target-blank': 'error',
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
-    },
-  },
+  ...(react
+    ? [{
+        files: ALL_SOURCE_FILES,
+        plugins: { react },
+        settings: { react: { version: '19.0' } },
+        rules: {
+          'react/no-danger': 'error',
+          'react/jsx-no-script-url': 'error',
+          'react/jsx-no-target-blank': 'error',
+        },
+      }]
+    : []),
+  ...(reactHooks
+    ? [{
+        files: ALL_SOURCE_FILES,
+        plugins: { 'react-hooks': reactHooks },
+        rules: {
+          'react-hooks/rules-of-hooks': 'error',
+          'react-hooks/exhaustive-deps': 'warn',
+        },
+      }]
+    : []),
 
   // ---------------------------------------------------------------------
   // correctness (Catalog: A1, A2)

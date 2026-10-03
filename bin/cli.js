@@ -222,6 +222,42 @@ yargs(hideBin(process.argv))
     }
   )
   .command(
+    'link-skills',
+    'Create missing .claude/.codex/.cursor skills links (junction on Windows, symlink elsewhere); never overwrites a real directory. Run after clone / git worktree add',
+    (yargs) => yargs
+      .option('dir', { type: 'string', describe: 'Project directory', default: process.cwd() })
+      .option('tools', { type: 'string', describe: 'Comma-separated: claude,codex,cursor (default: runtimes present in the project)' })
+      .option('dry-run', { type: 'boolean', default: false, describe: 'Report only; write nothing' }),
+    (argv) => {
+      try {
+        const { linkSkills } = require('../lib/link-skills');
+        const tools = argv.tools ? String(argv.tools).split(',').map((t) => t.trim()).filter(Boolean) : undefined;
+        const result = linkSkills({ dir: argv.dir, tools, dryRun: argv.dryRun });
+        console.log(result.lines.join(String.fromCharCode(10)));
+        process.exitCode = result.exitCode;
+      } catch (error) {
+        console.error('Error: ' + error.message);
+        process.exitCode = 1;
+      }
+    }
+  )
+  .command(
+    'hook-selftest',
+    'Run the bundled decision table against the hooks installed in the project (exit 0 all pass, 1 any mismatch)',
+    (yargs) => yargs.option('dir', { type: 'string', describe: 'Project directory', default: process.cwd() }),
+    (argv) => {
+      try {
+        const { runHookSelftest } = require('../lib/hook-selftest');
+        const result = runHookSelftest({ dir: argv.dir });
+        console.log(result.lines.join(String.fromCharCode(10)));
+        process.exitCode = result.exitCode;
+      } catch (error) {
+        console.error('Error: ' + error.message);
+        process.exitCode = 1;
+      }
+    }
+  )
+  .command(
     'codex-trust',
     'Read-only check that Codex trusts the project and its .codex/hooks.json hooks (exit 0 ok, 1 action required, 2 unreadable)',
     (yargs) => yargs
@@ -293,10 +329,10 @@ yargs(hideBin(process.argv))
       }
     }
   )
-  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, codex-trust, quality-report, or review-budget')
+  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, link-skills, hook-selftest, codex-trust, quality-report, or review-budget')
   .strict()
   .help()
-  .version()
+  .version(require('../package.json').version)
   .fail((msg, err, yargs) => {
     if (err) {
       console.error(`Error: ${err.message}`);

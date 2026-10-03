@@ -33,7 +33,7 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 
 通常の `init` は既存ルートルールの全文を新テンプレートに置き換える仕組みではありません。`init` 再実行を禁止しているプロジェクトでは手動反映を維持します。複数ツールが同じ skill を共有している場合は実体とリンクを確認してから更新し、別コピーの場合は必要な全コピーを揃えます。
 
-削除・修正の対象は、親の実装禁止、固定委譲、コードを再執筆させる詳細計画、重複レビュー、自己改善の必須完了条件です。ドメインの不変条件、テスト期待値の根拠、実ブラウザ確認、ブランチ・ファイル所有・予算・権限の保護は維持します。Low リスクの QA 1体化と GitHub へのゲート移管は今回の変更に含みません。
+削除・修正の対象は、エージェントのモデル選択のプロジェクト独自の上書き（出自を問わず。harness-runtime.md の表が正本）と、親の実装禁止、固定委譲、コードを再執筆させる詳細計画、重複レビュー、自己改善の必須完了条件です。ドメインの不変条件、テスト期待値の根拠、実ブラウザ確認、ブランチ・ファイル所有・予算・権限の保護は維持します。Low リスクの QA 1体化と GitHub へのゲート移管は今回の変更に含みません。
 
 ## `.ai-dev-helm-new` の取り込み
 
@@ -58,7 +58,7 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 
 設計完了後のレビュー依頼が省かれる問題と、モデル世代の更新（Claude Opus / Sonnet 5.5、GPT-6.1 Sol）を取り込みます。
 
-- **設計ゲート**: 配布する brainstorming / writing-plans / using-superpowers とレビュー依頼文 2 種、テンプレートの Development Philosophy 2 項・Design Confirmation Rules を反映します。導入先で独自に書き換えた brainstorming がある場合も、「設計完了 → `document-reviewer` による設計レビュー → 設計とレビュー結果をユーザーへ 1 通で示し承認まで止まる」の 3 段と、免除が誤字・数行の明白な修正だけであることを残します。外部 plugin を直接読む導入先は、その読込元にも同じ変更が必要です。
+- **設計ゲート**: 配布する brainstorming / writing-plans / using-superpowers とレビュー依頼文 2 種、テンプレートの Development Philosophy 2 項・Design Confirmation Rules を反映します。導入先で独自に書き換えた brainstorming がある場合も、「設計完了 → `document-reviewer` による設計レビュー → 設計とレビュー結果をユーザーへ 1 通で示し承認まで止まる」の 3 段と、免除の範囲が development-policy §1.0（承認済み設計の範囲内の修正を含む）に従うことを残します。外部 plugin を直接読む導入先は、その読込元にも同じ変更が必要です。
 - **Claude のモデル**: ユーザー設定の `model` は `claude-opus-5-5` へ（`personal --upgrade-model` または対話で確認）。テンプレートやプロジェクト設定に `fable` を既定として書いている箇所は `opus` へ戻し、Fable は難所の格上げに限ります。Opus 5 以前・Sonnet 5 以前・Haiku の指定は削除します。別名が旧版に解決される環境では 5.5 のモデル ID を明示します。
 - **Codex のモデル**: `init` / `personal` の再実行で、旧版のまま変更されていない `.codex/agents/helm-*.toml` と、`[agents] default_subagent_model = "gpt-5.6-terra"` を新しい値へ更新し、更新した旨を表示します。`helm-doc-reviewer.toml` と、見た目・編集判断を要する制作用の `helm-visual-producer.toml` が新たに追加されます。プロジェクト独自のモデル指定（制作中心のプロジェクトの実装モデル、Cursor 独自モデル等）は残さず、ハーネスの表に統一します（製品コードが使うモデル ID は対象外）。独自に変更したエージェント定義と、旧既定値以外のモデル指定は保持されるため、`Preserved customized managed role file` と表示されたファイルは手動で確認します。GPT-6 Luna と GPT-5.6 系の指定は残さず、最も軽い作業も `gpt-6.1-sol` / `low` を下限にします。最終品質レビュー（`helm-reviewer`）は `gpt-6-astra` / `high` のままです。
 
