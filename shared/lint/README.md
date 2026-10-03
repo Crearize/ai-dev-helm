@@ -45,4 +45,4 @@ Rules you generate to fill gaps (categories with no pre-built asset for your sta
 
 ## Updating
 
-These files are package-managed: re-running `ai-dev-helm init` overwrites them with the current release's versions (and restores any you deleted). Keep product-specific overrides in your own config (e.g. ESLint overrides below the preset) and generated rules in `lint/product/`, not by editing these files. `lint/product/` is the one directory here `init` never touches.
+These files are adopter-editable: `init` records a sha256 of what it wrote in `.ai-dev-helm.json`. Re-running `ai-dev-helm init` refreshes files you have not edited, and restores deleted ones. A file you edited (or one with no record, e.g. after upgrading from 3.2.x) is never overwritten: the release's version is written next to it as `<file>.ai-dev-helm-new` and listed under ACTION REQUIRED, for the AI to merge (see `documents/development/harness-upgrade.md`). Keep generated rules in `lint/product/`, which `init` never touches.

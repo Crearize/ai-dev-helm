@@ -31,6 +31,16 @@ yargs(hideBin(process.argv))
           describe: 'Show what would be done without making changes',
           default: false,
         })
+        .option('yes', {
+          alias: 'y',
+          type: 'boolean',
+          describe: 'Never prompt; use defaults for anything not given (project name = directory name, tools = claude-code, skills = all)',
+          default: false,
+        })
+        .option('project-name', { type: 'string', describe: 'Project name (non-interactive)' })
+        .option('tools', { type: 'string', describe: 'Comma-separated: claude-code,codex,cursor' })
+        .option('stacks', { type: 'string', describe: 'Comma-separated tech stacks' })
+        .option('skills', { type: 'string', describe: 'all | superpowers | project | comma-separated project skill names' })
         .option('verbose', {
           type: 'boolean',
           describe: 'Show detailed output and stack traces on error',
@@ -42,7 +52,14 @@ yargs(hideBin(process.argv))
       console.log('Project initialization mode');
       console.log('');
       const { doInit } = require('../lib/init');
-      await doInit({ dryRun: argv.dryRun });
+      await doInit({
+        dryRun: argv.dryRun,
+        yes: argv.yes,
+        projectName: argv.projectName,
+        tools: argv.tools,
+        stacks: argv.stacks,
+        skills: argv.skills,
+      });
     }
   )
   .command(

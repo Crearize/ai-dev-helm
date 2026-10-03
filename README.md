@@ -210,7 +210,7 @@ Next steps:
 
 #### 適用バージョンの記録（`.ai-dev-helm.json`）
 
-init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成されます。取り込んだ ai-dev-helm のバージョン・ツール・スタック・適用日時が記録されるため、「今このプロジェクトは何バージョンを取り込んでいるか」をいつでも確認でき、次回の同期時に差分確認の起点として使えます。init を再実行すると最新の内容で上書きされます。
+init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成されます。取り込んだ ai-dev-helm のバージョン・ツール・スタック・適用日時が記録されるため、「今このプロジェクトは何バージョンを取り込んでいるか」をいつでも確認でき、次回の同期時に差分確認の起点として使えます。init を再実行すると最新の内容で上書きされます（このファイルのみ。下記の「再実行時の扱い」参照）。
 
 ```json
 {
@@ -221,6 +221,19 @@ init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成さ
   "appliedAt": "2026-06-10T08:00:00.000Z"
 }
 ```
+
+### 非対話モードと再実行時の扱い
+
+質問に答えられない環境（CI・AI エージェント）では、オプションで全部指定します。TTY が無く必須の値（`--project-name`、`--tools`）が欠けていると、質問せずに終了コード 1 で終わります。
+
+```bash
+npx @crearize/ai-dev-helm init --yes                                   # 既定値: プロジェクト名=ディレクトリ名、ツール=claude-code、スキル=all
+npx @crearize/ai-dev-helm init --project-name my-app --tools claude-code,codex --stacks <stack> --skills all
+```
+
+- `--skills` は `all` / `superpowers` / `project` / プロジェクトスキル名のカンマ区切り。`--stacks` は未指定なら、選べるスタックが 1 つのときだけそれを使う（`--yes` で複数あるときは「選ばなかった」と表示）
+- 再実行時の扱いは 2 種類です。ハーネス所有のファイル（`skills/`、`documents/development/`、`.github/review-prompt.md`、フック、Codex エージェント、PR テンプレート）は常に最新版で上書きします。利用者が編集する前提のファイル（`.claude/rules/`・`.codex/rules/`、`.github/review-*.md`（`review-prompt.md` 以外）、`lint/`）は、`init` が書いた内容の sha256 を `.ai-dev-helm.json` の `files` に記録し、編集されていなければ更新、編集済み・記録なし（3.2.x からの更新など）なら上書きせず `<file>.ai-dev-helm-new` に新しい版を置いて、最後に `ACTION REQUIRED` で一覧を出します。取り込みは AI が `harness-upgrade.md` の手順で行い、オーナーの作業はありません。`*.ai-dev-helm-new` は `.gitignore` に追加されます
+- `.gitignore` では、`/.worktrees/` のようなルート固定の行を同じものとして扱い、旧 `reports/mutation/` は `**/reports/mutation/` に置き換えます
 
 ### 1.12.x からの移行
 
