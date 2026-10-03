@@ -513,27 +513,32 @@ function segmentFacts(seg) {
     ctlFrom[i] = ctlFrom[i + 1] || MERGE_CONTROL_FLAGS.has(w);
     forceFrom[i] = forceFrom[i + 1] || BRANCH_FORCE_FLAGS.has(w);
     mergeApiFrom[i] = mergeApiFrom[i + 1] || PULLS_MERGE_RE.test(w);
+    // Every word carries its refspec reading: after `--` a word starting
+    // with `-` is a refspec too (pushCandidate decides which reading holds).
+    const { src, dst } = splitSpec(w);
+    const spec = {
+      src,
+      dst,
+      plus: w.startsWith('+'),
+      main: isMainRef(dst),
+      upstream: src === null && UPSTREAM_REFS.has(dst.toLowerCase()),
+    };
     if (w.startsWith('-')) {
       // `--repo`, or an abbreviation git expands to it (`--rep`).
       const name = w.startsWith('--') ? w.slice(2).split('=')[0].toLowerCase() : '';
       const repo = name.length >= 3 && 'repo'.startsWith(name);
       words[i] = {
+        ...spec,
         flag: true,
         hard: isHardPushFlag(w),
         wide: longPrefixOf(w, PUSH_WIDE_LONG),
         value: PUSH_VALUE_OPTS.has(w) || (repo && !w.includes('=')),
         repo,
+        // `-:main`: a single-dash word with a `:` may be a refspec as well.
+        colon: !w.startsWith('--') && w.includes(':'),
       };
     } else {
-      const { src, dst } = splitSpec(w);
-      words[i] = {
-        flag: false,
-        src,
-        dst,
-        plus: w.startsWith('+'),
-        main: isMainRef(dst),
-        upstream: src === null && UPSTREAM_REFS.has(dst.toLowerCase()),
-      };
+      words[i] = { ...spec, flag: false };
     }
   }
   return { words, ctlFrom, forceFrom, mergeApiFrom };
@@ -628,9 +633,20 @@ function pushCandidate(inv) {
     }
   };
 
+  let endOfOptions = false; // After `--`, every word is a positional.
   for (let i = inv.start; i < words.length; i++) {
     const f = facts[i];
-    if (f.flag) {
+    if (f.flag && !endOfOptions) {
+      if (words[i] === '--') {
+        endOfOptions = true;
+        continue;
+      }
+      if (f.colon) {
+        // Read both ways: a refspec, and an option that leaves the push
+        // refspec-less (which lands on whatever the branch tracks).
+        refspec(i);
+        upstream = true;
+      }
       if (f.hard) hard = true;
       if (f.wide) matching = true;
       if (f.repo) repoOpt = true;
@@ -1085,10 +1101,14 @@ function stripTrailingOutput(text) {
 //     CR (PowerShell refuses `<<` outright, so it never runs there);
 //   - PowerShell's `@'` <LF> lines <LF> `'@` with no `'` in it (a POSIX shell
 //     reads that as one literal word).
+// No form may hold a typographic quote (U+2018-U+201E) anywhere: PowerShell
+// reads U+2018-U+201B as `'` and U+201C-U+201E as `"`, so one of them can
+// close a here-string (`’@` at a line start) or a string early.
 // A value that itself holds a git/gh word AND a gate word is not masked. The
 // whole text must be read by this small grammar - plain words, literal quoted
-// strings, separators - or nothing is masked. Masking only decides "no gate
-// word at all, allow"; a command that still holds one is judged as written.
+// strings, separators - or nothing is masked. A masked value becomes the
+// placeholder `"x"`; with no gate word left the command is allowed, and
+// otherwise the masked text - every other word as written - is judged.
 const MASK_OPTS = {
   git: { subs: [['commit'], ['tag']], opts: new Set(['-m', '--message']) },
   gh: {
@@ -1097,6 +1117,7 @@ const MASK_OPTS = {
   },
 };
 const LITERAL_RE = /^[^$`\\‘-„\r\0]*$/;
+const TYPOGRAPHIC_QUOTE_RE = /[‘-„]/;
 const GIT_GH_WORD_RE = /(?<![A-Za-z])(?:git|gh)(?![A-Za-z])/i;
 const HEREDOC_HEAD_RE = /^"\$\(cat <<'([A-Za-z_][A-Za-z0-9_]*)'\n/;
 const WORD_END = ' \t\n;&|';
@@ -1118,7 +1139,7 @@ function messageValue(text, i) {
       if (nl === -1) return null;
       const line = text.slice(k, nl);
       if (line === delim) break;
-      if (line.startsWith(delim) || /[\r\0]/.test(line)) return null;
+      if (line.startsWith(delim) || /[\r\0]/.test(line) || TYPOGRAPHIC_QUOTE_RE.test(line)) return null;
       lines.push(line);
       k = nl + 1;
     }
@@ -1130,7 +1151,7 @@ function messageValue(text, i) {
     const close = text.indexOf("'", i + 2);
     if (close === -1 || text[close - 1] !== '\n' || text[close + 1] !== '@' || !ends(close + 2)) return null;
     const content = text.slice(i + 3, close - 1);
-    if (/[\r\0]/.test(content)) return null;
+    if (/[\r\0]/.test(content) || TYPOGRAPHIC_QUOTE_RE.test(content)) return null;
     return { end: close + 2, content };
   }
   return null;
@@ -1445,9 +1466,11 @@ function classify(command, ctx) {
   const body = stripTrailingOutput(text);
   const masked = maskMessages(body);
   if (masked !== null && !gateWordIn(masked)) return allow(); // Only in a message.
+  // The rest of the command is judged with its message values masked.
+  const judged = masked === null ? body : masked;
   let lines;
   try {
-    lines = parseSimple(body);
+    lines = parseSimple(judged);
   } catch (e) {
     if (e instanceof NotSimple) return deny('2', notSimpleReason(e.message));
     throw e;
@@ -1457,11 +1480,11 @@ function classify(command, ctx) {
   // The HEAD movers are judged over the whole command, so this answer is the
   // same for every line: compute it once.
   const commandMover = moverOf(all, 'command');
-  const deferCommit = commandMover === 'commit' && isPlainCommitPush(body, analyzed);
+  const deferCommit = commandMover === 'commit' && isPlainCommitPush(judged, analyzed);
   const candLines = analyzed.filter((a) => a.cands.length > 0);
   const fetchOnly = commandMover === 'fetch' ? fetchOnlyMovers(all) : null;
   const target = candLines.length === 1 && candLines[0].cands.length === 1 ? syncTarget(candLines[0].cands[0]) : null;
-  const deferFetch = fetchOnly && target && isPlainTrunkSync(body, lines) ? { ...fetchOnly, sub: target.sub } : null;
+  const deferFetch = fetchOnly && target && isPlainTrunkSync(judged, lines) ? { ...fetchOnly, sub: target.sub } : null;
   // The sync forms (rule 3) need the WHOLE command to be that one segment.
   const sole = lines.length === 1 && lines[0].segments.length === 1;
   for (const a of analyzed) {
