@@ -177,7 +177,7 @@ Checkstyle の `SuppressWarningsFilter`、ESLint の `eslint-disable`、ast-grep
 |---|---|
 | npm | `"audit:prod": "npm audit --omit=dev --audit-level=high"` |
 | pnpm | `"audit:prod": "pnpm audit --prod --audit-level high"` |
-| Yarn（berry） | `"audit:prod": "yarn npm audit --environment production --severity high"` |
+| Yarn（berry） | `"audit:prod": "yarn npm audit -A -R --environment production --severity high"` |
 | Yarn（classic） | `"audit:prod": "yarn audit --groups dependencies --level high"` |
 | Gradle | 標準で本番依存だけを監査する簡単な手段は無い。配線しない場合は「未配線」とし、カバレッジマップの B3 行に AI レビュー担保と、代替（GitHub の Dependabot alerts を `gh api repos/{owner}/{repo}/dependabot/alerts` で確認する等）を記録する。OWASP dependency-check を使う場合は NVD の API キーとキャッシュが要るので、プロジェクトが採用を決めたときだけ配線する |
 

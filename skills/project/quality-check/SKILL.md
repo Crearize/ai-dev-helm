@@ -483,7 +483,7 @@ Step 1 で決まったレビュアーのサブエージェントを Agent ツー
 [「役割定義」表の該当行の観点]
 
 ## レビューガイドライン
-[統合レビュアーと同文。専用ガイド（セキュリティは領域別ガイドのセキュリティ項目 / review-requirements.md / review-performance.md）を主に使う]
+[統合レビュアーと同文。専用ガイド（セキュリティは領域別ガイドのセキュリティ項目 + review-security.md / review-requirements.md / review-performance.md）を主に使う]
 
 ## 全レビュアー共通の観点
 [転記]

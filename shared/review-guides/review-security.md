@@ -12,7 +12,7 @@
 
 ### S-2 Security headers (A05)
 
-- [ ] CSP is `default-src 'self'` based with `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`; allowed origins are listed explicitly
+- [ ] CSP is `default-src 'self'` based with `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`; allowed origins are listed explicitly
 - [ ] `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, and HSTS (when served over HTTPS; check the proxy/forwarded-header setting) are set
 - [ ] `X-XSS-Protection` is NOT set
 - [ ] `Referrer-Policy: no-referrer` is not used together with an `Origin`-checking CSRF defense (Origin becomes `null` on non-GET/HEAD)
