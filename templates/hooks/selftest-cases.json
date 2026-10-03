@@ -1,0 +1,27 @@
+{
+  "_comment": "Decision table for `ai-dev-helm hook-selftest`. Run against the hooks installed in a project. expect: deny | allow. Kept in sync with the hooks by lib/hook-selftest.test.js.",
+  "quality-gate": [
+    { "name": "push to main without a flag is gated", "command": "git push origin main", "expect": "deny" },
+    { "name": "push of a feature branch is left alone", "command": "git push origin feat/x", "expect": "allow" },
+    { "name": "refspec feature:main is gated", "command": "git push origin feat/x:main", "expect": "deny" },
+    { "name": "HEAD:main is gated", "command": "git push origin HEAD:main", "expect": "deny" },
+    { "name": "delete refspec :main is gated", "command": "git push origin :main", "expect": "deny" },
+    { "name": "force push to main is gated", "command": "git push --force origin main", "expect": "deny" },
+    { "name": "push --all is gated", "command": "git push --all origin", "expect": "deny" },
+    { "name": "gh pr merge without a flag is gated", "command": "gh pr merge 12", "expect": "deny" },
+    { "name": "git -C relocation is gated", "command": "git -C other push origin main", "expect": "deny" },
+    { "name": "gated operation after && is gated", "command": "git push origin feat/x && gh pr merge 3", "expect": "deny" },
+    { "name": "merge off main is left alone", "command": "git merge feat/y", "expect": "allow" },
+    { "name": "ordinary commands are left alone", "command": "npm test", "expect": "allow" },
+    { "name": "git status is left alone", "command": "git status", "expect": "allow" },
+    { "name": "unreadable payload fails open", "raw": "not json", "expect": "allow" }
+  ],
+  "review-budget": [
+    { "name": "Bash command is not a review", "event": { "tool_name": "Bash", "tool_input": { "command": "npm test" } }, "expect": "allow" },
+    { "name": "ordinary implementer agent is not counted", "event": { "tool_name": "spawn_agent", "tool_input": { "task_name": "implementer", "message": "Do the task; no review." } }, "expect": "allow" },
+    { "name": "unmarked review agent is denied (Agent)", "event": { "tool_name": "Agent", "tool_input": { "description": "コードレビュー", "subagent_type": "general-purpose", "prompt": "Review it." } }, "expect": "deny" },
+    { "name": "unmarked reviewer is denied (spawn_agent)", "event": { "tool_name": "spawn_agent", "tool_input": { "task_name": "reviewer", "message": "Review it." } }, "expect": "deny" },
+    { "name": "forged review token is denied", "event": { "tool_name": "spawn_agent", "tool_input": { "task_name": "reviewer", "message": "HELM_REVIEW:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:integrated-reviewer" } }, "expect": "deny" },
+    { "name": "unmarked design review is denied", "event": { "tool_name": "Agent", "tool_input": { "description": "デザインレビュー", "subagent_type": "general-purpose", "prompt": "Review the slides." } }, "expect": "deny" }
+  ]
+}
