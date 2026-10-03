@@ -8,6 +8,7 @@ Check the files changed in this PR and review only the applicable areas:
 - Frontend changes (frontend/**) -> Refer to `.github/review-frontend.md`
 - Infra/CI changes (.github/workflows/**, Dockerfile, etc.) -> Refer to `.github/review-infra.md`
 - Performance-sensitive changes (queries, loops over collections, bundle-affecting frontend changes) -> Also refer to `.github/review-performance.md`
+- HTTP handling, authentication, response headers, caching, frontend external resources, or dependency changes -> Also refer to `.github/review-security.md`
 - Any code change tied to an Issue/requirement -> Also refer to `.github/review-requirements.md`
 
 Skip areas with no changes and do not output those sections.

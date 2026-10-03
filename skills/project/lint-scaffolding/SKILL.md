@@ -169,6 +169,20 @@ Checkstyle の `SuppressWarningsFilter`、ESLint の `eslint-disable`、ast-grep
 
 **実行確認（MUST）**: `lint:all` を実際に実行し、**全体が通る（または既存コードの既知違反を検出する）ことを確認するまで配線完了としない。** 既知違反が出た場合はユーザーに提示し、「その場で修正する / 違反を残したまま導入して以後のコミットで解消する」の判断を仰ぐ。実行時エラー（設定不正・ツール未解決等）は違反検出ではなく配線の失敗として扱い、解消するまで先に進まない。
 
+### 3-5. 本番依存の監査（`audit:prod`）の配線
+
+カタログ B3 の「既知脆弱性」を実行できるようにする（static-check-standard の B3 は npm audit を必須とするが、配線されていないと未記入のまま残る）。パッケージマネージャごとに、**本番依存だけ**を監査する script を登録する。`lint:all` には**束ねない**（新しく公開された脆弱性でゲートが止まらないようにする。実行・判断・記録は `quality-check` Step 2「本番依存の監査」が行う）。
+
+| パッケージマネージャ | `audit:prod`（package.json scripts） |
+|---|---|
+| npm | `"audit:prod": "npm audit --omit=dev --audit-level=high"` |
+| pnpm | `"audit:prod": "pnpm audit --prod --audit-level high"` |
+| Yarn（berry） | `"audit:prod": "yarn npm audit --environment production --severity high"` |
+| Yarn（classic） | `"audit:prod": "yarn audit --groups dependencies --level high"` |
+| Gradle | 標準で本番依存だけを監査する簡単な手段は無い。配線しない場合は「未配線」とし、カバレッジマップの B3 行に AI レビュー担保と、代替（GitHub の Dependabot alerts を `gh api repos/{owner}/{repo}/dependabot/alerts` で確認する等）を記録する。OWASP dependency-check を使う場合は NVD の API キーとキャッシュが要るので、プロジェクトが採用を決めたときだけ配線する |
+
+監査は終了コード 0 を求めない（検出があると非 0 になる）。**実際に一度実行し**、監査が動くこと（レジストリに届く・lockfile が読める）を確かめてから配線完了とする。結果はカバレッジマップの B3 行に記入する（記入例は `coverage-map-template.md`「B3 の記入例」）。
+
 ---
 
 ## Step 4: 登録と除外
@@ -211,6 +225,7 @@ Checkstyle の `SuppressWarningsFilter`、ESLint の `eslint-disable`、ast-grep
 - [ ] その場で生成したルールは違反 / 適合サンプルへの実実行で検証済みである
 - [ ] ミューテーション設定の選択（配線 / 生成 / スキップ）がカバレッジマップに記録されている。配線・生成時は全体 / 差分スコープのエントリポイント（JS: `mutation:full` / `mutation:diff`（再計測用の `mutation:diff:incremental` は任意）、Java: `mutationFull` / `mutationDiff`）を登録し、**実際に一度実行してミュータント生成とスコア算出を確認済み**である
 - [ ] `lint:all` が CLAUDE.md（および存在すれば AGENTS.md / .cursorrules）に静的チェックコマンドとして登録されている
+- [ ] npm / pnpm / Yarn のプロダクトでは `audit:prod`（`lint:all` に束ねない）が配線され、一度実行して動くことを確認した。Gradle は配線または「未配線」の記録がある
 - [ ] 各 `.github/review-*.md` に「Lint 担保済み項目（AI レビュー対象外）」節が反映され、AI レビュー担保カテゴリに `（Catalog: <番号>）` が付記されている
 
 ---

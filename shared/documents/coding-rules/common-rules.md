@@ -167,9 +167,9 @@ Closes #
 - **A02: Cryptographic Failures**: パスワードはbcrypt/scrypt/Argon2でハッシュ化。通信はTLS必須。機密データは保存時も暗号化を検討
 - **A03: Injection**: 全ての外部入力にパラメタライズドクエリを使用。動的SQLの文字列結合は禁止。ログ出力時もCR/LFをサニタイズ（ログインジェクション防止）
 - **A04: Insecure Design**: 脅威モデリングを意識した設計。ビジネスロジックの乱用防止（レートリミット、ワークフロー制御）。セキュリティ要件を設計段階で定義
-- **A05: Security Misconfiguration**: 本番環境でデバッグモード無効。不要なHTTPメソッド無効。適切なセキュリティヘッダー設定
-- **A06: Vulnerable and Outdated Components**: 既知の脆弱性がある依存パッケージを使用しない。セキュリティアップデートは速やかに適用
-- **A07: Identification and Authentication Failures**: セッショントークンは十分なエントロピーで生成。ブルートフォース対策（アカウントロックアウト、レートリミット）
+- **A05: Security Misconfiguration**: 本番環境でデバッグモード無効。不要なHTTPメソッド無効（許可リスト方式 → S-6）。適切なセキュリティヘッダー設定（基準値 → S-2）
+- **A06: Vulnerable and Outdated Components**: 既知の脆弱性がある依存パッケージを使用しない（本番依存の監査 → S-1）。セキュリティアップデートは速やかに適用
+- **A07: Identification and Authentication Failures**: セッショントークンは十分なエントロピーで生成。ブルートフォース対策（アカウントロックアウト、レートリミット）。ログイン失敗の応答からアカウントの実在を推測させない・仮パスワードの期限を既存セッションにも効かせる（→ S-4）
 - **A08: Software and Data Integrity Failures**: 依存パッケージの整合性を検証（lockfileの一貫性維持）。CI/CDパイプラインの改ざん防止。デシリアライゼーション攻撃への対策
 - **A09: Security Logging and Monitoring Failures**: セキュリティイベント（ログイン失敗、認可拒否、入力バリデーション失敗）を確実にログ出力。監視・アラート体制の構築
 - **A10: SSRF (Server-Side Request Forgery)**: 外部URLを受け取る機能はホワイトリスト方式で制限。内部ネットワークへのリクエストをブロック
@@ -198,6 +198,93 @@ Closes #
 - セキュリティアップデートは速やかに適用
 - lockfileをコミットし、CI/CDでの整合性を保証する
 - 新規依存パッケージ追加時はメンテナンス状況・ダウンロード数を確認（typosquatting注意）
+
+### Web アプリの基本対策（S-1〜S-6）
+
+Web を配信する・認証付き API を持つプロジェクト向けの基準。該当しない項目（例: 画面を配信しないなら S-2・S-3）は対象外と記録してよい。**新しい機械的ゲートではなく、規則とレビュー観点**である。AI は影響を判断して対応する。レビューのチェックリストは `.github/review-security.md`。
+
+#### S-1 本番依存の既知脆弱性（A06）
+
+- `lint-scaffolding` が配線した `audit:prod`（本番依存だけを監査する）を `quality-check` Step 2 で実行し、結果（件数・重大度・対応）をレポートに記録する。`lint:all` には束ねず、**失敗しても機械的にブロックしない**（新しく公開された脆弱性だけで作業を止めない）。
+- AI は各検出について、実際に到達できる経路か（その機能を使っているか、入力が外部から届くか）を判断して記録する。
+- high / critical で**修正版がある**ものは AI が上げる（lockfile を更新し、テストを通す）。上げられない・修正版が無いものは理由を添えて残す。
+- 残ったものはプロジェクトごとに **Issue 1 件**にまとめる（パッケージ・重大度・影響の判断・待っている修正版）。検出ごとに Issue を作らない。
+
+#### S-2 セキュリティヘッダ（A05）
+
+Web アプリの基準値（HTML・API・静的配信のすべての応答に付ける）:
+
+| ヘッダ | 基準値 |
+|---|---|
+| `Content-Security-Policy` | `default-src 'self'` を基本に、`frame-ancestors 'none'`・`object-src 'none'`・`base-uri 'self'` を付ける。必要な許可先だけを個別に足す |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY`（CSP の `frame-ancestors` と併用） |
+| `Strict-Transport-Security` | HTTPS で配信する場合。`max-age` は 1 年以上を目標（導入直後は短く始める）。`includeSubDomains`・`preload` は影響を理解してから。プロキシの後ろでは、アプリが HTTPS と認識する設定（転送ヘッダの信頼）が要る |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` など。`no-referrer` は下の注意 (b) |
+
+注意:
+- (a) `X-XSS-Protection` は付けない（主要ブラウザが XSS フィルタを廃止している）。
+- (b) `Referrer-Policy: no-referrer` にすると、GET/HEAD 以外のリクエストの `Origin` が `null` になる（Fetch 仕様）。`Origin` を照合する CSRF 対策を使っているなら `no-referrer` にしない。
+- (c) 静的配信とエラー応答（404・405・500・CSRF の 403）を含む**全経路**にヘッダが付くことを、実際のミドルウェアの連なりを通す統合テスト（本物のアプリを呼ぶ。ミドルウェアのモックでは確かめられない）で確かめる。
+
+テストの例（アプリ本体を直接呼ぶ形。Hono の場合）:
+
+```ts
+const cases: [string, string][] = [
+  ['GET', '/'], ['GET', '/api/me'], ['GET', '/assets/app.js'],
+  ['GET', '/no-such-path'],   // 404
+  ['TRACE', '/'],             // 405
+  ['POST', '/api/items'],     // CSRF の 403（トークン無し）
+];
+for (const [method, path] of cases) {
+  const res = await app.request(path, { method });
+  expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+  expect(res.headers.get('x-frame-options')).toBe('DENY');
+  expect(res.headers.has('x-xss-protection')).toBe(false);
+}
+```
+
+#### S-3 外部 CSS・フォント・スクリプト（A05）
+
+- 外部のスタイルシート・フォント・スクリプトは**原則として自前で配信**する（npm の `@fontsource/*` など）。外部 CDN は CSP を `'self'` に保てず、利用者の IP アドレスも第三者へ送られる。
+- やむを得ず外部を使う場合は、SRI（`integrity` + `crossorigin`）を付け、CSP の許可先を**ホスト単位で明示**する。
+- 落とし穴: Vite は 4KB 未満のアセットを data URI に埋め込む（`build.assetsInlineLimit`）。小さいフォントが `data:` になり `font-src 'self'` に違反する。`assetsInlineLimit` でフォントを埋め込まない設定にするか、やむを得なければ `font-src` に `data:` を足す（前者を推奨）。ビルド後の CSS に `data:font` が無いことを確かめる。
+
+#### S-4 認証の応答（A07）
+
+- ログイン失敗の応答は、**パスワード誤り・存在しない利用者・ロック中・無効化**のどれでも区別できないようにする（ステータス・本文・ヘッダ・応答時間）。ロック中だけ別の応答を返すと、失敗を繰り返すだけでアカウントの実在が分かる。ロック中や存在しない利用者で照合を省くと応答が速くなるので、同じアルゴリズム・同じコストのダミーハッシュで照合する（コストを上げたらダミーも作り直す）。ロックや無効化の通知は、本人へのメールなど別の経路で行う。
+- 管理者が発行する仮パスワード・初期パスワードには**有効期限**を設ける。期限は**ログインの時点だけでなく、発行済みのセッションにも効かせる**（セッションの有効期間が長いと、ログイン時の判定だけでは期限後も仮パスワードのセッションで操作できる）。期限切れの仮パスワードのセッションは、パスワード変更以外を拒否する。
+
+#### S-5 認証済み API のキャッシュ指定（A05）
+
+- 認証が必要な API の応答は、既定で `Cache-Control: no-store` にする。再検証が要るもの（ETag 付きの画像など）だけを個別に指定する。
+- 注意: 既定値をミドルウェアで付ける場合は**順序**に気をつける。セッション延長などの別のミドルウェアが、後から `private` などを足す・上書きすることがある。既定値は他のミドルウェアが済んだ後（応答の最終段）に、ハンドラが個別指定していないときだけ付ける。統合テストで認証付き GET の実際のヘッダを確かめる。
+- `Pragma`・`Expires`・HTML の meta は不要（`Cache-Control` で足りる）。フレームワークが付けていても指摘にしない。
+
+#### S-6 使わない HTTP メソッドの無効化（A05）
+
+2 層で考える。
+1. **アプリ全体の許可リスト（最も外側）**: 使うメソッド以外を `405` にし、`Allow` ヘッダを付ける。静的配信がどのメソッドにもファイルを返す、`TRACE` が通る、といった状態を防ぐ。
+2. **経路ごと**: その経路が受けないメソッドは `405` + `Allow`。存在しない経路は `404` のまま。
+
+CDN（CloudFront など）は、POST を通すと全メソッドを通す組み合わせしか選べないことがある。CDN では絞れないので、アプリ側で絞る。`GET`/`POST`/`HEAD` 以外を一律に禁止しない（`PATCH` などを使う設計を崩すだけで、安全性は上がらない）。
+
+実装例（Hono。他のどのミドルウェアよりも先に登録する）:
+
+```ts
+const ALLOWED = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+app.use('*', async (c, next) => {
+  if (!ALLOWED.includes(c.req.method)) {
+    return c.body(null, 405, { Allow: ALLOWED.join(', ') });
+  }
+  await next();
+});
+```
+
+テストの観点: `TRACE`・`CONNECT` 等が静的パスと API パスの両方で `405` + `Allow` になる / 405 の応答にも S-2 のヘッダが付く / 許可リスト内のメソッドは通る / 存在しない経路は `404`。
+
+> 含めないもの（検討して外した）: パスワードの文字種の強制（NIST SP 800-63B が推奨しない。強さは長さで担保する）、`X-Permitted-Cross-Domain-Policies` など廃止済み・プラグイン時代のヘッダ。
 
 ## 5. Performance Rules
 
@@ -316,7 +403,10 @@ Extract unexplained literals into named constants or enums. The concept holds id
 - [ ] Input validation implemented (server-side required)
 - [ ] No IDOR vulnerabilities (authorization checked for resource access)
 - [ ] CSRF protection implemented
-- [ ] Security headers configured (production)
+- [ ] Security headers configured (production) with baseline values, verified on all paths (S-2)
+- [ ] External CSS/fonts/scripts self-hosted (S-3); login failures indistinguishable and temporary-password expiry enforced on sessions (S-4)
+- [ ] Authenticated API responses default to `Cache-Control: no-store` (S-5); method allowlist returns 405 with `Allow` (S-6)
+- [ ] Production dependency audit run and judged (S-1)
 - [ ] No sensitive data in API responses beyond what's necessary
 
 ### Performance
