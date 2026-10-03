@@ -18,9 +18,13 @@
 //   - git without the words: `git send-pack`, a mistyped command that
 //     `help.autocorrect` runs, an existing git or shell alias;
 //   - other GitHub APIs: `gh api` calls other than `pulls/<n>/merge` (ref
-//     updates, `graphql`), `gh repo sync`, another repository's PR;
+//     updates, `graphql`), `gh repo sync`, another repository's PR named by
+//     a URL or `GH_REPO` (`-R` / `--repo` is read - H-19(a));
 //   - build steps: a push inside an npm script, a Gradle task and the like;
-//   - configuration: `remote.<name>.push`, `push.default = matching`;
+//   - configuration: `remote.<name>.push`, `push.default = matching` (a
+//     refspec-less push's `@{push}` is read - H-19(d)); a trunk ref moved by
+//     anything but the two rewrite forms of rule 1 (`git update-ref`, `git branch -M`, `.git/refs` written
+//     directly, an `origin` re-pointed with `git remote set-url`);
 //   - timing: a directory or link that changes after this check.
 //
 // HOW A COMMAND IS READ (#158). The same text may run under a POSIX shell (Git
@@ -33,7 +37,10 @@
 //      whole word, looked for in the raw text and again with `"` `'` `\`
 //      backtick `^` `$` removed and line continuations folded (`gateWordIn`) -
 //      is allowed at once. No git runs, nothing is parsed. So is one whose gate
-//      words are all inside a literal message value (`maskMessages`).
+//      words are all inside a literal message value (`maskMessages`). The
+//      exception is a trunk rewrite (`trunkWriteIn`: `branch`
+//      or `fetch` with `main` / `master` in the text): it is parsed too, and
+//      allowed when it is not simple.
 //   2. A command WITH a gate word is judged only when it is SIMPLE
 //      (`parseSimple` / `checkSegment`). Anything else is refused with
 //      guidance: run the push/merge as its own simple command.
@@ -91,9 +98,14 @@
 //   refspec DESTINATION is exactly `main`/`master` (after stripping `+` and
 //   `refs/heads/`, case insensitive; `--delete <ref>` counts as a
 //   destination), or a push with no refspec at all - or a bare `HEAD`/`@`,
-//   which is the same thing written out - (gated only on main/master); a push
-//   that writes every matching branch (`--all`, `--branches`, `--mirror`, a
-//   refspec with no destination such as `:`) on any branch.
+//   which is the same thing written out - (gated only on main/master, or off
+//   them when the refspec is omitted and the branch's `@{push}` is
+//   `<remote>/main|master` - H-19(d)); a push that writes every matching
+//   branch (`--all`, `--branches`, `--mirror`, a refspec with no destination
+//   such as `:`) on any branch. Trunk rewrites, on any branch (H-13, H-19(c)):
+//   `git branch -f|--force <trunk> [<start>]`,
+//   `git fetch <remote> [+]<src>:<trunk>` - each alone
+//   in its command, with no other gated call.
 //   Substring matches never count: `feature/main-nav` and `main:feature-x` are
 //   not candidates. A refspec carrying `%` or a leading `~` is a candidate
 //   because its destination cannot be read.
@@ -140,7 +152,17 @@
 // Rule 3 (pass): `.quality-check-passed` at the repo root with `commit` an
 //   abbreviated prefix of (or equal to) HEAD (`branch` is diagnostic only), or
 //   `commit` an ancestor of HEAD whose `commit..HEAD` diff is harness files
-//   only. Plus the closed set of sync forms on the CURRENT trunk (or the trunk
+//   only. On the trunk, `git merge|rebase <src>` (one source, no `--onto`) and
+//   the trunk rewrites are judged against the commit the trunk RECEIVES, not
+//   HEAD (H-11, `judgeTrunkMove`): allowed when it is origin's trunk, already
+//   in the trunk, or a fast-forward whose new commits are harness files only
+//   or are covered by the flag (the flag names it, or an ancestor with a
+//   harness-only diff); a trunk with commits the source lacks is refused. A
+//   `git pull` on the trunk from anything but its upstream / `origin <trunk>`
+//   is refused (fetch, then merge). A fetch into the trunk from a remote is
+//   allowed only as `origin <trunk>:<trunk>`; a delete or `+` force never.
+//   `gh` with `-R` / `--repo` naming another repository than origin's (or
+//   with no origin) is refused: run it from that repository. Plus the closed set of sync forms on the CURRENT trunk (or the trunk
 //   the command checks out first): `git pull`, `git pull origin <trunk>`,
 //   `git merge origin/<trunk>`, each also with one `--ff-only`, and
 //   `git pull --rebase` while the local trunk has no commit origin's lacks -
@@ -148,17 +170,23 @@
 //   `git branch -d` above (another line could create the ref the form reads);
 //   the merge form only while `origin/<trunk>` resolves to the remote-tracking
 //   ref (a local tag or branch of that name is what git would merge instead).
-// Rule 4 (exemption): a non-empty `origin/main...HEAD` diff made up entirely
-//   of harness files. Gate control-plane paths and `Quality Gate Overrides` /
+// Rule 4 (exemption): a non-empty `<base>...HEAD` diff made up entirely of
+//   harness files - the three config files and the `.md` / `.mdc` documents
+//   under the harness directories (H-47). `<base>` is the first of
+//   origin/main, origin/master, main, master that exists (H-13: the local
+//   trunk only without a remote-tracking one; quality-context uses the same). Gate control-plane paths and `Quality Gate Overrides` /
 //   `mutation_budget_minutes` string changes are carved out of both rule 3
 //   and rule 4 (no validity analysis of the declaration - over-detection is
 //   fine). The control plane is the quality-check / test-recommendation skills
-//   and their schemas, the review guides, and - under `.claude`,
-//   `.codex` or `.cursor` - `hooks/`, `skills/`, `agents/`, `commands/`,
-//   `prompts/`, `rules/`, plus the hook's registration files (see
-//   GATE_CONTROL_PATTERNS, which is the authority).
+//   and their schemas, the brainstorming / writing-plans skills (Design
+//   Gate), the review guides, and - under `.claude`, `.codex` or `.cursor` -
+//   `hooks/`, the `skills` node itself, `agents/`, `commands/`, `prompts/`,
+//   `rules/`, plus the hook's registration files (see GATE_CONTROL_PATTERNS,
+//   which is the authority).
 // Rule 5 (fail-open, exactly twice): a payload whose `tool_input.command` is
-//   not a string (malformed JSON, a missing field), and a PAYLOAD cwd that is
+//   not a string (malformed JSON, a missing field) - unless `tool_name` is a
+//   shell tool (`Bash`, `PowerShell`): a shell call whose command cannot be
+//   read is refused (H-52(5)) - and a PAYLOAD cwd that is
 //   not inside a git work tree - decided by rev-parse's EXIT STATUS, never by
 //   its (localized) message. The second one is about the payload cwd only: a
 //   block decided where a `cd` / `-C` moved the call stands even when the cwd
@@ -240,6 +268,12 @@ function gateWordIn(text) {
   if (GATE_WORD_RE.test(text)) return true;
   return GATE_WORD_RE.test(text.replace(LINE_CONTINUATION_RE, '').replace(ESCAPE_CHARS_RE, ''));
 }
+// The second screen (H-13, H-19(c)): `git branch -f` and `git fetch` move the trunk without a gate word. A command
+// holding one of those words and a trunk name is parsed too; when it is not simple it is
+// allowed (only an ordinary, simple trunk rewrite is judged).
+const TRUNK_WRITE_RE = /(?<![A-Za-z-])(?:branch|fetch)(?![A-Za-z-])/i;
+const TRUNK_NAME_RE = /(?<![A-Za-z0-9_-])(?:main|master)(?![A-Za-z0-9_-])/i;
+const trunkWriteIn = (text) => TRUNK_WRITE_RE.test(text) && TRUNK_NAME_RE.test(text);
 
 // --------------------------------------------------------------------------
 // The simple form
@@ -681,13 +715,72 @@ function ghCandidate(seg, facts) {
     j += GH_VALUE_OPTS.has(seg.words[j]) ? 2 : 1;
   }
   const sub = (seg.words[j] || '').toLowerCase();
-  if (sub === 'api') return facts.mergeApiFrom[j + 1] ? { kind: 'gh', mainOnly: false, seg } : null;
+  const cand = { kind: 'gh', mainOnly: false, seg, repo: ghRepoOf(seg.words) };
+  if (sub === 'api') return facts.mergeApiFrom[j + 1] ? cand : null;
   if (sub !== 'pr') return null;
   let k = j + 1;
   while (k < seg.words.length && seg.words[k].startsWith('-')) {
     k += GH_VALUE_OPTS.has(seg.words[k]) ? 2 : 1;
   }
-  return (seg.words[k] || '').toLowerCase() === 'merge' ? { kind: 'gh', mainOnly: false, seg } : null;
+  return (seg.words[k] || '').toLowerCase() === 'merge' ? cand : null;
+}
+// The `-R` / `--repo` value of a gh call, or null (H-19(a)).
+function ghRepoOf(words) {
+  for (let i = 1; i < words.length; i++) {
+    if (words[i] === '-R' || words[i] === '--repo') return words[i + 1] || '';
+    if (words[i].startsWith('--repo=')) return words[i].slice(7);
+  }
+  return null;
+}
+// `OWNER/REPO`, `HOST/OWNER/REPO` or a URL, as lower-case `owner/repo`, or null.
+function repoName(text) {
+  const parts = String(text || '').replace(/^[a-z]+:\/\/[^/]+\//i, '').replace(/^git@[^:]+:/i, '')
+    .replace(/\.git\/?$/i, '').split('/').filter((p) => p !== '');
+  return parts.length >= 2 ? parts.slice(-2).join('/').toLowerCase() : null;
+}
+
+// H-13 / H-19(c): git calls that move the trunk ref without checking it out.
+// Each returns `{ trunk, ref }` - the trunk as written and the commit it moves
+// to - with `never` for a delete or a forced fetch, or null when the call is
+// not one of these forms.
+//   git branch -f|--force <trunk> [<start>]
+//   git fetch <remote> [+]<src>:[refs/heads/]<trunk>
+const positionalsOf = (inv, valueOpts) => {
+  const out = [];
+  const opts = [];
+  const { words } = inv.seg;
+  for (let i = inv.start; i < words.length; i++) {
+    if (words[i].startsWith('-') && words[i] !== '-') {
+      opts.push(words[i]);
+      if (valueOpts.has(words[i])) i++;
+    } else {
+      out.push(words[i] === '-' ? '@{-1}' : words[i]); // a lone `-` is the previous branch
+    }
+  }
+  return { pos: out, opts };
+};
+function trunkWrite(inv) {
+  if (inv.sub === 'branch') {
+    const { pos, opts } = positionalsOf(inv, new Set());
+    if (!opts.some((o) => o === '-f' || o === '--force') || opts.some((o) => /^(-[mMcC]|--move|--copy)$/.test(o))) return null;
+    if (pos.length < 1 || pos.length > 2 || !isMainBranch(pos[0])) return null;
+    return { trunk: pos[0], ref: pos[1] || 'HEAD' };
+  }
+  if (inv.sub === 'fetch') {
+    const { pos } = positionalsOf(inv, new Set(['--depth', '--deepen', '-j', '--jobs', '-o', '--server-option']));
+    for (const spec of pos.slice(1)) {
+      const { src, dst } = splitSpec(spec);
+      if (src === null || !isMainRef(dst)) continue;
+      const trunk = dst.replace(/^refs\/heads\//i, '');
+      if (spec.startsWith('+')) return { trunk, never: true };
+      // From this repository (`.`) the source is a local ref the gate can
+      // read; from a remote only the same-name sync (`origin main:main`,
+      // fast-forward only - git refuses anything else) is readable.
+      if (pos[0] === '.') return { trunk, ref: src };
+      return { trunk, sameName: pos[0] === 'origin' && src.replace(/^refs\/heads\//i, '').toLowerCase() === trunk.toLowerCase() };
+    }
+  }
+  return null;
 }
 
 // Rule 1 for one push invocation, in a single pass: main-bound refspecs are
@@ -814,6 +907,11 @@ function analyzeLine(line) {
       if (!cand) continue;
       inv.gated = true;
       cands.push(cand);
+    } else {
+      const write = trunkWrite(inv);
+      if (!write) continue;
+      inv.gated = true;
+      cands.push({ kind: 'write', mainOnly: false, inv, ...write });
     }
   }
   return { line, cands, invocations, expansion };
@@ -1051,19 +1149,19 @@ function deferralPlan(text, lines, analyzed, commandMover) {
 const GATE_CONFIG_PATTERNS = [/(^|\/)CLAUDE\.md$/, /(^|\/)AGENTS\.md$/, /^\.cursorrules$/];
 
 // The gate's own control plane: the quality-check skill and its schemas, the
-// review guides, the hooks and their registration. A diff touching any
-// of them is never exempt - an unreviewed edit here disables the gate as
-// effectively as weakening a threshold. Case-INSENSITIVE: on Windows/macOS
-// `.claude/Hooks/quality-gate.cjs` is the same real file, and a case variant
-// used to ride the (case-sensitive) harness exemption. The `(\/|$)` on the
-// directory nodes matches the node itself, so re-pointing the `.claude/skills`
-// symlink is caught too.
+// Design Gate skills (brainstorming, writing-plans), the review guides, the
+// hooks and their registration. A diff touching any of them is never exempt -
+// an unreviewed edit here disables the gate as effectively as weakening a
+// threshold. Case-INSENSITIVE: on Windows/macOS `.claude/Hooks/quality-gate.cjs`
+// is the same real file. The skills under `.claude/skills` (a link, or a real copy
+// in some adopters - H-48) are control plane only where the patterns above name
+// them; the `.claude/skills` node itself is, so re-pointing the link is caught.
 const GATE_CONTROL_PATTERNS = [
-  /(^|\/)skills\/project\/quality-check\//i,
-  /(^|\/)skills\/project\/test-recommendation\//i,
-  /(^|\/)skills\/project\/_schemas\//i,
+  /(^|\/)skills\/(project\/)?(quality-check|test-recommendation|_schemas)\//i,
+  /(^|\/)skills\/(superpowers\/)?(brainstorming|writing-plans)\//i,
   /^\.github\/review-[^/]*\.md$/i,
-  /^\.(claude|codex|cursor)\/(hooks|skills)(\/|$)/i,
+  /^\.(claude|codex|cursor)\/hooks(\/|$)/i,
+  /^\.(claude|codex|cursor)\/skills$/i,
   // Subagent definitions carry system prompts and model choices; `commands/`
   // and `prompts/` files are prompts loaded straight into a session; and
   // `rules/` files (`.cursor/rules/*.mdc`, written by init) are read into
@@ -1078,9 +1176,10 @@ const GATE_CONTROL_PATTERNS = [
   /^\.(claude|codex|cursor)\/mcp\.json$/i,
 ];
 
-// Diffs made up entirely of these skip the gate (rule 4).
-const HARNESS_PATTERNS = [
-  ...GATE_CONFIG_PATTERNS,
+// Diffs made up entirely of these skip the gate (rule 4): the three config
+// files, and the DOCUMENTS (`.md` / `.mdc`, H-47) under the harness
+// directories - a script or config file there is code and needs the check.
+const HARNESS_DOC_DIRS = [
   /^\.claude\//,
   /^\.codex\//,
   /^\.cursor\//,
@@ -1088,13 +1187,15 @@ const HARNESS_PATTERNS = [
   /^\.github\/review-[^/]*\.md$/,
   /^documents\/development\/coding-rules\//,
 ];
+const HARNESS_DOC_RE = /\.(md|mdc)$/i;
 
 // Gate-parameter carve-out (quality-policy §2). Only the STRINGS are looked
 // for, in added/removed diff lines: whether a declaration is live or
 // commented out is not analysed - over-detection is fine here.
 const OVERRIDE_STRINGS = [/quality[-_\s]*gate[-_\s]*overrides/i, /mutation[-_\s]*budget[-_\s]*minutes/i];
 
-const isHarness = (f) => HARNESS_PATTERNS.some((re) => re.test(f));
+const isHarness = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f))
+  || (HARNESS_DOC_RE.test(f) && HARNESS_DOC_DIRS.some((re) => re.test(f)));
 const controlHits = (files) => files.filter((f) => GATE_CONTROL_PATTERNS.some((re) => re.test(f)));
 const gateConfigFiles = (files) => files.filter((f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f)));
 
@@ -1119,6 +1220,16 @@ const COMMIT_PUSH = 'Split this into separate commands: git commit and a push to
 const FORCE = 'Force, delete, --all, --branches and --mirror pushes are never allowed here. Push a plain refspec after a quality check; to update your own feature branch after a rebase, use `git push --force-with-lease` from that branch.';
 const FORCE_TRUNK = 'Force, delete, --all, --branches and --mirror pushes to main/master are always refused, with or without a quality check: they rewrite or delete trunk history that others have already pulled. Push a branch and merge it through a pull request instead.';
 const ONE_OPERATION = 'Run one gated operation per command: split the merge, pull and push apart.';
+// H-11 / H-13 / H-19.
+const ONE_SOURCE = 'Merge or rebase one branch at a time on main/master (no --onto): run `git merge <branch>` with a single source.';
+const pullSource = (trunk) => `On ${trunk}, a \`git pull\` from another branch brings in commits the gate cannot check. Run \`git fetch\`, then \`git merge <remote>/<branch>\` once the quality-check skill has passed on that branch - or use one of the sync forms (\`git pull\`, \`git pull origin ${trunk}\`).`;
+const diverged = (trunk, ref) => `${trunk} has commits that ${ref} does not have, so the result would not be the commit the quality check ran on. Merge ${trunk} into the branch (or rebase it onto ${trunk}), re-run the quality-check skill there, then integrate.`;
+const integrateReason = (trunk, ref, noRemote) => `The quality-check flag here does not cover ${ref}: the flag must name the commit that ${trunk} receives. Run the quality-check skill on ${ref} in this checkout, then integrate it.${noRemote ? ` From a separate worktree of the branch, run \`git push . HEAD:${trunk}\` there instead (see the branch-workflow skill).` : ''}`;
+const TRUNK_NEVER = 'Deleting main/master or force-fetching into it is never allowed here. Integrate a branch with `git merge`, a pull request, or - without a remote - `git push . HEAD:main` from the checked branch.';
+const FETCH_INTO_TRUNK = 'A fetch into main/master from another remote branch cannot be checked here. Fetch the branch, run the quality-check skill on it, then integrate it (`git merge`, a pull request, or `git push . HEAD:main`).';
+const otherRepo = (repo, origin) => `This gh call names another repository (${repo}) than this checkout's origin (${origin || 'none'}), so this checkout's quality-check flag says nothing about it. Run it from that repository's own directory, without -R / --repo, after its quality check.`;
+const PR_HINT = ' - or push the feature branch (`git push -u origin HEAD`) and open a pull request (`gh pr create`) instead of merging here.';
+const PUSH_TARGET = 'This push has no refspec, and its push target (@{push}) is main/master. ';
 // H-49: a harness-only diff that is not exempt only because of the override
 // strings says so, instead of reading like an ordinary code change.
 const overrideReason = (files) => `Quality Gate Overrides / mutation_budget_minutes changed in ${gateConfigFiles(files).join(', ')}: such a change is not harness-exempt. Run the quality-check skill before merging into main.`;
@@ -1168,6 +1279,7 @@ function isSyncForm(seg, branch, ctx) {
 function staticRules(a, commandMover, plan) {
   if (a.cands.length === 0) return null;
   for (const c of a.cands) {
+    if (c.kind === 'write' && c.never) return deny('2', TRUNK_NEVER);
     if (c.kind !== 'push') continue;
     if ((c.neverExempt || c.hard) && !c.lease) return deny('2', c.toTrunk ? FORCE_TRUNK : FORCE);
     if (c.matching) {
@@ -1213,24 +1325,27 @@ function rule4Exempt(base, baseControl) {
     && !base.overrideChanged && baseControl.length === 0;
 }
 
-// Rule 3: the flag. `noFlag` is the reason to give when there is none.
-function rule3Flag(ctx, noFlag) {
+// Rule 3: the flag. `noFlag` is the reason to give when there is none. The
+// flag is checked against HEAD, or - with `tip` (a sha) - against the commit
+// a merge, rebase or trunk rewrite brings into the trunk (H-11); `stale` is
+// then the reason for a flag that does not cover it.
+function rule3Flag(ctx, noFlag, tip = null, stale = STALE) {
   const flag = ctx.flag;
   if (!flag) return deny('3', noFlag);
-  const head = ctx.head;
+  const head = tip || ctx.head;
   if (!head) {
     return deny('5', 'Cannot verify HEAD. Re-run the quality-check skill.');
   }
   // `flag.commit` is lower-cased once, where the flag is read.
   if (head.startsWith(flag.commit)) return allow();
 
-  const ancestor = ctx.isAncestor;
+  const ancestor = tip ? ctx.ancestor(flag.commit, tip) : ctx.isAncestor;
   if (ancestor === null) {
     return deny('5', 'Cannot verify the commit the quality check ran on. Re-run the quality-check skill.');
   }
-  if (!ancestor) return deny('3', STALE);
+  if (!ancestor) return deny('3', stale);
 
-  const since = ctx.diffSinceFlag;
+  const since = tip ? ctx.diffRange(`${flag.commit}..${tip}`) : ctx.diffSinceFlag;
   if (since === null) {
     return deny('5', 'Cannot verify what changed since the last quality check. Re-run the quality-check skill.');
   }
@@ -1238,7 +1353,56 @@ function rule3Flag(ctx, noFlag) {
   const hits = controlHits(since.files);
   if (hits.length > 0) return deny('3', controlReason(hits));
   if (since.files.every(isHarness) && !since.overrideChanged) return allow();
-  return deny('3', overrideOnly(since) ? overrideReason(since.files) : STALE);
+  return deny('3', overrideOnly(since) ? overrideReason(since.files) : stale);
+}
+
+// H-11 / H-13: the trunk `trunk` moves to `ref` (a merge or rebase on it, or a
+// rewrite of its ref). Allowed when that is a sync with origin's trunk, a
+// no-op or a rewind, or a fast-forward whose new commits are harness files
+// only or are covered by the flag - the flag is bound to `ref`, not to HEAD,
+// so a flag left from an earlier run does not let another branch in.
+// `reasons`: `{ noFlag, stale }`.
+function judgeTrunkMove(ctx, trunk, ref, reasons) {
+  const cannot = (what) => deny('5', `Cannot verify ${what}. Re-run the command after checking the repository state.`);
+  const target = ctx.resolveCommit(ref);
+  if (!target) return cannot(`the commit \`${ref}\` names`);
+  const t = String(trunk);
+  if (target === ctx.resolveCommit(`refs/remotes/origin/${t.toLowerCase()}`)) return allow();
+  const tip = ctx.resolveCommit(`refs/heads/${t}`);
+  if (!tip) return cannot(`the current ${t}`);
+  const contained = tip === target || ctx.ancestor(target, tip);
+  if (contained === null) return cannot(`whether ${t} already holds \`${ref}\``);
+  if (contained) return allow();
+  const ff = ctx.ancestor(tip, target);
+  if (ff === null) return cannot(`whether ${t} can fast-forward to \`${ref}\``);
+  if (!ff) return deny('3', diverged(t, ref));
+  const gained = ctx.diffRange(`${tip}..${target}`);
+  if (gained === null) return cannot(`what \`${ref}\` adds to ${t}`);
+  const hits = controlHits(gained.files);
+  if (hits.length === 0 && !gained.overrideChanged && gained.files.every(isHarness)) return allow(); // Rule 4.
+  let noFlag = reasons.noFlag;
+  if (hits.length > 0) noFlag = controlReason(hits);
+  else if (overrideOnly(gained)) noFlag = overrideReason(gained.files);
+  return rule3Flag(ctx, noFlag, target, reasons.stale);
+}
+
+// The source a `git merge` / `git rebase` / `git pull` on the trunk brings in
+// (H-11): `{ ref }`, `{ head: true }` when none is written or it is origin's
+// trunk (judged against HEAD), or `{ deny }`.
+const SOURCE_VALUE_OPTS = new Set([
+  '-m', '-F', '-s', '-X', '--message', '--file', '--strategy', '--strategy-option', '--into-name', '--cleanup',
+]);
+function integrationSource(cand, trunk) {
+  const { pos, opts } = positionalsOf(cand.inv, SOURCE_VALUE_OPTS);
+  if (cand.sub === 'pull') {
+    const t = String(trunk).toLowerCase();
+    if (pos.length === 0 || (pos[0] === 'origin' && (pos.length === 1 || (pos.length === 2 && pos[1].toLowerCase() === t)))) return { head: true };
+    return { deny: deny('2', pullSource(t)) };
+  }
+  if (opts.some((o) => o === '--onto' || o.startsWith('--onto='))) return { deny: deny('2', ONE_SOURCE) };
+  if (pos.length === 0) return { head: true };
+  if (pos.length > 1) return { deny: deny('2', ONE_SOURCE) };
+  return { ref: pos[0] };
 }
 
 // Everything that needs ctx. Always returns a decision. `plan` is the
@@ -1251,10 +1415,20 @@ function contextRules(a, ctx, plan = null) {
     // Includes a detached HEAD: an unresolved branch with a candidate blocks.
     return deny('5', 'Cannot verify the current branch. Check out a branch, then re-run the command.');
   }
-  const gated = a.cands.filter((c) => !c.mainOnly || isMainBranch(branch));
+  // H-19(d): a refspec-less push off the trunk still lands on the trunk when
+  // the branch's push target is one (an upstream set to origin/main).
+  const toTrunk = (c) => c.kind === 'push' && c.omittedRefspec && !(plan && plan.branch)
+    && /^[^/]+\/(main|master)$/i.test(ctx.pushTarget || '');
+  const gated = a.cands.filter((c) => !c.mainOnly || isMainBranch(branch) || toTrunk(c));
   if (gated.length === 0) return allow();
   if (gated.length > 1) return deny('2', ONE_OPERATION);
-  if (gated[0].kind === 'push' && gated[0].hard) return deny('2', FORCE_TRUNK);
+  const cand = gated[0];
+  if (cand.kind === 'push' && cand.hard) return deny('2', FORCE_TRUNK);
+  if (cand.kind === 'gh' && cand.repo !== null) {
+    // H-19(a): another repository's PR is judged in that repository.
+    const origin = ctx.originRepo;
+    if (!origin || repoName(cand.repo) !== origin) return deny('2', otherRepo(cand.repo, origin));
+  }
   const kind = plan ? plan.kind : null;
   if (kind === 'commit') return deny('2', COMMIT_PUSH);
   if (kind === 'newBranch') return deny('2', splitReason('checkout')); // Its branch is never a trunk.
@@ -1282,16 +1456,40 @@ function contextRules(a, ctx, plan = null) {
     if (plan.mover) return deny('2', splitReason(plan.mover));
   }
 
+  // H-11 / H-13: the flag is bound to the commit the trunk receives. A ctx
+  // without `resolveCommit` (a test stub) judges the flag against HEAD.
+  const resolves = typeof ctx.resolveCommit === 'function';
+  if (cand.kind === 'write') {
+    if (cand.ref === undefined) return cand.sameName ? allow() : deny('2', FETCH_INTO_TRUNK);
+    const why = integrateReason(cand.trunk, cand.ref, ctx.hasRemote === false);
+    return resolves ? judgeTrunkMove(ctx, cand.trunk, cand.ref, { noFlag: why, stale: why }) : rule3Flag(ctx, why);
+  }
+  if (cand.kind === 'git') {
+    const source = integrationSource(cand, branch);
+    if (source.deny) return source.deny;
+    if (source.ref !== undefined && resolves) {
+      const why = integrateReason(branch, source.ref, ctx.hasRemote === false);
+      const noFlag = SYNC_SOURCE_RE.test(source.ref) ? needFlagReason(a, branch) : why;
+      return judgeTrunkMove(ctx, branch, source.ref, { noFlag, stale: why });
+    }
+  }
+
   const base = ctx.diffSinceBase;
   if (base === null) {
-    return deny('5', 'Cannot verify what changed since origin/main. Re-run the quality-check skill.');
+    return deny('5', 'Cannot verify what changed since the base ref (origin/main, or main without a remote). Re-run the quality-check skill.');
   }
   const baseControl = controlHits(base.files);
   if (rule4Exempt(base, baseControl)) return allow();
   let noFlag = needFlagReason(a, branch);
   if (baseControl.length > 0) noFlag = controlReason(baseControl);
   else if (overrideOnly(base)) noFlag = overrideReason(base.files);
-  return rule3Flag(ctx, noFlag);
+  const verdict = rule3Flag(ctx, noFlag);
+  // A trunk push from a feature branch can go through a pull request instead
+  // (`gh pr merge` already has one).
+  const offTrunk = cand.kind === 'push' && !isMainBranch(branch);
+  if (verdict.decision !== 'block' || verdict.rule !== '3' || !offTrunk) return verdict;
+  const prefix = cand.kind === 'push' && cand.mainOnly ? PUSH_TARGET : '';
+  return { ...verdict, reason: `${prefix}${verdict.reason.replace(/\.$/, '')}${PR_HINT}` };
 }
 
 // A command line the classifier will not read (over the byte budget, or a
@@ -1302,6 +1500,7 @@ function contextRules(a, ctx, plan = null) {
 const TOO_LONG = 'Command line too long to classify. Split the gated git/gh call into its own command.';
 const UNCLASSIFIABLE = 'This command line could not be classified. Run the git/gh call as a single plain command.';
 const EXPANDED = 'A shell expansion ($, backtick, brace or %) in a command line that cannot be classified could spell anything. Run the git/gh call as a single plain command without expansions.';
+const UNREADABLE_COMMAND = 'This shell call carries no readable command (tool_input.command is missing or not a string), so the quality gate cannot check it. Run the command as a plain command string.';
 const HUGE_PAYLOAD = 'The hook payload is too large to read, so this command cannot be checked. Run the git/gh call as a single plain command.';
 const EXPAND_CHARS_RE = /[$`{}%]/;
 function gateWordFallback(text, reason) {
@@ -1747,9 +1946,16 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 //   isAncestor    true/false for `flag.commit..HEAD`, or null when git failed;
 //                 null when there is no flag (never reached in that case).
 //   diffSinceFlag `{ files, overrideChanged }`, or null on failure.
-//   diffSinceBase `{ files, overrideChanged }` for `origin/main...HEAD`, or
-//                 null on failure. An absent base ref is an EMPTY diff (no
+//   diffSinceBase `{ files, overrideChanged }` for `<base>...HEAD` (BASE_REFS),
+//                 or null on failure. An absent base ref is an EMPTY diff (no
 //                 exemption), not null.
+//   resolveCommit(ref) the sha `ref` names, or null. ancestor(a, b): a is an
+//                 ancestor of b - true / false, null on failure. diffRange(r):
+//                 like diffSinceFlag for the range r. A ctx without
+//                 resolveCommit (a test stub) judges merges against HEAD.
+//   pushTarget    `@{push}` (`origin/main`), or null/undefined.
+//   hasRemote     false when the repository has no remote.
+//   originRepo    origin's `owner/repo` in lower case, or null.
 //   cwd           the payload cwd (absolute path) - where the location walk
 //                 starts. Missing: every move is UNRESOLVED.
 //   toplevel      real path of the work tree root, or null when there is none
@@ -1780,23 +1986,28 @@ function classifyText(text, ctx) {
   const always = alwaysDeny(text);
   if (always) return always;
   if (Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) return gateWordFallback(text, TOO_LONG);
-  if (!gateWordIn(text)) return allow();
+  if (!gateWordIn(text) && !trunkWriteIn(text)) return allow();
   // A CRLF line end is read as LF (a lone CR is still not simple).
   const crlf = text.includes('\r\n');
   const stripped = stripTrailingOutput(crlf ? text.replace(/\r\n/g, '\n') : text);
   const body = reading === 'powershell' ? readPsIfOk(stripped) : stripped;
   const masked = maskMessages(body);
-  if (masked !== null && !gateWordIn(masked)) return allow(); // Only in a message.
+  if (masked !== null && !gateWordIn(masked) && !trunkWriteIn(masked)) return allow(); // Only in a message.
   // The rest of the command is judged with its message values masked.
   const judged = masked === null ? body : masked;
   let lines;
   try {
     lines = parseSimple(judged);
   } catch (e) {
-    if (e instanceof NotSimple) return deny('2', notSimpleReason(e.message));
+    // Without a gate word only a simple trunk rewrite is judged.
+    if (e instanceof NotSimple) return gateWordIn(judged) ? deny('2', notSimpleReason(e.message)) : allow();
     throw e;
   }
   const analyzed = lines.map(analyzeLine);
+  // A trunk rewrite (H-13) shares its command with no other gated call.
+  const cands = analyzed.flatMap((a) => a.cands);
+  const write = cands.find((c) => c.kind === 'write');
+  if (write && cands.length > 1) return deny('2', splitReason(write.inv.sub));
   const all = analyzed.flatMap((a) => a.invocations);
   // The HEAD movers are judged over the whole command, so this answer is the
   // same for every line: compute it once.
@@ -1835,6 +2046,7 @@ function judgedThere(verdict, there) {
 // repository, read before the user has approved anything, and its config must
 // not get to execute code through the gate.
 const SAFE_GIT = ['-c', 'core.fsmonitor=false'];
+const BASE_REFS = ['refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master'];
 const SAFE_DIFF = ['--no-ext-diff', '--no-textconv'];
 // No network either: in a partial clone a diff that needs a missing blob
 // would fetch it from the promisor remote (a stall, and a request the user
@@ -1999,11 +2211,54 @@ function makeCtx(cwd) {
     },
     get diffSinceBase() {
       return once('dsb', () => {
-        for (const ref of ['origin/main', 'origin/master']) {
+        // H-13: the base ref is origin's trunk, or - only when there is no
+        // remote-tracking trunk at all - the local trunk (quality-check's
+        // `quality-context` picks it the same way).
+        for (const ref of BASE_REFS) {
           const r = git(['rev-parse', '--verify', '--quiet', ref]);
           if (r.ok && r.out.trim()) return diff(`${ref}...HEAD`);
         }
         return { files: [], overrideChanged: false }; // No base ref: no exemption.
+      });
+    },
+    // H-11 / H-13: the commit `ref` names (lower case), or null.
+    resolveCommit(ref) {
+      return once(`commit:${ref}`, () => {
+        const r = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
+        return r.ok && r.out.trim() ? r.out.trim().toLowerCase() : null;
+      });
+    },
+    // `a` is an ancestor of `b` (both shas): true / false, or null on failure.
+    ancestor(a, b) {
+      return once(`anc:${a}:${b}`, () => {
+        const r = git(['merge-base', '--is-ancestor', a, b]);
+        if (r.ok) return true;
+        return r.status === 1 ? false : fail('git-error');
+      });
+    },
+    diffRange(range) {
+      return once(`diff:${range}`, () => diff(range));
+    },
+    // H-19(d): where a refspec-less push of this branch lands (`origin/main`),
+    // or null when git cannot say (then the push itself fails or goes nowhere).
+    get pushTarget() {
+      return once('push', () => {
+        const r = git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{push}']);
+        return r.ok ? r.out.trim() || null : null;
+      });
+    },
+    // True when the repository has no remote at all.
+    get hasRemote() {
+      return once('remotes', () => {
+        const r = git(['remote']);
+        return r.ok ? r.out.trim() !== '' : true;
+      });
+    },
+    // H-19(a): origin's `owner/repo` (lower case), or null.
+    get originRepo() {
+      return once('origin', () => {
+        const r = git(['remote', 'get-url', 'origin']);
+        return r.ok ? repoName(r.out.trim()) : null;
       });
     },
   };
@@ -2061,9 +2316,16 @@ function main() {
       // leading marker so valid payloads do not enter the malformed fail-open.
       const payload = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
       const raw = payload && payload.tool_input ? payload.tool_input.command : undefined;
+      shell = shellOf(payload && payload.tool_name);
+      if (typeof raw !== 'string' && shell !== null) {
+        // H-52(5) / H-07: a shell call whose command cannot be read is
+        // refused, not waved through.
+        process.stderr.write('quality-gate: shell call without a readable command; blocking.\n');
+        emitBlock(UNREADABLE_COMMAND);
+        return;
+      }
       if (typeof raw !== 'string') throw new Error('tool_input.command is not a string');
       command = raw;
-      shell = shellOf(payload.tool_name);
       if (typeof payload.cwd === 'string' && fs.existsSync(payload.cwd)) cwd = payload.cwd;
     } catch (e) {
       // Rule 5, fail-open #1: never block on a payload the hook cannot read -
