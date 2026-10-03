@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   sync:
@@ -63,27 +64,53 @@ jobs:
         env:
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
 
-      - name: Transform and copy skills
-        if: steps.check.outputs.needed == 'true'
-        run: |
-          bash scripts/transform-skills.sh \
-            /tmp/superpowers/skills \
-            skills/superpowers
-
       - uses: actions/setup-node@v4
         if: steps.check.outputs.needed == 'true'
         with:
           node-version: 22
           cache: npm
 
-      - name: Verify policy patch reproduction and drift failure
+      - name: Transform and copy skills
+        id: transform
         if: steps.check.outputs.needed == 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          bash scripts/transform-skills.sh             /tmp/superpowers/skills             skills/superpowers 2>&1 | tee /tmp/transform.log
+
+      - name: Report upstream drift
+        if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'failure'
+        run: |
+          TITLE="superpowers upstream drift v${LATEST_VERSION}"
+          {
+            echo "上流 superpowers v${LATEST_VERSION} の同期で、ハーネスが持つ overlay の基にした上流ファイルが変わっていました。"
+            echo
+            echo "対応: scripts/skill-overlays/README.md の手順で、差分を読んで overlay に取り込み、manifest を更新してください。"
+            echo
+            echo "実行ログ: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo '~~~'
+            tail -n 40 /tmp/transform.log
+            echo '~~~'
+          } > /tmp/drift-body.md
+          EXISTING=$(gh issue list --state open --label superpowers-sync --json number,title --jq '[.[] | select(.title | startswith("superpowers upstream drift"))][0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --title "$TITLE" --body-file /tmp/drift-body.md
+          else
+            gh issue create --title "$TITLE" --label superpowers-sync --body-file /tmp/drift-body.md
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_VERSION: ${{ steps.latest.outputs.version }}
+
+      - name: Verify overlay reproduction and drift detection
+        if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'success'
         run: |
           npm ci
           npx vitest run lib/skill-transform.test.js
 
       - name: Verify transformed skills
-        if: steps.check.outputs.needed == 'true'
+        if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'success'
         run: |
           SKILL_COUNT=$(find skills/superpowers -name "SKILL.md" | wc -l)
           if [ "$SKILL_COUNT" -ne 14 ]; then
@@ -93,14 +120,14 @@ jobs:
           echo "Verified: $SKILL_COUNT skills found"
 
       - name: Update version file
-        if: steps.check.outputs.needed == 'true'
+        if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'success'
         run: |
           echo "$LATEST_VERSION" > .superpowers-version
         env:
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
 
       - name: Create Pull Request
-        if: steps.check.outputs.needed == 'true'
+        if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'success'
         id: create-pr
         uses: peter-evans/create-pull-request@v8
         with:
@@ -112,7 +139,7 @@ jobs:
 
             [リリースノート](https://github.com/obra/superpowers/releases/tag/v${{ steps.latest.outputs.version }})を確認してください。
 
-            ハーネス方針の patch を変換後の本文に適用し、再生成と意図的な上流競合の検証を実行しています。patch が適用できない同期は Actions で停止し、この PR は作成されません。
+            ハーネスが持つ overlay を変換後の本文に適用し、再生成と上流のずれの検出を検証しています。overlay の基にした上流ファイルが変わった同期は PR を作らず、Issue「superpowers upstream drift」を作るか更新します。
 
             このPRは `fix(superpowers):` コミットとしてマージされ、release-please が自動で patch リリースに含めます。
           branch: chore/sync-superpowers
