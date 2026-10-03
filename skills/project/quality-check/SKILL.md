@@ -15,7 +15,7 @@ description: マージ前に必ず実行。静的チェック・テスト・体�
 
 ### hook の完全な契約（無条件ブロック・通過条件・fail-open・worktree）
 
-**脅威モデル**: この hook が防ぐのは、善意の操作がうっかり main に到達することだけである。開発は必ず Issue → ブランチを切ってから始まる設計であり、main への push / マージが起きても最悪はリバートで戻せるため、hook は保険のブロックにすぎない。意図的な迂回（シェルの展開・クォート・エンコードで語を隠す形、ラッパ経由、間接実行等）は対象外とし、hook 本体（`templates/hooks/quality-gate.cjs`）のヘッダに「見通せない形」として列挙するに留める — 実害が出た時点で個別に対応する。
+**脅威モデル**: この hook が防ぐのは、善意の操作がうっかり main に到達することだけである。開発は必ず Issue → ブランチを切ってから始まる設計であり、main への push / マージが起きても最悪はリバートで戻せるため、hook は保険のブロックにすぎない。意図的な迂回（シェルの展開・クォート・エンコードで語を隠す形、ラッパ経由、間接実行等）は対象外とし、hook 本体（`templates/hooks/quality-gate.cjs`）のヘッダに「見通せない形」として列挙するに留める — 実害が出た時点で個別に対応する。ただし、中身が読めない PowerShell のスクリプト（エンコードしたもの・標準入力から読ませるもの）は、ゲート語の有無にかかわらず拒否する（hook の `alwaysDeny`）。別のシェルの中（`powershell -Command "…"`・`pwsh -c`・`cmd /c`・`bash -c` など）にゲート語が見える形は単純な形ではないので、フラグがあっても拒否される（push・merge はそれだけを単独のコマンドで実行する）。
 
 **対象**: `gh pr merge`、`gh api ...pulls/<n>/merge`（`<n>` は数字でなくてもよい）、main / master 上の `git merge` / `git pull` / `git rebase`、宛先が `main` / `master` に完全一致する `git push`、および main / master 上で refspec を省略または `HEAD`（大小無視） / `@` のみを指定した `git push`。feature ブランチへの push はこれらの形に一致しない限りゲート対象外。ただし refspec に `%` を含む語・`~` で始まる語がある `git push` は宛先が静的に読めないため、ブランチを問わず候補として扱い、規則2の展開文字項で block する（`feat/x` のように書き下す）。`git merge` / `git pull` / `git rebase` の `--abort` / `--continue` / `--quit` / `--skip` はゲート対象外（進行中の操作の中断・再開であり新規の同期・merge ではないため）。
 

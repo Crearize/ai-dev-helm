@@ -82,6 +82,17 @@ npx @crearize/ai-dev-helm quality-context --cycle 2 --out <scratchpad>/quality-c
 
 quality-check Step 4 のレビュアーに渡す共通コンテキスト（`cycle-<N>/context.md`）の決定的な部分を生成します。変更ファイル一覧・差分（長い場合は `diff.patch`）・完全性の証跡・変更ファイルのスナップショット、サイクル 2 以降は前サイクルの統合指摘一覧（`findings.json`）とスナップショットからの修正差分（`fix-diff.patch`）を出力します。既定の出力先は OS の一時ディレクトリ配下（`ai-dev-helm/<リポジトリ名>-<パスのハッシュ>/quality-check`）で、リポジトリ内への出力は拒否します。生成物には差分全文と変更ファイルのコピーが含まれるため、共有マシンでは `--out` を保護されたディレクトリに向け、quality-check 全体の終了・中断後に削除してください。
 
+### 5. Codex のフックの信頼の確認（Codex を使う場合）
+
+```bash
+npx @crearize/ai-dev-helm codex-trust --dir . [--codex-home <Codex の設定の場所>]
+```
+
+Codex は、信頼されていないフック（新しいもの、または `.codex/hooks.json` の登録が変わったもの）を警告なしに飛ばします。`/hooks` でフックを信頼するまで、quality-gate も review-budget も動きません。`hooks.json` を変えたら再び信頼し、Codex のアカウント・設定の場所（`CODEX_HOME`）を切り替えたら、切り替えた先でも信頼します。このコマンドは、Codex の `config.toml` とプロジェクトの `.codex/hooks.json` を読み取るだけで、Codex の設定には書き込みません。読む場所は `--codex-home` > `CODEX_HOME` > `~/.codex` の順で、読んだファイルを必ず表示します。
+
+- 終了コード: `0` = 問題なし / `1` = `ACTION REQUIRED`（プロジェクトかフックが信頼されていない、信頼の後に登録が変わった、無効にされている） / `2` = 読めない（読もうとしたパスを表示）
+- 詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「効く範囲と限界」
+
 ### ローカルインストールで実行する場合
 
 ```bash
@@ -464,7 +475,7 @@ Codex には `.codex/agents/helm-*.toml`（designer / doc-reviewer / implementer
 
 #### マージ前の品質チェック強制フック
 
-**脅威モデル**: この hook が防ぐのは、善意の操作がうっかり main に到達することだけです。開発は必ず Issue → ブランチを切ってから始まる設計であり、main への push / マージが起きても最悪はリバートで戻せるため、hook は保険のブロックにすぎません。意図的な迂回（シェルの展開・クォート・エンコードで語を隠す形、ラッパ経由、間接実行等）は対象外とし、hook 本体のヘッダに「見通せない形」として列挙するに留めます — 実害が出た時点で個別に対応します。
+**脅威モデル**: この hook が防ぐのは、善意の操作がうっかり main に到達することだけです。開発は必ず Issue → ブランチを切ってから始まる設計であり、main への push / マージが起きても最悪はリバートで戻せるため、hook は保険のブロックにすぎません。意図的な迂回（シェルの展開・クォート・エンコードで語を隠す形、ラッパ経由、間接実行等）は対象外とし、hook 本体のヘッダに「見通せない形」として列挙するに留めます — 実害が出た時点で個別に対応します。ただし、中身が読めない PowerShell のスクリプト（エンコードしたもの・標準入力から読ませるもの）は、ゲート語の有無にかかわらず拒否します。別のシェルの中（`powershell -Command "…"`・`pwsh -c`・`cmd /c`・`bash -c` など）にゲート語が見える形は単純な形ではないので、フラグがあっても拒否されます（push・merge はそれだけを単独のコマンドで実行します）。
 
 `settings.json` には `PreToolUse` フックが設定されており、コマンド行を静的に分類するだけの装置として動作します（着地するコミットを解決しようとはしません）。対象は `gh pr merge` / `gh api` の `pulls/<n>/merge`（`<n>` は数字でなくても対象） / main・master 上での `git merge`・`git pull`・`git rebase` / 宛先が `main`・`master` に完全一致する `git push` / main・master 上で refspec を省略または `HEAD`（大小無視）・`@` のみを指定した `git push` です。**feature ブランチへの push はこれらの形に一致しない限りゲートされません**（ただし下記「判定する形」「意図的な過検出」も参照）。refspec に `%` を含む語・`~` で始まる語がある `git push` は宛先が静的に読めないため、ブランチを問わず候補として扱われ、規則2の展開文字項で block されます（`feat/x` のように書き下してください）。`git merge`・`git pull`・`git rebase` の `--abort`・`--continue`・`--quit`・`--skip` はゲート対象外です。
 

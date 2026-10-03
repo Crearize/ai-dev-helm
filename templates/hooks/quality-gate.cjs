@@ -79,7 +79,8 @@
 //   Substring matches never count: `feature/main-nav` and `main:feature-x` are
 //   not candidates. A refspec carrying `%` or a leading `~` is a candidate
 //   because its destination cannot be read.
-// Rule 2 (blocked with no exemption): a command with a gate word that is not
+// Rule 2 (blocked with no exemption): an unreadable PowerShell script (see
+//   ALWAYS REFUSED - gate word or not); a command with a gate word that is not
 //   simple; force/delete/`+refspec`/`--mirror`/`--all`/`--branches` pushes
 //   (short bundles such as `-fu` and long abbreviations such as `--forc`
 //   included); a git
@@ -149,13 +150,46 @@
 // branch; a detached HEAD is an UNRESOLVED branch; `git push --force` with no
 // refspec blocks anywhere.
 //
+// NESTED SHELLS (H-52). `powershell` / `pwsh` / `cmd` / `bash` are not in the
+// closed list of command words, so a shell nested in the command string
+// (`powershell -Command "..."`, `pwsh -c '...'`, `cmd /c "..."`,
+// `bash -lc "..."`, nested two deep) is never simple: when a gate word is
+// visible anywhere in it, it is refused with the same guidance, whatever the
+// branch and the flag. That includes a push the flag would let through when
+// run directly - `powershell -Command "git push origin main"` with a flag on
+// HEAD is refused; run `git push origin main` itself. The nested text is not
+// unwrapped and classified.
+//
+// ALWAYS REFUSED (`alwaysDeny`, checked before the gate words, so with or
+// without one). A PowerShell script the gate cannot read: `powershell` /
+// `pwsh` (`.exe`, any path, any case) given an encoded command, or told to
+// read its script from standard input (`-Command -`, `-File -`, a bare `-`,
+// or no command or file while its input is piped or redirected). Parameter
+// spellings follow what powershell.exe 5.1 (checked on Windows) and pwsh 7
+// (its CommandLineParameterParser) accept: the prefixes `-`, `/`, U+2013,
+// U+2014, U+2015 and a doubled dash (pwsh), any case, and the encoded-command
+// name as `ec` or any leading part of `encodedcommand` (from `e`). Other
+// parameters (`-ExecutionPolicy`, `-NoProfile`, `-File <path>`, ...) and the
+// text after `-Command` / `-File <path>` are not refused here. Message values
+// of `git commit` / `gh pr` (`maskMessages`) are masked first, so a message
+// that mentions such a command is not refused. Reading is charged to one
+// character budget per command (SCAN_BUDGET); a text so crowded with
+// PowerShell words that it runs out is refused as unreadable.
+//
 // Nothing here can see through, and none of these is treated as a gap:
 //   - a gate word spelled so that it is not in the text: `git $'\x70'ush`,
-//     `git pus{h..h}`, `gh pr me{r..r}ge`, an encoded PowerShell command, a
-//     percent-encoded `gh api` endpoint;
+//     `git pus{h..h}`, `gh pr me{r..r}ge`, a percent-encoded `gh api`
+//     endpoint;
 //   - a wrapper: a script, an npm script, a git or shell alias or a function
 //     defined in an earlier tool call (one defined in the same command is not
 //     simple), `xargs`, `env -S`;
+//   - indirect execution whose text holds no gate word, or holds it only in a
+//     form that is refused as not simple anyway - the contents are not read:
+//     PowerShell's `Invoke-Expression` / `iex`, `Start-Process`, a script
+//     block `& { ... }`, the contents of `-File <path>`; another language's
+//     inline code (`node -e`, `python -c`, `ruby -e`, `perl -e`, ...);
+//     `eval`, `source`, `. <file>`; `xargs`, `find -exec`; an alias or a
+//     function; a string kept in an environment variable and expanded later;
 //   - a refspec that lives in configuration: `remote.<name>.push`,
 //     `push.default = matching`, `branch.<n>.merge`;
 //   - other merge APIs: `gh api graphql` with `mergePullRequest`, `gh repo
@@ -1080,6 +1114,125 @@ function gateWordFallback(text, reason) {
 }
 
 // --------------------------------------------------------------------------
+// Always refused: a PowerShell script the gate cannot read (H-52)
+// --------------------------------------------------------------------------
+// See ALWAYS REFUSED in the header. Each `powershell` / `pwsh` word in the
+// text (in quotes too: `bash -c "pwsh -enc ..."`) has the words after it read
+// up to the end of its segment, as PowerShell's own command line parser reads
+// them: a parameter, possibly followed by its value, until `-Command` /
+// `-File` / the first positional word, after which the rest is script text or
+// script arguments.
+const UNREADABLE_PS = 'An encoded or stdin PowerShell script cannot be read by the quality gate, so it is refused whether or not it pushes or merges. Run the command as plain text instead.';
+const PS_EXE_RE = /(?<![A-Za-z0-9_.-])(?:powershell|pwsh)(?:\.exe)?(?![A-Za-z0-9_.-])/gi;
+// `/`, a dash (also U+2013-U+2015), or the same dash twice (pwsh 7).
+const PS_PARAM_RE = /^(?:\/|([-–—―])\1?)([^]*)$/;
+const PS_DASHES = new Set(['-', '–', '—', '―']);
+const isLeadOf = (name, full, min = 1) => name.length >= min && full.startsWith(name);
+const isEncodedParam = (name) => name === 'ec' || isLeadOf(name, 'encodedcommand');
+const isScriptParam = (name) => name === 'cwa' || isLeadOf(name, 'command')
+  || isLeadOf(name, 'commandwithargs', 15) || isLeadOf(name, 'file');
+
+// The words of one segment starting at `i`, read lazily, quotes and escape
+// characters dropped; the segment ends at an unquoted newline, `;`, `|` or
+// `&`. Every character read is charged to `budget`, shared by all the
+// executables in one command, so a text crowded with them stays linear.
+function* segmentWords(text, i, budget) {
+  let word = '';
+  let quote = null;
+  let started = false;
+  for (; i < text.length; i++) {
+    if (--budget.left < 0) throw new ScanBudget();
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      else if (ch !== '`' && ch !== '\\') word += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      started = true;
+    } else if (ch === '\n' || ch === '\r' || ch === ';' || ch === '|' || ch === '&') {
+      break;
+    } else if (ch === ' ' || ch === '\t') {
+      if (started) yield word;
+      word = '';
+      started = false;
+    } else {
+      started = true;
+      if (ch !== '`' && ch !== '^' && ch !== '\\') word += ch;
+    }
+  }
+  if (started) yield word;
+}
+class ScanBudget extends Error {}
+const SCAN_BUDGET = 4 * 1024 * 1024; // Characters, over the whole command.
+
+// Whether a PowerShell started with these arguments runs a script it was not
+// given as readable text. `piped`: its standard input is a pipe.
+function psRunsUnreadable(words, piped) {
+  let redirected = piped;
+  let valueMayFollow = false;
+  for (let next = words.next(); !next.done; next = words.next()) {
+    const w = next.value;
+    if (w.startsWith('<')) {
+      redirected = true;
+      if (w === '<' || w === '<<' || w === '<<<') words.next(); // Its target.
+      valueMayFollow = false;
+      continue;
+    }
+    if (PS_DASHES.has(w)) return true; // `powershell -`: the script from stdin.
+    const m = PS_PARAM_RE.exec(w);
+    if (!m || w === '/') {
+      if (valueMayFollow) {
+        valueMayFollow = false;
+        continue;
+      }
+      return false; // A positional word: script text (5.1) or a script file (7).
+    }
+    const name = m[2].toLowerCase();
+    if (isEncodedParam(name)) return true;
+    if (isScriptParam(name)) {
+      const value = words.next();
+      return !value.done && PS_DASHES.has(value.value);
+    }
+    valueMayFollow = true;
+  }
+  return redirected; // No command and no file: PowerShell runs its input.
+}
+
+function alwaysDeny(text) {
+  const scan = Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES
+    ? text
+    : maskMessages(stripTrailingOutput(text)) ?? text;
+  const budget = { left: SCAN_BUDGET };
+  PS_EXE_RE.lastIndex = 0;
+  let m;
+  try {
+    while ((m = PS_EXE_RE.exec(scan)) !== null) {
+      // Back over the word holding the executable (a path, a quote), then over
+      // blanks: a single `|` there means its input is piped.
+      let k = m.index;
+      while (k > 0 && !/\s/.test(scan[k - 1]) && !';|&('.includes(scan[k - 1])) {
+        if (--budget.left < 0) throw new ScanBudget();
+        k--;
+      }
+      while (k > 0 && /\s/.test(scan[k - 1])) {
+        if (--budget.left < 0) throw new ScanBudget();
+        k--;
+      }
+      const piped = scan[k - 1] === '|' && scan[k - 2] !== '|';
+      let end = m.index + m[0].length;
+      while (end < scan.length && (scan[end] === '"' || scan[end] === "'")) end++;
+      if (psRunsUnreadable(segmentWords(scan, end, budget), piped)) return deny('2', UNREADABLE_PS);
+    }
+  } catch (e) {
+    if (e instanceof ScanBudget) return deny('2', UNREADABLE_PS); // Too crowded to read.
+    throw e;
+  }
+  return null;
+}
+
+// --------------------------------------------------------------------------
 // Everyday forms that need not be refused
 // --------------------------------------------------------------------------
 // Output plumbing at the very END of the whole command - ` 2>&1`,
@@ -1466,6 +1619,8 @@ function locateCandidates(lines, candLines, ctx) {
 // a git repository" case into a fail-open.
 function classify(command, ctx) {
   const text = String(command || '');
+  const always = alwaysDeny(text);
+  if (always) return always;
   if (Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) return gateWordFallback(text, TOO_LONG);
   if (!gateWordIn(text)) return allow();
   const body = stripTrailingOutput(text);

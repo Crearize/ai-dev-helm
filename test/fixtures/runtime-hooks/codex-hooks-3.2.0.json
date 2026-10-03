@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const{execFileSync,spawnSync}=require('node:child_process');const p=require('node:path');const r=execFileSync('git',['rev-parse','--show-toplevel'],{encoding:'utf8'}).trim();const child=spawnSync(process.execPath,[p.join(r,'.codex','hooks','quality-gate.cjs')],{stdio:'inherit'});process.exit(child.status??1)\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "^(Agent|Task|spawn_agent|followup_task|send_message|send_input|resume_agent)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const{execFileSync,spawnSync}=require('node:child_process');const p=require('node:path');const r=execFileSync('git',['rev-parse','--show-toplevel'],{encoding:'utf8'}).trim();const child=spawnSync(process.execPath,[p.join(r,'.codex','hooks','review-budget.cjs')],{stdio:'inherit'});process.exit(child.status??1)\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Agent|Task|spawn_agent|followup_task|send_message|send_input|resume_agent)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const{execFileSync,spawnSync}=require('node:child_process');const p=require('node:path');const r=execFileSync('git',['rev-parse','--show-toplevel'],{encoding:'utf8'}).trim();const child=spawnSync(process.execPath,[p.join(r,'.codex','hooks','review-budget.cjs')],{stdio:'inherit'});process.exit(child.status??1)\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
