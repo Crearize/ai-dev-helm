@@ -161,37 +161,42 @@
 // unwrapped and classified.
 //
 // ALWAYS REFUSED (`alwaysDeny`, checked before the gate words, so with or
-// without one). A PowerShell script the gate cannot read: `powershell` /
-// `pwsh` (any path, any case; also `pwsh-preview`, `powershell_ise` and other
-// `powershell*` / `pwsh*` names joined with `-`, `_` or `.`, with or without
-// `.exe`) in the COMMAND POSITION of a segment, given an encoded command, or
-// told to read its script from standard input (`-Command -`, `-File -`, a
-// bare `-`, or no command or file while its input is piped - `|`, `|&` - or
-// redirected - `<`, `0<`, `<<`, `<<<`, before or after it). The command is
-// split into segments and words with quotes and operators taken into
-// account: a `|` or `<` inside quotes is not a pipe or a redirection. The
-// command word is read with quote characters (ASCII and U+2018-U+201E) and
-// the escape characters (backslash, backtick, `^`) removed; `NAME=value` and
-// the wrappers `sudo`, `doas`, `env`, `nohup`, `time`, `exec`, `command`,
-// `nice`, `timeout`, `stdbuf`, `wsl`, `busybox`, cmd's `start` / `call` and
-// PowerShell's `&` / `.` are passed over. Script text handed to a shell is
-// read the same way, its input included: `bash -c <script>` (`sh`, `zsh`,
-// ...), `cmd /c <rest>`, `powershell -Command <script>`, the script text
-// after PowerShell's first positional word, a POSIX command substitution.
-// Any other quoted string is read for the explicit forms only (an encoded
-// command, `-`), since whether it runs, and with what input, is not known.
-// Parameter spellings follow what powershell.exe 5.1 (checked on Windows) and
-// pwsh 7 (its CommandLineParameterParser) accept: the prefixes `-`, `/`,
-// U+2013, U+2014, U+2015 and a doubled dash (pwsh), any case, and the
-// encoded-command name as `ec` or any leading part of `encodedcommand` (from
-// `e`). Other parameters (`-ExecutionPolicy`, `-NoProfile`, `-File <path>`,
-// ...) are not refused here, and after the first positional word nothing is
-// read as a parameter (5.1 takes the rest as script text, 7 as a script file
-// and its arguments). Message values of `git commit` / `gh pr`
-// (`maskMessages`) are masked first, so a message that mentions such a
-// command is not refused. Reading is charged to one character budget per
-// command (SCAN_BUDGET) and nested script text to a depth of SCAN_DEPTH; a
-// text that runs out of either is refused as unreadable.
+// without one). A PowerShell script the gate cannot read - an encoded one, or
+// one PowerShell reads from its standard input. This is a TEXT RULE, not a
+// parse: where a word sits (which command, group, quoted string or script
+// handed to another shell) does not count. The whole command is read in lower
+// case with quote characters (ASCII and U+2018-U+201E), a `$` right before
+// one, backticks and carets removed, twice: once with backslashes removed and
+// once with them turned into `/`; either reading refuses. It is cut into
+// tokens at blanks (CR, LF, tab and NBSP included) and at `| & ; < > ( ) { }`,
+// an input redirection (`<`, `0<`, `<<`, `<<<`, `<(`) and an output process
+// substitution (`>(`) kept as one token. A PowerShell token is one whose last
+// component (after `/`, `=` or `:`; for cmd's glued `/c` and `/k`, also
+// without that letter) is `powershell` or `pwsh`, alone or joined to more
+// with `-`, `_` or `.` (`pwsh-preview`, `powershell_ise`), with or without
+// `.exe`, or the Windows short name `powers~N`. With at least one PowerShell
+// token, the command is refused when
+//   - a token after the first one is an encoded-command parameter: one or two
+//     of `-`, `/`, U+2013-U+2015, then `ec` or any leading part of
+//     `encodedcommand` from `e`, optionally with `:<value>` (the spellings
+//     powershell.exe 5.1 and pwsh 7 accept, and a few more);
+//   - a token after the first one is a lone dash (`-Command -`, `-File -`,
+//     `powershell -`) or a parameter given `:-`;
+//   - a pipe (`|`, `|&`; `||` counted too) comes before the last one, across
+//     newlines, separators and groups, since its output may be the script;
+//   - an input redirection, an output process substitution or `coproc`
+//     appears anywhere.
+// The rule over-refuses on purpose - a miss is a hole, a refusal only costs a
+// rephrase: a search term or a message that mentions these PowerShell
+// spellings (`rg "pwsh|powershell"`, `git commit -m "... pwsh -enc ..."`), a
+// later `-e` that belongs to another program or to the script
+// (`pwsh -File build.ps1 -e prod`), a pipeline earlier in the same command
+// before a PowerShell script is run. Rerun such a command without the
+// PowerShell text, or split it into separate commands. Out of its reach (see
+// below): character-code escapes (`$'\x70wsh'`), brace expansion
+// (`pw{s..s}h`), `Start-Process -ArgumentList`, a PowerShell started on
+// another machine or container (`ssh`, `docker exec`), a script assembled
+// from variables or read from a file.
 //
 // Nothing here can see through, and none of these is treated as a gap:
 //   - a gate word spelled so that it is not in the text: `git $'\x70'ush`,
@@ -207,11 +212,12 @@
 //     inline code (`node -e`, `python -c`, `ruby -e`, `perl -e`, ...);
 //     `eval`, `source`, `. <file>`; `xargs`, `find -exec`; an alias or a
 //     function; a string kept in an environment variable and expanded later;
-//   - a PowerShell started by something that is not a shell or a wrapper
-//     listed under ALWAYS REFUSED - `Start-Process -ArgumentList`, `ssh`,
-//     `docker exec`, `xargs`, `find -exec`, a task runner - or inside a quoted
-//     string whose role is not known (only its explicit forms are read
-//     there, not a pipe or a redirection into it);
+//   - an encoded or stdin PowerShell script whose text the ALWAYS REFUSED
+//     rule does not see: `powershell` / `pwsh` or the parameter spelled with
+//     character-code escapes (`$'\x70wsh'`) or brace expansion
+//     (`pw{s..s}h`); `Start-Process -ArgumentList`; a PowerShell started on
+//     another machine or in a container (`ssh`, `docker exec`); a script
+//     assembled from variables or read from a file;
 //   - a refspec that lives in configuration: `remote.<name>.push`,
 //     `push.default = matching`, `branch.<n>.merge`;
 //   - other merge APIs: `gh api graphql` with `mergePullRequest`, `gh repo
@@ -1138,366 +1144,68 @@ function gateWordFallback(text, reason) {
 // --------------------------------------------------------------------------
 // Always refused: a PowerShell script the gate cannot read (H-52)
 // --------------------------------------------------------------------------
-// See ALWAYS REFUSED in the header. The command is split into segments and
-// words with quotes, escapes and operators taken into account; only a
-// PowerShell executable in COMMAND POSITION of a segment has its arguments
-// read, the way PowerShell's own command line parser reads them: a
-// parameter, possibly followed by its value, until `-Command` / `-File` / the
-// first positional word, after which the rest is script text or script
-// arguments. Script text handed to a shell (`bash -c <script>`,
-// `cmd /c <rest>`, `powershell -Command <script>`) is read the same way, its
-// standard input included. Any other quoted string is read too, but only
-// for an explicit encoded or `-` parameter: whether it is ever run, and with
-// what as its input, is not known - a search pattern such as
-// "powershell|pwsh" is not a pipe.
-const UNREADABLE_PS = 'An encoded or stdin PowerShell script cannot be read by the quality gate, so it is refused whether or not it pushes or merges. Run the command as plain text instead.';
-// The executable's base name: `powershell`, `pwsh`, `pwsh-preview`,
-// `powershell_ise`, with or without `.exe`.
-const PS_NAME_RE = /^(?:powershell|pwsh)(?:[-_.].*)?(?:\.exe)?$/i;
-const POSIX_SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'yash', 'fish']);
-// Commands that run the next word as a command, with the options that take a
-// value (`positionals`: words to pass over before the command, `timeout 5`).
-const WRAPPERS = {
-  sudo: { values: ['-u', '-g', '-C', '-D', '-h', '-p', '-r', '-t', '-U', '-T', '--user', '--group', '--chdir', '--host', '--prompt', '--role', '--type', '--other-user', '--command-timeout'] },
-  doas: { values: ['-u', '-C'] },
-  env: { values: ['-u', '-C', '--unset', '--chdir', '-S', '--split-string'] },
-  nohup: {}, command: {}, builtin: {}, call: {}, '.': {}, '&': {}, busybox: {},
-  time: { values: ['-f', '-o', '--format', '--output'] },
-  exec: { values: ['-a'] },
-  nice: { values: ['-n', '--adjustment'] },
-  timeout: { values: ['-s', '-k', '--signal', '--kill-after'], positionals: 1 },
-  stdbuf: { values: ['-i', '-o', '-e', '--input', '--output', '--error'] },
-  wsl: { values: ['-d', '--distribution', '-u', '--user', '--cd', '--shell-type'] },
-  start: { slashOptions: true },
-};
-// `/`, a dash (also U+2013-U+2015), or the same dash twice (pwsh 7).
-const PS_PARAM_RE = /^(?:\/|([-\u2013\u2014\u2015])\1?)([^]*)$/;
-const PS_DASHES = new Set(['-', '\u2013', '\u2014', '\u2015']);
-const isLeadOf = (name, full, min = 1) => name.length >= min && full.startsWith(name);
-const isEncodedParam = (name) => name === 'ec' || isLeadOf(name, 'encodedcommand');
-const isCommandParam = (name) => name === 'cwa' || isLeadOf(name, 'command')
-  || isLeadOf(name, 'commandwithargs', 15);
-const isFileParam = (name) => isLeadOf(name, 'file');
-// The switches both powershell.exe 5.1 and pwsh 7 read without a value, by
-// their shortest accepted spelling. Any other parameter may take the next
-// word as its value, so that word is not read as the first positional one.
-const PS_SWITCHES = [['noexit', 3], ['noprofile', 3], ['nologo', 3], ['noninteractive', 4], ['sta', 3], ['mta', 3]];
-const isSwitchParam = (name) => PS_SWITCHES.some(([full, min]) => isLeadOf(name, full, min));
+// See ALWAYS REFUSED in the header. A text rule, read the same wherever the
+// words sit: nothing here parses the command.
+const UNREADABLE_PS = 'An encoded or stdin PowerShell script cannot be read by the quality gate, so it is refused whether or not it pushes or merges. Run the script as plain text instead. This check reads the command text only: if the command merely mentions PowerShell (a search term, a message) or pipes something earlier in the same command before running a PowerShell script, rerun it without the PowerShell text, or split it into separate commands.';
+// Removed before reading: a `$` right before a quote (`$'...'`), then quote
+// characters (ASCII and U+2018-U+201E), backticks and carets.
+const DOLLAR_QUOTE_RE = /\$(?=['"\u2018-\u201E])/g;
+const NOISE_RE = /['"\u2018-\u201E`^]/g;
+// A token: an input redirection (`<`, `0<`, `<<`, `<<<`, `<&`, `<(`), an
+// output process substitution (`>(`), one of `| & ; > ( ) { }`, or a run of
+// other characters up to a blank (`\s`: CR, LF, tab and NBSP included) or one
+// of those.
+const TOKEN_RE = /\d*<+[&(]?|>\(|[|&;>(){}]|[^\s|&;<>(){}]+/g;
+// Tokens through which a PowerShell may be given its input.
+const feedsInput = (token) => token.includes('<') || token === '>(' || token === 'coproc';
+// `powershell`, `pwsh`, `pwsh-preview`, `powershell_ise`, `pwsh-7.4`, with or
+// without `.exe`, and the Windows short name `powers~1.exe` (the text is
+// already in lower case).
+const PS_NAME_RE = /^(?:(?:powershell|pwsh)(?:[-_.][a-z0-9_.-]*)?|powers~[0-9]+)(?:\.exe)?$/;
+// A parameter: one or two of `-`, `/`, U+2013-U+2015, its name, `:value`.
+const PS_PARAM_RE = /^[-\/\u2013-\u2015]{1,2}([a-z]+)(?::.*)?$/;
+// A script read from standard input: a lone dash, or a parameter given `:-`.
+const PS_STDIN_RE = /^[-\u2013-\u2015]$|^[-\/\u2013-\u2015]{1,2}[a-z]+:[-\u2013-\u2015]$/;
 
-// Quote characters (ASCII and the typographic ones PowerShell reads as
-// quotes) and the escape characters of the three shells.
-const SINGLE_QUOTES = "'\u2018\u2019\u201A\u201B";
-const DOUBLE_QUOTES = '"\u201C\u201D\u201E';
-const ESCAPES = '\\`^';
-const NAME_NOISE_RE = /['"\u2018-\u201E\\`^]/g;
-const normalizeWord = (value) => value.replace(NAME_NOISE_RE, '');
-const baseName = (value) => value.split(/[\\/]/).pop();
-// The name a command word runs, lower case, for both readings of `\`: a
-// Windows path separator (`C:\...\pwsh.exe`) and a POSIX escape (`pw\sh`).
-function commandNames(value) {
-  const names = [normalizeWord(baseName(value)), baseName(normalizeWord(value))];
-  return [...new Set(names.map((n) => n.toLowerCase()))];
+// The last component after `/`, `=` or `:` (a path, `NAME=pwsh`,
+// `-Shell:pwsh`); after `/`, also without a leading `c` or `k`, for cmd's
+// `/c` and `/k` glued to the command (`cmd /cpwsh`).
+function isPowerShellToken(token) {
+  const parts = token.split(/[/=:]/);
+  const last = parts[parts.length - 1];
+  return PS_NAME_RE.test(last) || (parts.length > 1 && /^[ck]/.test(last) && PS_NAME_RE.test(last.slice(1)));
 }
 
-class ScanBudget extends Error {}
-const SCAN_BUDGET = 4 * 1024 * 1024; // Characters read, over all levels.
-const SCAN_DEPTH = 8; // Quoted or handed-on script text, nested.
+// `ec`, or any leading part of `encodedcommand` from `e`.
+function isEncodedParam(token) {
+  const m = PS_PARAM_RE.exec(token);
+  return m !== null && (m[1] === 'ec' || 'encodedcommand'.startsWith(m[1]));
+}
 
-// Split `text` into segments of words. A word is { value, start, quoted }
-// (`value` without its quote delimiters, escape characters kept; `quoted`:
-// the contents of its quoted parts). A segment ends at a newline, `;`, `|`,
-// `||`, `&`, `&&`, a parenthesis or a brace; `stdin` is set when it is piped
-// into (`|`, `|&`) or has its input redirected (`<`, `0<`, `<<`, `<<<`,
-// anywhere in it). Redirection targets are not words. An escape character
-// joins a following blank or quote to the word (except cmd's `^`, whose
-// blank still separates for the program it starts) but never hides an
-// operator, and with a line break it is a line continuation. A backtick
-// that starts a word also starts a POSIX command substitution, collected in
-// `subs`.
-function lexSegments(text, budget) {
-  const segments = [];
-  const subs = [];
-  let seg = { words: [], stdin: false, end: text.length };
-  let word = null; // { value, start, quoted }
-  let target = false; // The next word is a redirection target.
-  const finishWord = () => {
-    if (word) {
-      if (!target) seg.words.push(word);
-      target = false;
-    }
-    word = null;
-  };
-  const finishSegment = (end, pipedNext) => {
-    finishWord();
-    target = false;
-    seg.end = end;
-    segments.push(seg);
-    seg = { words: [], stdin: pipedNext, end: text.length };
-  };
-  const charge = (n) => {
-    budget.left -= n;
-    if (budget.left < 0) throw new ScanBudget();
-  };
-  const begin = (i) => {
-    if (!word) word = { value: '', start: i, quoted: [] };
-  };
-  let i = 0;
-  while (i < text.length) {
-    charge(1);
-    const ch = text[i];
-    const next = text[i + 1];
-    if (ESCAPES.includes(ch) && (next === '\n' || (next === '\r' && text[i + 2] === '\n'))) {
-      i += next === '\n' ? 2 : 3; // A line continuation.
-      continue;
-    }
-    if (ch === ' ' || ch === '\t') {
-      finishWord();
-      i++;
-    } else if (ch === '\n' || ch === '\r' || ch === ';' || '(){}'.includes(ch)) {
-      finishSegment(i, false);
-      i++;
-    } else if (ch === '|') {
-      if (next === '|') {
-        finishSegment(i, false);
-        i += 2;
-      } else {
-        finishSegment(i, true);
-        i += next === '&' ? 2 : 1;
-      }
-    } else if (ch === '&' && next === '>') {
-      finishWord();
-      i += text[i + 2] === '>' ? 3 : 2;
-      target = true;
-    } else if (ch === '&') {
-      if (next === '&') {
-        finishSegment(i, false);
-        i += 2;
-      } else if (!word && seg.words.length === 0) {
-        i++; // PowerShell's call operator, or the `&` of `|&`.
-      } else {
-        finishSegment(i, false);
-        i++;
-      }
-    } else if (ch === '<' || ch === '>') {
-      // A file descriptor written before it (`0<`, `2>`, `*>`) is not a word.
-      if (word && word.quoted.length === 0 && /^(?:\d+|\*)$/.test(word.value)) word = null;
-      finishWord();
-      if (ch === '<') seg.stdin = true;
-      i++;
-      while (i < text.length && text[i] === ch) i++; // `<<`, `<<<`, `>>`.
-      if (i < text.length && (text[i] === '&' || (ch === '>' ? text[i] === '|' : text[i] === '-' || text[i] === '>'))) i++;
-      target = true;
-    } else if (SINGLE_QUOTES.includes(ch) || DOUBLE_QUOTES.includes(ch)) {
-      begin(i);
-      const closers = SINGLE_QUOTES.includes(ch) ? SINGLE_QUOTES : DOUBLE_QUOTES;
-      let content = '';
-      i++;
-      while (i < text.length && !closers.includes(text[i])) {
-        charge(1);
-        if (closers === DOUBLE_QUOTES && (text[i] === '\\' || text[i] === '`') && DOUBLE_QUOTES.includes(text[i + 1])) i++;
-        content += text[i++];
-      }
-      i++; // The closing quote (or the end of an unterminated string).
-      word.value += content;
-      word.quoted.push(content);
-    } else if (ESCAPES.includes(ch)) {
-      if (ch === '`' && !word) {
-        const close = text.indexOf('`', i + 1);
-        subs.push(text.slice(i + 1, close === -1 ? text.length : close));
-      }
-      if (ch === '^' && (next === ' ' || next === '\t')) {
-        i++; // cmd drops it; the blank still separates.
-        continue;
-      }
-      begin(i);
-      word.value += ch;
-      i++;
-      if (ch !== '^' && next !== undefined && (next === ' ' || next === '\t' || SINGLE_QUOTES.includes(next) || DOUBLE_QUOTES.includes(next) || ESCAPES.includes(next))) {
-        word.value += next;
-        i++;
-      }
-    } else {
-      begin(i);
-      word.value += ch;
-      i++;
-    }
+// One normalized reading of the command.
+function unreadablePsIn(text) {
+  const tokens = text.match(TOKEN_RE) || [];
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (!isPowerShellToken(tokens[i])) continue;
+    if (first === -1) first = i;
+    last = i;
   }
-  finishSegment(text.length, false);
-  return { segments: segments.filter((s) => s.words.length > 0 || s.stdin), subs };
-}
-
-// Whether running `text` (a whole command, or script text handed to a shell)
-// may run a PowerShell script the gate cannot read. `strong`: the text is
-// known to run, so a PowerShell reading standard input counts; `stdin`: the
-// first segment's input is piped or redirected from outside the text.
-function scanUnreadable(text, strong, stdin, depth, budget) {
-  if (depth > SCAN_DEPTH) throw new ScanBudget();
-  const { segments, subs } = lexSegments(text, budget);
-  for (const sub of subs) if (scanUnreadable(sub, false, false, depth + 1, budget)) return true;
-  for (let s = 0; s < segments.length; s++) {
-    const seg = segments[s];
-    const handed = new Set(); // Words read as script text already.
-    if (segmentUnreadable(seg, text, strong, (s === 0 && stdin) || seg.stdin, handed, depth, budget)) return true;
-    for (let w = 0; w < seg.words.length; w++) {
-      if (handed.has(w)) continue;
-      for (const quoted of seg.words[w].quoted) {
-        if (quoted && scanUnreadable(quoted, false, false, depth + 1, budget)) return true;
-      }
-    }
+  if (first === -1) return false;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (feedsInput(token)) return true; // Input redirected, anywhere.
+    if (token === '|' && i < last) return true; // Input may flow into a PowerShell.
+    if (i > first && (PS_STDIN_RE.test(token) || isEncodedParam(token))) return true;
   }
   return false;
-}
-
-// Find the segment's command word (past `NAME=value` and the WRAPPERS) and
-// read it if it is PowerShell, or a shell handed script text.
-function segmentUnreadable(seg, text, strong, stdin, handed, depth, budget) {
-  const words = seg.words;
-  let k = 0;
-  while (k < words.length) {
-    const value = words[k].value;
-    if (ASSIGNMENT_RE.test(text.slice(words[k].start, words[k].start + 256))) {
-      k++;
-      continue;
-    }
-    const names = commandNames(value);
-    if (names.some((n) => PS_NAME_RE.test(n))) {
-      return psUnreadable(words, k + 1, strong, stdin, handed, depth, budget);
-    }
-    const plain = names.map((n) => n.replace(/\.exe$/, ''));
-    const wrapper = plain.map((n) => WRAPPERS[n]).find(Boolean);
-    if (wrapper) {
-      k = skipWrapperOptions(words, k + 1, wrapper);
-      continue;
-    }
-    if (plain.some((n) => POSIX_SHELLS.has(n))) return shellUnreadable(words, k + 1, stdin, handed, depth, budget);
-    if (plain.includes('cmd')) return cmdUnreadable(seg, text, k + 1, stdin, handed, depth, budget);
-    return false;
-  }
-  return false;
-}
-
-const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/; // `NAME=value`, the name unquoted.
-
-function skipWrapperOptions(words, k, wrapper) {
-  let positionals = wrapper.positionals || 0;
-  let titleSeen = false;
-  while (k < words.length) {
-    const w = normalizeWord(words[k].value);
-    if (w === '--') return k + 1;
-    if (wrapper.slashOptions && w.startsWith('/')) {
-      k++;
-    } else if (wrapper.slashOptions && !titleSeen && words[k].quoted.length > 0) {
-      titleSeen = true; // `start "title" <command>`.
-      k++;
-    } else if (w.startsWith('-') && w.length > 1) {
-      k += (wrapper.values || []).includes(w) ? 2 : 1;
-    } else if (ASSIGNMENT_RE.test(w)) {
-      k++;
-    } else if (positionals > 0) {
-      positionals--;
-      k++;
-    } else {
-      return k;
-    }
-  }
-  return k;
-}
-
-// `bash -c <script>`, `sh -lc <script>`, `bash -o pipefail -c <script>`.
-function shellUnreadable(words, k, stdin, handed, depth, budget) {
-  for (; k < words.length; k++) {
-    const w = normalizeWord(words[k].value);
-    if (w === '--' || !/^[-+]/.test(w)) return false; // A script file.
-    if (/^[-+]o$/.test(w) || w === '--rcfile' || w === '--init-file') {
-      k++;
-    } else if (/^-[A-Za-z]*c[A-Za-z]*$/.test(w)) {
-      if (k + 1 >= words.length) return false;
-      handed.add(k + 1);
-      return scanUnreadable(words[k + 1].value, true, stdin, depth + 1, budget);
-    }
-  }
-  return false;
-}
-
-// `cmd /c <rest>`, `cmd /s /k "<rest>"`, `cmd /c<rest>`: the rest of the
-// segment's text, one pair of outer quotes dropped as cmd does.
-function cmdUnreadable(seg, text, k, stdin, handed, depth, budget) {
-  for (; k < seg.words.length; k++) {
-    if (!/^\/[ck]/i.test(normalizeWord(seg.words[k].value))) continue;
-    const raw = text.slice(seg.words[k].start, seg.end);
-    let rest = raw.slice(raw.search(/\/[ck]/i) + 2).trim();
-    if (rest.startsWith('"')) {
-      const last = rest.lastIndexOf('"');
-      rest = last > 0 ? rest.slice(1, last) + rest.slice(last + 1) : rest.slice(1);
-    }
-    for (let w = k; w < seg.words.length; w++) handed.add(w);
-    return scanUnreadable(rest, true, stdin, depth + 1, budget);
-  }
-  return false;
-}
-
-// Whether a PowerShell started with words[k..] as its arguments runs a script
-// it was not given as readable text.
-function psUnreadable(words, k, strong, stdin, handed, depth, budget) {
-  let valueMayFollow = false;
-  for (; k < words.length; k++) {
-    const w = normalizeWord(words[k].value);
-    if (w === '') continue; // A lone escape character (`powershell ^ -e`).
-    if (PS_DASHES.has(w)) return true; // `powershell -`: the script from stdin.
-    const m = PS_PARAM_RE.exec(w);
-    if (!m || w === '/') {
-      if (valueMayFollow) {
-        valueMayFollow = false;
-        continue;
-      }
-      if (commandNames(words[k].value).some((n) => PS_NAME_RE.test(n))) {
-        stdin = false; // `powershell -NoProfile pwsh ...`: read the inner one's arguments.
-        continue;
-      }
-      // The first positional word: the script text (5.1) or a script file
-      // (7) starts here, and what follows is not a parameter of PowerShell.
-      for (let rest = k; rest < words.length; rest++) handed.add(rest);
-      return scanUnreadable(words.slice(k).map((x) => x.value).join(' '), true, false, depth + 1, budget);
-    }
-    const lower = m[2].toLowerCase();
-    const colon = lower.indexOf(':');
-    const name = colon === -1 ? lower : lower.slice(0, colon);
-    const attached = colon === -1 ? null : w.slice(w.length - (lower.length - colon - 1));
-    if (isEncodedParam(name)) return true;
-    if (isFileParam(name)) {
-      const value = attached !== null ? attached : nextValue(words, k + 1);
-      return value !== null && PS_DASHES.has(value);
-    }
-    if (isCommandParam(name)) {
-      if (attached !== null) return PS_DASHES.has(attached);
-      const first = words.findIndex((x, j) => j > k && normalizeWord(x.value) !== '');
-      if (first === -1) return false;
-      if (PS_DASHES.has(normalizeWord(words[first].value))) return true;
-      for (let rest = first; rest < words.length; rest++) handed.add(rest);
-      return scanUnreadable(words.slice(first).map((x) => x.value).join(' '), true, false, depth + 1, budget);
-    }
-    valueMayFollow = attached === null && !isSwitchParam(name);
-  }
-  return strong && stdin; // No command and no file: PowerShell runs its input.
-}
-
-function nextValue(words, k) {
-  for (; k < words.length; k++) {
-    const w = normalizeWord(words[k].value);
-    if (w !== '') return w;
-  }
-  return null;
 }
 
 function alwaysDeny(text) {
-  const scan = Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES
-    ? text
-    : maskMessages(stripTrailingOutput(text)) ?? text;
-  try {
-    if (scanUnreadable(scan, true, false, 0, { left: SCAN_BUDGET })) return deny('2', UNREADABLE_PS);
-  } catch (e) {
-    if (e instanceof ScanBudget) return deny('2', UNREADABLE_PS); // Too crowded or nested to read.
-    throw e;
+  const plain = text.toLowerCase().replace(DOLLAR_QUOTE_RE, '').replace(NOISE_RE, '');
+  for (const reading of [plain.replace(/\\/g, ''), plain.replace(/\\/g, '/')]) {
+    if (unreadablePsIn(reading)) return deny('2', UNREADABLE_PS);
   }
   return null;
 }
