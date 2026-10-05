@@ -83,6 +83,8 @@
 - [ ] XSS protection (output escaping)
 - [ ] No sensitive data leaked to client-side
 - [ ] No API keys or secrets hardcoded
+- [ ] Server Actions and Route Handlers check authentication and per-resource authorization inside the handler (a Server Action is a public endpoint; middleware alone is not the guard)
+- [ ] Server-only modules import `server-only` so a Client Component import fails the build
 
 ### 9. Testing
 

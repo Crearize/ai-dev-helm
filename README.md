@@ -783,7 +783,7 @@ your-project/
 | ファイル | 内容 |
 |---------|------|
 | **review-prompt.md** | レビューのメタガイド。変更ファイルに応じて該当するガイドのみ適用する。出力は指摘事項のみ（通過した項目は非表示）。Must-Fix / Recommended / Minor / Good Points の 4 段階で分類 |
-| **review-backend.md** | バックエンド固有の観点。Google Java Style Guide 準拠、Spring Boot のアノテーション・DI・`@Transactional` の正しい使い方、ORM/クエリ最適化（N+1、インデックス）、DB マイグレーションルール、セキュリティ（Spring Security、JWT、IDOR、CORS）、テストカバレッジ（80%+ ライン、90%+ ビジネスロジック） |
+| **review-backend.md** | バックエンド固有の観点。スタックで中身が違う。java-springboot: Google Java Style Guide 準拠、Spring Boot のアノテーション・DI・`@Transactional` の正しい使い方、ORM/クエリ最適化（N+1、インデックス）、DB マイグレーションルール、セキュリティ（Spring Security、JWT、IDOR、CORS）、テストカバレッジ（80%+ ライン、90%+ ビジネスロジック）。nextjs-react 単独: Node/TypeScript のサーバー側（Route Handlers・Server Actions の入力検証と認可、mass assignment、`server-only` と `NEXT_PUBLIC_*`、キャッシュと再検証、DB アクセス、ログ）。両方を選ぶと java-springboot 版を配る |
 | **review-frontend.md** | フロントエンド固有の観点。TypeScript strict mode 必須、Server/Client Component の適切な選択、React Hook Form + Zod でのバリデーション、TanStack Query の設定（staleTime/gcTime）、パフォーマンス最適化（不要な再レンダリング防止、バンドルサイズ）、アクセシビリティ（WCAG 2.1 AA: コントラスト比 4.5:1、キーボード操作、セマンティック HTML） |
 | **review-docs.md** | ドキュメントレビューの観点。構造の一貫性（見出しレベル、目次）、技術的正確性（コード例の動作確認、リンク切れ）、CLAUDE.md との整合性、DB 設計ドキュメント（テーブル定義、インデックス、外部キー） |
 | **review-infra.md** | インフラ/CI レビューの観点。GitHub Actions（バージョン固定、timeout 設定、最小権限、シークレット管理）、Docker（マルチステージビルド、非 root ユーザー、ヘルスチェック）、ビルド設定（依存バージョン固定、脆弱性チェック）、セキュリティ（ハードコード秘密鍵の検出、CORS/SSL 設定） |

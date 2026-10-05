@@ -21,6 +21,8 @@
 - [ ] Validation failures return a 4xx with a safe message (not a thrown 500)
 - [ ] Types are derived from the schema (`z.infer`), not duplicated by hand
 - [ ] File uploads: size, type, and count limits enforced
+- [ ] No mass assignment: request bodies / `Object.fromEntries(formData)` are not passed to the ORM `data` as-is; writable fields are listed explicitly (e.g., not `role` / `ownerId`)
+- [ ] Outbound requests to user-supplied URLs use an allowlist (SSRF); redirects to user-supplied targets are validated (open redirect); user input never forms a filesystem path
 
 ### 2. Authentication and Authorization
 
@@ -43,7 +45,7 @@
 ### 4. Database Access
 
 - [ ] Parameterized queries or a type-safe query builder / ORM only; no SQL built with string concatenation or template literals around user input
-- [ ] Raw query APIs (`$queryRawUnsafe` and similar) are not used with user input
+- [ ] Raw query APIs (`$queryRawUnsafe`, `$executeRawUnsafe`, `Prisma.raw`, `sql.raw` and similar) are not used with user input
 - [ ] N+1 avoided (`include` / join / batch fetch / DataLoader)
 - [ ] Multi-step writes that must succeed together run in one transaction
 - [ ] No `SELECT *` or over-fetching; only the needed columns are returned
@@ -92,6 +94,8 @@
 - [ ] Test names are descriptive; given-when-then pattern used
 - [ ] Mocking limited to external dependencies (DB, external API)
 - [ ] Tests independent of execution order
+- [ ] Tests are based on functional requirements (specification-based), not on internal state
+- [ ] Dependency vulnerabilities checked (`npm audit` / the project's `audit:prod`) when dependencies change
 
 ### 10. Static Analysis
 
