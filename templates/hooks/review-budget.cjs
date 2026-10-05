@@ -327,7 +327,13 @@ function main() {
   }
   const chunks = [];
   let size = 0;
-  process.stdin.on('data', (chunk) => { size += chunk.length; if (size <= 1024 * 1024) chunks.push(chunk); });
+  // Keep the first 1 MiB even when a single chunk is larger (Windows pipes can deliver the whole input at once),
+  // so an oversized PostToolUse payload can still be recognised below.
+  process.stdin.on('data', (chunk) => {
+    const room = 1024 * 1024 - Math.min(size, 1024 * 1024);
+    if (room > 0) chunks.push(chunk.subarray(0, room));
+    size += chunk.length;
+  });
   process.stdin.on('end', () => {
     const raw = Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
     let parsed = false;
