@@ -141,6 +141,7 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）が�
 - **提示のうえ見送り、または `none` のため未提示**（`user_decision` が `"declined"` / `"not_proposed"`）: `executed: false`・`reason: null` とし、`recommendation` / `recommendation_basis` / `user_decision`（`"declined"` の場合は `decline_reason` も）を記録する。実行時フィールド（`scope` 以下）は省略する。
 - **実施と決まった（自動実施を含む）が計測が一切得られなかった**（`reason` が `empty_scope` / `scope_error` / `tool_error`）: `executed: false` とし、`recommendation` / `recommendation_basis` / `user_decision: "executed"` を記録する。実行時フィールドは省略してよい。
 - **実施と決まって実行したがバジェット内に完走しなかった（部分結果あり）**: `executed: true`・`aborted_reason: "unmeasurable_within_budget"` とし、部分結果（`score_raw` 等）と台帳（`survivors`）を記録する。計測が一切得られなかった場合はこのケースではなく `executed: false` / `reason: "tool_error"` を記録する。
+- **確認待ち**（順序 B で返答を待つ間）: `executed: false`・`reason: null` とし、`recommendation` / `recommendation_basis` を記録し、`user_decision` と `decided_by` は `null`（e2e は `result: "skipped"`）。返答の後に該当するケースで書き直す。
 - **実行が完了した**（`executed: true`）: `reason: null` とし、`recommendation` / `recommendation_basis` / `user_decision: "executed"` と実行時フィールド（`scope` 以下）を記録する。
 
 トリアージ・生存の対処（その場でテスト追加 / 台帳に持ち越し / 対処不要。既定の規則で AI が決める）は quality-policy.md §2 および `test-recommendation` SKILL.md を正とする。**通過判定はなく、いずれの選択もフラグ作成をブロックしない。**

@@ -184,7 +184,7 @@ function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
     const allowed = ceiling({ limit: effectiveLimit }, extensions, phase);
     if (group.rounds.length >= allowed) {
       const extend = `run extend yourself (extend --phase ${phase} --rounds <1-3> --reason "<the owner's approval, quoted>") and then reserve again`;
-      // After the design approval only the final quality gate and the design itself stop for the owner (development-policy §1.0).
+      // OWNER_STOP_PHASES wait for the owner; plan and mutation record the rest and continue (development-policy §1.0).
       if (OWNER_STOP_PHASES.includes(phase)) {
         throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); report the remaining findings to the owner. If the owner approves another round, ${extend}`);
       }
