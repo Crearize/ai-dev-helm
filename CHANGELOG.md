@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0](https://github.com/Crearize/ai-dev-helm/compare/v3.3.0...v3.4.0) (2026-10-05)
+
+
+### Added
+
+* **harness:** approve the design once and run strong, small additional tests without asking ([#192](https://github.com/Crearize/ai-dev-helm/issues/192)) ([354993c](https://github.com/Crearize/ai-dev-helm/commit/354993c50dea404e89bcd74bc5a227c0d6ef1450))
+
+
+### Fixed
+
+* **harness:** open the order-B PR as an ordinary PR, not a draft ([#195](https://github.com/Crearize/ai-dev-helm/issues/195)) ([12fe3df](https://github.com/Crearize/ai-dev-helm/commit/12fe3df908e10fb5cbf86f558038b934642cf2d3))
+* **hooks:** reach the hook body without git in the Claude wrapper and harden review-budget ([#190](https://github.com/Crearize/ai-dev-helm/issues/190)) ([9f593c0](https://github.com/Crearize/ai-dev-helm/commit/9f593c0f1c890160171cd92876bfd44ae4a31b27))
+* **stacks:** ship a backend review guide for nextjs-react ([#191](https://github.com/Crearize/ai-dev-helm/issues/191)) ([ff4a225](https://github.com/Crearize/ai-dev-helm/commit/ff4a22552383934d3afd72c7c71826601d386bb6))
+
 ## [3.3.0](https://github.com/Crearize/ai-dev-helm/compare/v3.2.1...v3.3.0) (2026-10-03)
 
 
