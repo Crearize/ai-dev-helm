@@ -10,13 +10,13 @@
 | `total_cycles` | `number` | 必須 | 完了したサイクル総数（`cycle_extensions` による追加サイクルを含む） |
 | `cycle_abort_reason` | `"cycle_limit" \| "stagnation" \| "structural" \| null` | フェーズ2必須 [^lifecycle] | サイクルの打ち切り事由。`cycle_limit`: サイクル上限到達 / `stagnation`: 直前サイクルと同一の高指摘が再度残った（停滞検出）/ `structural`: 1サイクルで同一クラスの高指摘が閾値以上出た（構造的停滞 — quality-policy §5）。高/中指摘が解消して終了した場合は `null`。ユーザー承認で追加サイクルを実施し最終的に解消した場合も `null`（打ち切りの経緯は `cycle_extensions` に残る） |
 | `cycle_extensions` | `CycleExtension[]` | フェーズ2必須 [^lifecycle] | 上限到達・停滞後にユーザー承認で追加サイクルを実施した記録。なければ空配列（§ CycleExtension オブジェクト 参照） |
-| `e2e` | `E2E` | 必須 | Step 5（`test-recommendation` スキル）による E2E テストの提案・実行結果（quality-policy.md §2）。旧トップレベル `e2e_result` / `e2e_issues` を置き換える（§ E2E オブジェクト 参照） |
+| `e2e` | `E2E` | 必須 | Step 5（`test-recommendation` スキル）による E2E テストの判定・実行結果（quality-policy.md §2）。旧トップレベル `e2e_result` / `e2e_issues` を置き換える（§ E2E オブジェクト 参照） |
 | `documentation` | `Documentation` | 必須 | `feature-documentation` スキルの実行状況（Step 0） |
 | `self_improvement` | `SelfImprovement` | 任意 | 自己改善を実施した場合の記録。未実施なら省略でき、完了・通過条件にしない。旧レポートの値は保持する |
 | `risk_level` | `"high" \| "medium" \| "low"` | フェーズ2必須 [^lifecycle] | Step 1 で判定したリスクレベル。判定基準は `quality-policy.md` §1、レベル別のゲート強度は同 §2 を参照 |
 | `lint_cycles` | `number \| null` | フェーズ2必須 [^lifecycle] | 全サイクルを通じた Step 2 の AI 修正パスの累計（1パス = 静的チェックコマンド（`lint-scaffolding` 導入済みプロダクトでは `lint:all`、未導入では CLAUDE.md に登録されたコマンド）の実行 → AI による修正。各サイクルで最大1パス — quality-policy.md §5）。決定的自動修正のみで完結したパスは含めない。**Step 2 を実行しない領域（docs のみの変更等）では `null`** — `0`（実行したが AI 修正が不要だった）とは区別する。infra のみの変更では Step 2（該当ビルドコマンド）を実行する（`quality-check` SKILL.md 変更領域別ステップ適用テーブル） |
 | `lint_abort_reason` | `"oscillation" \| null` | フェーズ2必須 [^lifecycle] | Step 2 の打ち切り事由。`oscillation`: 同一ルール×同一ファイルの違反が確認パスで再発（振動検出 — ルール自体が不適切な可能性）。該当なし、および `lint_cycles` が `null`（Step 2 未実行）の場合は `null`。確認パスで残った違反は統合指摘（高）として `cycles[].findings` に `source: "lint"` で記録する |
-| `mutation` | `Mutation` | フェーズ2必須 [^lifecycle] | Step 5（`test-recommendation` スキル）によるミューテーションテストの提案・実行結果（quality-policy.md §2）。詳細は § Mutation オブジェクト を参照 |
+| `mutation` | `Mutation` | フェーズ2必須 [^lifecycle] | Step 5（`test-recommendation` スキル）によるミューテーションテストの判定・実行結果（quality-policy.md §2）。詳細は § Mutation オブジェクト を参照 |
 | `test_design` | `TestDesign` | フェーズ2必須 [^lifecycle] | Step 3 のテスト設計メモ（`test-design` スキル）との照合結果（quality-policy.md §4）。詳細は § TestDesign オブジェクト を参照 |
 | `gate_parameter_overrides` | `GateParameterOverrides \| null` | 必須（発生時） [^lifecycle] | ミューテーションテストの実行時間バジェットを既定値から上書きした場合の記録（quality-policy.md §2「上書きの契約」）。上書きがなければ `null`。**打ち切り承認を記録する `gate_override` とは別物**（詳細は § GateParameterOverrides オブジェクト を参照） |
 | `gate_override` | `GateOverride \| null` | 必須（発生時） [^lifecycle] | サイクル上限到達・停滞でサイクルを打ち切ったにもかかわらずユーザーの明示承認のもとで完了扱いとした場合の記録。該当がなければ `null`（quality-policy.md §5「打ち切り時のゲート挙動」/ §6）。最後のレビュー以降にコードの変更が無く、残った指摘を受け入れる場合専用（上限の後にコードを変えたなら `review-budget extend` で一巡を足してレビューを受ける）。**ゲートパラメータの上書きを記録する `gate_parameter_overrides` とは別物** |
@@ -50,7 +50,7 @@
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
-| `source` | `string` | 必須 | 指摘元。レビュアー名（例: "統合レビュアー"、"セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合の持ち越し不足分）。レビュアー名は `quality-check` SKILL.md Step 4「役割定義」表の名称と完全一致させる（`persona` と同じ）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの提案ベース工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
+| `source` | `string` | 必須 | 指摘元。レビュアー名（例: "統合レビュアー"、"セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合の持ち越し不足分）。レビュアー名は `quality-check` SKILL.md Step 4「役割定義」表の名称と完全一致させる（`persona` と同じ）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの追加テスト工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
 | `severity` | `"高" \| "中" \| "低"` | 必須 | 優先度 |
 | `sources` | `string[]` | 必須（新規） | この問題を検出した全ての元レビュアー・工程。統合時は配列の和集合を取り、代表の `source` も含める。旧記録は存在する情報だけで補う |
 | `adjudication` | `"confirmed" \| "false_positive" \| "unknown"` | 任意 | 根拠に照らした裁定。未判定・旧記録の欠落は `unknown`。確認した根拠は既存の `detail` に短く記す |
@@ -63,19 +63,20 @@
 
 ### E2E オブジェクト
 
-E2E テストは `test-recommendation` スキル（quality-policy.md §2）による**提案ベース**の追加テストであり、通過判定を持たない。唯一の例外は**実施して失敗した場合**で、実バグとして修正必須となる（追加テストで唯一のブロック要素。`quality-check` SKILL.md Step 5 / `test-recommendation` SKILL.md Step 4）。トップレベルの旧 `e2e_result` / `e2e_issues` を置き換える。
+E2E テストは `test-recommendation` スキル（quality-policy.md §2）が推奨度と範囲で**自動実施または確認**する追加テストであり、通過判定を持たない。唯一の例外は**実施して失敗した場合**で、実バグとして修正必須となる（追加テストで唯一のブロック要素。`quality-check` SKILL.md Step 5 / `test-recommendation` SKILL.md Step 4）。トップレベルの旧 `e2e_result` / `e2e_issues` を置き換える。
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | `recommendation` | `"strong" \| "recommended" \| "none" \| null` | 必須（判定した場合） | `test-recommendation` スキルの提案ヒューリスティクス判定結果（quality-policy.md §2 / `test-recommendation` SKILL.md Step 1）。判定自体を行っていない場合は `null` |
 | `recommendation_basis` | `string[]` | 必須（判定した場合） | 該当したヒューリスティクス項目（判定不能だった事実を含む — `test-recommendation` SKILL.md「判定不能の対象は `recommended` に倒す」）。`recommendation` が `null` の場合は空配列または省略 |
-| `user_decision` | `"executed" \| "declined" \| "added_only" \| "not_proposed" \| null` | 必須（判定した場合） | ユーザー判断。`executed`: 少なくとも1つのシナリオ（既存シナリオ経路、または `new_scenarios` の `added_and_run`）の実施を承認 / `declined`: 提示のうえ見送り（`decline_reason` 必須）/ `added_only`: 新規シナリオを追加したが実行は見送り（`result: "skipped"`・`new_scenarios[].decision: "added_only"` と整合させる）/ `not_proposed`: `recommendation` が `none` のため提示せず記録のみ。`recommendation` が `null` の場合は `null` |
+| `user_decision` | `"executed" \| "declined" \| "added_only" \| "not_proposed" \| null` | 必須（判定した場合） | 判断（自動実施を含む。誰が決めたかは `decided_by`）。`executed`: 少なくとも1つのシナリオ（既存シナリオ経路、または `new_scenarios` の `added_and_run`）を実施した（自動実施、または確認で実施と決まった）/ `declined`: 提示のうえ見送り（`decline_reason` 必須）/ `added_only`: 新規シナリオを追加したが実行は見送り（`result: "skipped"`・`new_scenarios[].decision: "added_only"` と整合させる）/ `not_proposed`: `recommendation` が `none` のため提示せず記録のみ。`recommendation` が `null` の場合は `null` |
+| `decided_by` | `"auto" \| "user" \| null` | 必須（`user_decision` が `executed` / `declined` / `added_only` の場合） | 誰が決めたか。`auto`: 自動実施の区分で AI が確認なしに実施した（`test-recommendation` SKILL.md Step 2）/ `user`: 確認の区分でユーザーが決めた / `null`: `not_proposed` または未判定。`auto` と `declined` の組み合わせは存在しない（自動実施の区分は必ず実施する）。1 つのオブジェクトの中で自動と確認が混ざる場合（E2E で既存シナリオは自動、新規導線は確認 等）は、一部でもユーザーが決めたら `user` とし、内訳を `recommendation_basis` に書く。**移行**: 3.3.0 以前のレポートにこのフィールドが無いことは不正ではない。読み手は欠落を `user` とみなす |
 | `decline_reason` | `string \| null` | 必須（判定した場合） | 見送り理由。`user_decision` が `"declined"` の場合のみ必須、それ以外は `null` |
 | `result` | `"pass" \| "fail" \| "skipped"` | 必須 | E2E テストの結果。`skipped`: `user_decision` が `"declined"` / `"added_only"` / `"not_proposed"`、または `new_scenarios` に `added_and_run` がなく既存シナリオも未実施の場合 / `pass` \| `fail`: 実施したシナリオ（既存シナリオ経路 + `added_and_run` の新規シナリオ）の結果。失敗が残ったまま記録してはならない — 失敗は `test-recommendation` SKILL.md Step 4 の手順で修正し、影響範囲を再検証した上での最終結果を記録する |
 | `issues` | `string[]` | 必須 | E2E で検出された問題（実施中に発見し修正したものを含む）。なければ空配列 |
 | `new_scenarios` | `NewScenario[]` | 必須 | 新規導線の検出でシナリオを起草した場合の記録（3択の判断を含む。§ NewScenario オブジェクト 参照）。該当がなければ空配列 |
 
-未判定・未提案の場合（`recommendation` が `null`）は `{ "recommendation": null, "recommendation_basis": [], "user_decision": null, "decline_reason": null, "result": "skipped", "issues": [], "new_scenarios": [] }` のように記録する。
+未判定・未提案の場合（`recommendation` が `null`）は `{ "recommendation": null, "recommendation_basis": [], "user_decision": null, "decided_by": null, "decline_reason": null, "result": "skipped", "issues": [], "new_scenarios": [] }` のように記録する。
 
 ### NewScenario オブジェクト
 
@@ -84,7 +85,7 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）に�
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | `scenario` | `string` | 必須 | 起草したシナリオの概要（対象の導線・画面がわかる表記） |
-| `decision` | `"added_and_run" \| "added_only" \| "declined"` | 必須 | ユーザー判断。`added_and_run`: シナリオ追加 + 実行 / `added_only`: シナリオ追加のみ（実行は見送り）/ `declined`: シナリオ追加自体を見送り |
+| `decision` | `"added_and_run" \| "added_only" \| "declined"` | 必須 | 判断（自動実施を含む）。`added_and_run`: シナリオ追加 + 実行 / `added_only`: シナリオ追加のみ（実行は見送り）/ `declined`: シナリオ追加自体を見送り |
 
 シナリオの見送り理由は永続台帳（`documents/development/test-recommendation-ledger.md`）に記録し、本オブジェクトには含めない（`test-recommendation` SKILL.md 記録節）。
 
@@ -113,15 +114,16 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）に�
 
 ### Mutation オブジェクト
 
-ミューテーションテストは `test-recommendation` スキル（quality-policy.md §2）による**提案ベース**の追加テストであり、通過判定を持たない。実施の見送り・実施後の生存ミュータントは**記録のみ・非ブロック**である（quality-policy.md §2 / §6）。
+ミューテーションテストは `test-recommendation` スキル（quality-policy.md §2）が推奨度と範囲で**自動実施または確認**する追加テストであり、通過判定を持たない。実施の見送り・実施後の生存ミュータントは**記録のみ・非ブロック**である（quality-policy.md §2 / §6）。
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | `executed` | `boolean` | 必須 | ミューテーションテストの実行を開始し、計測（部分結果を含む）が得られたか |
-| `reason` | `"not_configured" \| "out_of_scope" \| "empty_scope" \| "scope_error" \| "tool_error" \| null` | 必須 | **判定・実行そのものが不能だった理由に限る**（ユーザーが見送った・提示されなかった事実は `reason` ではなく `user_decision` 側で表現する）。`not_configured`: プロダクトにミューテーションテスト設定（Stryker / PIT）が存在せず提案自体を行わない / `out_of_scope`: 変更領域別ステップ適用テーブルで Step 3（ユニットテスト）が `-` の領域のため対象外（quality-policy.md §2 マトリクス優先順位原則）/ `empty_scope`: 差分スコープが空（変更が除外対象のみ・production クラスの変更なし・実行結果のミュータント数 0。正規シグナルは差分実行の終了コード 0 + 明示メッセージ）/ `scope_error`: 差分スコープの導出失敗（ベース ref 未解決等で差分実行が**非 0 終了** — `empty_scope` と記録してはならない。quality-policy.md §2「空スコープと導出失敗の区別」）/ `tool_error`: 実施を承認したがツールが起動できず、計測が一切得られなかった（`test-recommendation` SKILL.md「実行の失敗」）。`not_configured` / `out_of_scope` はヒューリスティクス判定自体を行わないため `recommendation` 以下のキーを省略する最小表現になる（下記）。`empty_scope` / `scope_error` / `tool_error` はユーザー承認を得て実行を試みた（`user_decision: "executed"`）が計測が得られなかった場合に記録する。`executed` が `true`、または `user_decision` が `"declined"` / `"not_proposed"` の場合は `null` |
+| `reason` | `"not_configured" \| "out_of_scope" \| "empty_scope" \| "scope_error" \| "tool_error" \| null` | 必須 | **判定・実行そのものが不能だった理由に限る**（ユーザーが見送った・提示されなかった事実は `reason` ではなく `user_decision` / `decided_by` 側で表現する）。`not_configured`: プロダクトにミューテーションテスト設定（Stryker / PIT）が存在せず提案自体を行わない / `out_of_scope`: 変更領域別ステップ適用テーブルで Step 3（ユニットテスト）が `-` の領域のため対象外（quality-policy.md §2 マトリクス優先順位原則）/ `empty_scope`: 差分スコープが空（変更が除外対象のみ・production クラスの変更なし・実行結果のミュータント数 0。正規シグナルは差分実行の終了コード 0 + 明示メッセージ）/ `scope_error`: 差分スコープの導出失敗（ベース ref 未解決等で差分実行が**非 0 終了** — `empty_scope` と記録してはならない。quality-policy.md §2「空スコープと導出失敗の区別」）/ `tool_error`: 実施と決まった（自動実施を含む）がツールが起動できず、解消手順を試しても計測が一切得られなかった（`test-recommendation` SKILL.md「実行の失敗」）。`not_configured` / `out_of_scope` はヒューリスティクス判定自体を行わないため `recommendation` 以下のキーを省略する最小表現になる（下記）。`empty_scope` / `scope_error` / `tool_error` は実施と決まって（自動実施を含む）実行を試みた（`user_decision: "executed"`）が計測が得られなかった場合に記録する。`executed` が `true`、または `user_decision` が `"declined"` / `"not_proposed"` の場合は `null` |
 | `recommendation` | `"strong" \| "recommended" \| "none" \| null` | 必須（判定した場合） | `test-recommendation` スキルの提案ヒューリスティクス判定結果（quality-policy.md §2 / `test-recommendation` SKILL.md Step 1）。`not_configured` / `out_of_scope` で判定自体を行っていない場合は `null` |
 | `recommendation_basis` | `string[]` | 必須（判定した場合） | 該当したヒューリスティクス項目（判定不能だった事実を含む — `test-recommendation` SKILL.md「判定不能の対象は `recommended` に倒す」）。`recommendation` が `null` の場合は空配列または省略 |
-| `user_decision` | `"executed" \| "declined" \| "not_proposed" \| null` | 必須（判定した場合） | ユーザー判断。`executed`: 実施を承認（結果が `empty_scope` / `scope_error` になった場合を含む）/ `declined`: 提示のうえ見送り（`decline_reason` 必須）/ `not_proposed`: `recommendation` が `none` のため提示せず記録のみ。`recommendation` が `null` の場合は `null` |
+| `user_decision` | `"executed" \| "declined" \| "not_proposed" \| null` | 必須（判定した場合） | 判断（自動実施を含む。誰が決めたかは `decided_by`）。`executed`: 実施した（自動実施、または確認で実施と決まった。結果が `empty_scope` / `scope_error` になった場合を含む）/ `declined`: 提示のうえ見送り（`decline_reason` 必須）/ `not_proposed`: `recommendation` が `none` のため提示せず記録のみ。`recommendation` が `null` の場合は `null` |
+| `decided_by` | `"auto" \| "user" \| null` | 必須（`user_decision` が `executed` / `declined` / `added_only` の場合） | 誰が決めたか。`auto`: 自動実施の区分で AI が確認なしに実施した（`test-recommendation` SKILL.md Step 2）/ `user`: 確認の区分でユーザーが決めた / `null`: `not_proposed` または未判定。`auto` と `declined` の組み合わせは存在しない（自動実施の区分は必ず実施する）。1 つのオブジェクトの中で自動と確認が混ざる場合（E2E で既存シナリオは自動、新規導線は確認 等）は、一部でもユーザーが決めたら `user` とし、内訳を `recommendation_basis` に書く。**移行**: 3.3.0 以前のレポートにこのフィールドが無いことは不正ではない。読み手は欠落を `user` とみなす |
 | `decline_reason` | `string \| null` | 必須（判定した場合） | 見送り理由。`user_decision` が `"declined"` の場合のみ必須、それ以外は `null` |
 | `scope` | `"changed_lines" \| "changed_classes" \| "changed_files"` | 任意 | 差分スコープの粒度。`changed_lines`: Stryker の変更行スコープ / `changed_classes`: PIT の変更クラススコープ / `changed_files`: 旧配線のままファイル単位で実行した場合の暫定値 — 計測結果の解釈に使ってはならない（quality-policy.md §2「差分スコープの定義」）。`executed` が `true` の場合は必須 |
 | `base_ref` | `string` | 任意 | 差分スコープの基準 ref（既定 `origin/main`。Step 1 の差分判定と同一でなければならない。`HEAD` は Step 1 の基幹になり得ないため無効 — 作業ツリーのみを測った実行は `executed` として記録しない）。`executed` が `true` の場合は必須 |
@@ -141,13 +143,13 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）に�
 - **承認して実行したがバジェット内に完走しなかった（部分結果あり）**: `executed: true`・`aborted_reason: "unmeasurable_within_budget"` とし、部分結果（`score_raw` 等）と台帳（`survivors`）を記録する。計測が一切得られなかった場合はこのケースではなく `executed: false` / `reason: "tool_error"` を記録する。
 - **実行が完了した**（`executed: true`）: `reason: null` とし、`recommendation` / `recommendation_basis` / `user_decision: "executed"` と実行時フィールド（`scope` 以下）を記録する。
 
-トリアージ・対処範囲（その場でテスト追加 / 台帳に持ち越し / 対処不要）の合意は quality-policy.md §2 および `test-recommendation` SKILL.md を正とする。**通過判定はなく、いずれの選択もフラグ作成をブロックしない。**
+トリアージ・生存の対処（その場でテスト追加 / 台帳に持ち越し / 対処不要。既定の規則で AI が決める）は quality-policy.md §2 および `test-recommendation` SKILL.md を正とする。**通過判定はなく、いずれの選択もフラグ作成をブロックしない。**
 
 > **上書きの契約**（quality-policy.md §2）: 実行時間バジェットの既定値からの上書きは `gate_parameter_overrides`（トップレベル、§ GateParameterOverrides オブジェクト 参照）に記録する。ハーネス設定ファイルに上書きの記載がなければ quality-policy.md の既定値が適用される。
 
 ### Survivor オブジェクト
 
-生存したミュータント1件の記録（`mutation.survivors`）。トリアージに通過判定はなく、対処範囲はユーザーと合意する（quality-policy.md §2 / `test-recommendation` SKILL.md）。
+生存したミュータント1件の記録（`mutation.survivors`）。トリアージに通過判定はなく、生存の対処は既定の規則で AI が決める（quality-policy.md §2 / `test-recommendation` SKILL.md）。
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
@@ -254,6 +256,7 @@ quality-policy.md §2「上書きの契約」に基づき、プロダクトの�
     "recommendation": "none",
     "recommendation_basis": ["バックエンドのみの変更"],
     "user_decision": "not_proposed",
+    "decided_by": null,
     "decline_reason": null,
     "result": "skipped",
     "issues": [],
@@ -316,6 +319,7 @@ High リスクの backend 変更で、`test-recommendation` スキル（Step 5�
     "recommendation": "strong",
     "recommendation_basis": ["既存 E2E シナリオの通過経路（画面・ルート・導線）に触れるフロント変更"],
     "user_decision": "executed",
+    "decided_by": "auto",
     "decline_reason": null,
     "result": "pass",
     "issues": [],
@@ -343,6 +347,7 @@ High リスクの backend 変更で、`test-recommendation` スキル（Step 5�
     "recommendation": "strong",
     "recommendation_basis": ["High リスク領域の中核ロジックのまとまった実装差分（認証・認可）"],
     "user_decision": "executed",
+    "decided_by": "auto",
     "decline_reason": null,
     "scope": "changed_lines",
     "base_ref": "origin/main",

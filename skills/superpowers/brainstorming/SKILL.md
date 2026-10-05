@@ -28,10 +28,10 @@ Exemption: a typo fix that involves no design choice, or an obviously correct ch
 
 None of these replaces the gate: your own self-check, a request to implement given before the design existed, a plan review, or the final quality-check. If the reservation is denied, follow the hook's message; ask the owner for approval only when a review limit is reached, then run extend yourself.
 
-Once the user approves, do not ask again when updating the spec or writing the plan.
+Once the user approves, do not ask again. The approval covers the spec update, the plan and its review, implementation, tests, documentation, quality-check, commits, feature-branch pushes and the PR (`documents/development/development-policy.md` §1.0 "承認後の進め方").
 
 ## After Approval
 
-Update the spec, if any, with the approved decisions. Use writing-plans when sequencing or handoff benefits from a plan; otherwise continue with implementation and appropriate tests. Preserve the independent final quality-check.
+Update the spec, if any, with the approved decisions. When implementation has to depart from the design, choose what best fits the design's intent and approved decisions, keep going, and record the deviation (what -> what you did / why / impact) in a final "## 実装時の差異" section of the spec (or the plan, or a working note) before quality-check creates its flag. Do not report or consult mid-way; the final message reports only the deviations. Stop mid-way only for the exceptions X1-X8 in that section; X4 (the design cannot reach its goal) asks once for the deviation design and, if no design-review round is left, one more round. Use writing-plans when sequencing or handoff benefits from a plan; otherwise continue with implementation and appropriate tests. Preserve the independent final quality-check.
 
 For decisions that benefit from browser mockups, use the optional [visual companion](visual-companion.md). Follow the user's existing preference and the guide's browser launch instructions.

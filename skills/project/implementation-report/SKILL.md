@@ -9,14 +9,15 @@ description: PR作成時に使用。実装レポート（計画との対応、�
 
 PR作成時に実装レポートを生成するスキル。`quality-check` スキル通過後、push → PR作成時に実行する（**feature ブランチへの push はゲートされない**。品質ゲートはマージ時および main への直接 push 時に `.quality-check-passed` を検証する）。
 
-実装計画と実際の変更差分を比較し、品質チェック結果・レビュー指摘への対応をまとめたレポートを生成する。
+承認済みの設計・実装計画と実際の変更差分を比較し、設計との差異・品質チェック結果・レビュー指摘への対応をまとめたレポートを生成する。チャットで伝えるのは設計との差異だけで（`documents/development/development-policy.md` §1.0「承認後の進め方」）、テスト結果やレビュー対応の詳細はこのレポート（PR 本文）に書く。
 
 ---
 
 ## 前提条件
 
 - `quality-check` スキルが完了し `.quality-check-report.json` が存在すること
-- `.quality-check-report.json` が見つからない場合はエラーとし、先に `quality-check` スキルを実行するよう促す。例外: 差分がハーネスのみの免除（quality-check「ハーネスのみ変更の免除」）に当たる場合はエラーにしない（Step 1 を参照）
+- `.quality-check-report.json` が見つからない場合はエラーとし、先に `quality-check` スキルを実行する（AI が実行する。ユーザーに促さない）。例外: 差分がハーネスのみの免除（quality-check「ハーネスのみ変更の免除」）に当たる場合はエラーにしない（Step 1 を参照）
+- **Step 5 の確認待ちで PR を作る場合**（`documents/development/development-policy.md` §1.0「承認後の進め方」 7 の順序 B）: quality-check はフラグ作成の前だが、`.quality-check-report.json` があれば PR を作ってよい。確認の対象は「確認待ち（判断は最後の 1 通）」と書く。返答を受けて実行・記録した後、レポートを再生成して PR 本文を更新する（`gh pr edit <n> --body-file <file>`）
 
 ---
 
@@ -46,16 +47,16 @@ Step 5: PR descriptionに実装レポートを含めてPR作成
 
 ---
 
-## Step 2: 実装計画ドキュメントを検索・参照
+## Step 2: 設計・実装計画ドキュメントを検索・参照
 
-`docs/superpowers/plans/` 配下の計画ドキュメントを検索し、現在のブランチ・Issue に関連する計画を特定する（Issue を使わない運用では、ブランチ名だけで探す）。
+`docs/superpowers/specs/` 配下の設計（spec）と `docs/superpowers/plans/` 配下の計画ドキュメントを検索し、設計の末尾の「## 実装時の差異」（無ければ計画の同じ節、作業メモ）を読む。現在のブランチ・Issue に関連する計画を特定する（Issue を使わない運用では、ブランチ名だけで探す）。
 
 - **計画ドキュメントが見つかった場合**: その内容を参照する
 - **見つからない場合**: 会話コンテキスト内の計画情報を使用し、レポートに「計画ドキュメント参照不可（会話コンテキストから生成）」と注記する
 
 ---
 
-## Step 3: 計画とGit変更差分を比較・判定
+## Step 3: 設計・計画とGit変更差分を比較・判定
 
 ```bash
 git diff origin/main...HEAD
@@ -66,7 +67,7 @@ git diff origin/main...HEAD
 | 判定 | 条件 |
 |------|------|
 | 計画通り | 計画に記載された変更内容がdiffに反映されている |
-| 差分あり | 計画と実際の変更に差異がある（追加・省略・変更） |
+| 差分あり | 設計・計画と実際の変更に差異がある（追加・省略・変更）。記録された「実装時の差異」と照らし、記録に無い差異があれば足す |
 
 ---
 
@@ -79,21 +80,21 @@ git diff origin/main...HEAD
 ```markdown
 ## 実装レポート
 
-### 計画との対応
+### 設計・計画との対応
 | Phase | 計画内容 | 状態 | 備考 |
 |-------|---------|------|------|
 | Phase N | [計画内容] | 計画通り / 差分あり | [備考] |
 
-### 計画からの差分
-- **Phase N**: [差分の説明]
+### 設計・計画との差異
+- なし / **[設計の該当箇所]** → [どうしたか] / 理由: [理由] / 影響: [影響]
 
 ### 品質チェック結果サマリ
 - リスクレベル: high / medium / low（`risk_level`）
 - 静的チェック AI 修正パス: N回（打ち切り事由: なし / oscillation）（`lint_cycles` / `lint_abort_reason`）
 - テスト設計メモ: verified / retroactive / out_of_scope / not_required（メモ: [パス] または なし）（`test_design.status` / `test_design.memo_path`）
-- ミューテーションテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、ユーザー判断 executed / declined / not_proposed（`mutation.recommendation` / `mutation.user_decision`）。`declined` の場合は見送り理由（`mutation.decline_reason`）を明記する。実施した場合はスコア N%（生スコア、参考情報。最後の実行がキャッシュを再利用した計測なら「incremental」と付記 — `mutation.incremental`）、実行 N回、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n / tool_false_negative n）（`mutation.score_raw` / `mutation.runs` / `mutation.survivors`）。判定・実行そのものが不能だった場合は理由（`mutation.reason`: not_configured / out_of_scope / empty_scope / scope_error / tool_error）
+- ミューテーションテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / not_proposed と判断者 auto / user（`mutation.recommendation` / `mutation.user_decision` / `mutation.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`mutation.decline_reason`）を明記する。実施した場合はスコア N%（生スコア、参考情報。最後の実行がキャッシュを再利用した計測なら「incremental」と付記 — `mutation.incremental`）、実行 N回、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n / tool_false_negative n）（`mutation.score_raw` / `mutation.runs` / `mutation.survivors`）。判定・実行そのものが不能だった場合は理由（`mutation.reason`: not_configured / out_of_scope / empty_scope / scope_error / tool_error）
 - 品質チェックサイクル数: N回（N回目で高/中指摘ゼロ達成 / 打ち切り事由: なし / cycle_limit / stagnation / 追加サイクル: N回）（`total_cycles` / `cycle_abort_reason` / `cycle_extensions`）
-- E2Eテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、ユーザー判断 executed / declined / added_only / not_proposed（`e2e.recommendation` / `e2e.user_decision`）。`declined` の場合は見送り理由（`e2e.decline_reason`）を明記する。結果: pass / fail / skipped、検出した問題（`e2e.result` / `e2e.issues`）。新規シナリオがある場合は `e2e.new_scenarios` の各件（シナリオ名と判断: added_and_run / added_only / declined）を明記する
+- E2Eテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / added_only / not_proposed と判断者 auto / user（`e2e.recommendation` / `e2e.user_decision` / `e2e.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`e2e.decline_reason`）を明記する。結果: pass / fail / skipped、検出した問題（`e2e.result` / `e2e.issues`）。新規シナリオがある場合は `e2e.new_scenarios` の各件（シナリオ名と判断: added_and_run / added_only / declined）を明記する
 - ドキュメント更新: updated / not_required（`documentation.status`、updated の場合は対象ファイル）
 - self-improvement: 実施した場合のみ `self_improvement.status` を記載。未実施なら省略（通常の完了条件ではない）
 

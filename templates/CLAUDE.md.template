@@ -19,9 +19,10 @@ Use skills when their applicability conditions match the work or the user reques
 - 1. One Issue, one branch.
 - 2. Every completed design gets an independent design review (normally one round - only a serious problem or a large design gets more), then the user reviews the design with the review results and approves it once before implementation starts. This review is why per-task review is unnecessary. Questions are batched into one message.
 - 3. The plan may be reviewed, but no user confirmation is required after that review (a design exists at this point).
+- After approval: the approval covers planning, implementation, documentation, quality-check, commits, feature-branch pushes and the PR - do not ask again. Record deviations from the design and report only those, in one final message. Mid-way stops are limited to the exceptions X1-X8 (`documents/development/development-policy.md` §1.0 "承認後の進め方").
 - 4-6. Choose parent implementation or delegation according to complexity and total effort; no in-development reviewer loops (design-intent conformance is checked at step 7).
 - 7. quality-check runs mechanical checks (build, tests, static checks) first; the review roster (integrated reviewer, falsification QA on code changes, at most one specialist) runs only after they pass, sized by the change content.
-- 8. The quality-gate hook blocks direct pushes/merges into main (or the trunk equivalent); a separate review-budget hook limits review rounds only. Mutation/E2E runs are proposed separately by quality-check Step 5 (`test-recommendation`), not by either hook.
+- 8. The quality-gate hook blocks direct pushes/merges into main (or the trunk equivalent); a separate review-budget hook limits review rounds only. Mutation/E2E runs are decided by quality-check Step 5 (`test-recommendation`), not by either hook: strongly recommended, small, side-effect-free runs execute without asking; the rest are asked in the final report.
 - Passing is judged from review and quality-check results - self-reported completion needs evidence attached.
 - Mandatory for every product that uses this harness.
 
@@ -58,14 +59,14 @@ Explore existing context first and batch the questions that are still needed int
 2. Send the user one message with the design, the review findings and how each was resolved.
 3. Stop until the user explicitly approves. A request to implement is not approval of a design that did not exist yet.
 
-This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again after writing the spec or reviewing the plan. The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
+This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again: the approval covers the spec update, plan and plan review, implementation, documentation, quality-check, commits, feature-branch pushes and the PR. Record deviations from the design and report only those in the final report (`documents/development/development-policy.md` §1.0 "承認後の進め方"). The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
 
 ### Plan Execution Rules
 
 1. Choose direct implementation or bounded delegation by total effort: planning, handoff, repeated exploration, integration and rework. A capable parent may implement small or medium tasks directly. Delegate independent work when parallelism or context isolation helps; delegation is not a completion requirement.
 2. Keep plans proportional: scope, affected contracts, independent test oracles and validation. Do not write the implementation twice as detailed plan code and then a transcription task. Local plan files under `docs/superpowers/plans/` are not committed; clean them up after merge.
 3. During implementation, use self-checks and tests. Final quality review belongs to `quality-check`; do not add per-task reviewer loops or a second whole-branch review. Design/plan document reviews follow quality-policy §5.5. Review depth follows risk and uncertainty; the current review roster is retained pending comparison.
-4. Respect user budgets. Estimate agent use when delegating; report a material overrun against the agreed budget. Resume interrupted agents after inspecting their committed/uncommitted work and restating ownership. Do not restore, stash or clean another task's files. One writing agent or session per worktree; see `worktree-parallel`.
+4. Respect user budgets. Estimate agent use when delegating; stay within a limit the user set explicitly (needing more is exception X4); report an overrun of an estimate in the final report. Resume interrupted agents after inspecting their committed/uncommitted work and restating ownership. Do not restore, stash or clean another task's files. One writing agent or session per worktree; see `worktree-parallel`.
 5. Verify external platform limits against official documentation when the design relies on them.
 
 ### Subagent Model Selection
@@ -95,10 +96,11 @@ Step 4: Review cycle (roster sized by change content - integrated reviewer alway
         (Security > Requirements > Performance); normally 1 cycle; cycles 2+ verify
         fixes with a single verification reviewer)
     |
-Step 5: Additional-test proposal (test-recommendation skill: heuristics recommend
-        mutation/E2E runs with rationale, record it as a proposal for the owner;
-        it is not an approval gate and does not block work; approved runs execute, declines are recorded - except an executed E2E that fails
-        must be fixed)
+Step 5: Additional tests (test-recommendation skill: heuristics rate mutation/E2E
+        runs; strong + small scope + no side effects -> run without asking;
+        the rest are asked once in the final report, and the flag waits for
+        that answer; declines are recorded and never block - except an
+        executed E2E that fails must be fixed)
     |
 Step 6: Report data saved -> .quality-check-passed (commit-bound JSON) created -> merge allowed
 ```
@@ -141,7 +143,7 @@ The hook is a static classifier of the command line - it never resolves what act
 | Specialist (at most one: Security > Requirements > Performance) | Security: auth, input/output handling, secrets and crypto, serialization, external URLs, uploads, CORS/CSP, sensitive logging, config/Dockerfile/CI, dependencies incl. lockfile-only updates; gate control plane, harness config, CI workflows or dependency files trigger Security even in a docs-only diff. Requirements: feature-level diff with an Issue, spec or design doc. Performance: queries, loops, caching, bundles, hot paths | Single-concern deep dive with its review guide; concerns not dispatched become emphasized concerns for the integrated reviewer |
 | Verification Reviewer | Cycles 2+ (joined by Falsification QA when the fix diff touches production code under a security trigger) | Checks the fix diff against the consolidated findings list and hunts new High findings |
 
-- **Completion criteria**: no High/Medium findings remaining in the consolidated results, minimum 1 cycle, and the Step 5 additional-test proposal presented with the user's decision recorded (the `quality-check` skill holds the full definition - read it there)
+- **Completion criteria**: no High/Medium findings remaining in the consolidated results, minimum 1 cycle, and Step 5 judged with its automatic runs done and the user's answer recorded for any item that needed confirmation (the `quality-check` skill holds the full definition - read it there)
 - The roster is sized by change content (Step 1 roster table in the `quality-check` skill): the integrated reviewer always runs, falsification QA runs on any code change, and at most one specialist runs (Security > Requirements > Performance); docs-only = the integrated reviewer alone, unless gate control-plane files, harness config files, CI workflows or dependency files changed (then Security joins). Concerns that did not get a specialist are passed to the integrated reviewer as emphasized concerns
 - The coordinator writes one shared context pack per cycle (diff, changed files, Step 2-3 results, review guides); reviewers read it instead of re-deriving it
 - Normally 1 cycle; a second cycle only if High/Medium findings remain, as a verification review by a single verification reviewer (no revert to the full roster; a re-verification after new High findings counts as a new cycle)
@@ -217,17 +219,28 @@ More Windows shell rules (Git Bash path conversion, `taskkill`, encodings): `doc
 
 AI should act autonomously by default.
 
-Ask the user only when:
+Before the design is approved, ask the user only when:
 
 1. The answer cannot be determined after investigation
 2. An unexpected situation causes a loop or prevents reliable progress
-3. The Design Gate approval is still pending (Design Confirmation Rules), or a substantive decision outside the approved design has not been authorized in the conversation
+3. The Design Gate approval is still pending (Design Confirmation Rules)
 
-Approval from the user is required only for: design approval, exceeding review limits, a release, closing a security advisory (GHSA), and a merge that an adopter rule requires the user to approve. Do not ask the user to run commands or do operations; run them yourself and verify.
+After the design is approved, do not ask again. Decide within the approved design, record deviations from it, and report only those in one final message (completion, deviations from the design, decisions needed). Stop mid-way only for these exceptions (full text: `documents/development/development-policy.md` §1.0 "承認後の進め方"):
+
+- X1 quality-check review limit, stagnation or structural stagnation
+- X2 a release, closing a security advisory (GHSA), or a merge that an adopter rule requires the user to approve
+- X3 an irreversible operation the design does not include (deleting data or others' work, force push, changing shared environments, publishing externally)
+- X4 the approved design cannot reach its goal, or reaching it needs reversing an explicit owner decision, adding a feature or breaking change the design lacks, or exceeding a limit the user set - ask once for the deviation design and, if needed, one more design review round
+- X5 an executed E2E still fails after two fix-and-recheck iterations
+- X6 the cause of a failure is unknown and progress is impossible, or only a temporary workaround exists
+- X7 a state file, ledger or harness setting is broken and cannot be repaired by the rules
+- X8 something the work needs cannot be obtained by the AI (credentials, paid services, accounts, manual login)
+
+Additional tests that need confirmation and self-improvement candidates waiting for a decision go into the final message, not a mid-way stop. In upstream skills (`superpowers:*`), "ask your human partner" after approval means: decide within the approved design and record a deviation, unless one of these exceptions applies. Do not ask the user to run commands or do operations; run them yourself and verify.
 
 Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
 
-When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask.
+When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask (exception X6).
 
 ---
 

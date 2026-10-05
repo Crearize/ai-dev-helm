@@ -15,4 +15,4 @@ Run appropriate tests while implementing. After integration, use the project's i
 
 The task-brief and workspace scripts remain optional utilities for larger handoffs. Legacy task review/re-review templates are optional formats for an explicitly selected quality-check investigation, not additional gates. Do not create their ledgers, snapshots, or packages unless the chosen workflow needs them.
 
-Before completion, verify the integrated result and report what changed, test evidence, and material limitations. Continue integration within existing authorization and project branch policy.
+Workers report changed files, test evidence, deviations from the design and limitations to the controller; the controller records the deviations. Before completion, verify the integrated result; the report to the user follows the final-message rule in `documents/development/development-policy.md` §1.0 "承認後の進め方" (deviations from the design only; test evidence goes into the PR body). Continue integration within existing authorization and project branch policy.

@@ -8,6 +8,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const PHASES = ['requirements', 'design', 'plan', 'quality', 'production', 'mutation'];
+const OWNER_STOP_PHASES = ['quality', 'production', 'design'];
 const BRANCH_PHASES = ['requirements', 'design', 'plan', 'production']; // reservations are per branch, so not on the trunk
 const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-engineer'];
 const STALE_LOCK_MS = 10 * 60 * 1000;
@@ -181,7 +182,12 @@ function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
     const effectiveLimit = Math.min(group.limit, limit ?? group.limit);
     const allowed = ceiling({ limit: effectiveLimit }, extensions, phase);
     if (group.rounds.length >= allowed) {
-      throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); report the remaining findings to the owner. If the owner approves another round, run extend yourself (extend --phase ${phase} --rounds <1-3> --reason "<the owner's approval, quoted>") and then reserve again`);
+      const extend = `run extend yourself (extend --phase ${phase} --rounds <1-3> --reason "<the owner's approval, quoted>") and then reserve again`;
+      // After the design approval only the final quality gate and the design itself stop for the owner (development-policy §1.0).
+      if (OWNER_STOP_PHASES.includes(phase)) {
+        throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); report the remaining findings to the owner. If the owner approves another round, ${extend}`);
+      }
+      throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); do not stop for the owner: record the remaining findings and how you handle them, and continue. Only if the owner has already approved another round, ${extend}`);
     }
     validateRoles(phase, roles, group.rounds.length + 1);
     group.limit = effectiveLimit;
