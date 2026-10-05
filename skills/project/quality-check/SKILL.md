@@ -167,7 +167,7 @@ Step 0 で取得済みの変更ファイル一覧を再利用してよい（同�
 
 **複数領域に変更がある場合は、全ての該当領域のチェックを実施する。**
 
-表に該当しない実行コードのパス（単一パッケージ構成の `lib/**` `bin/**` `src/**` `templates/hooks/**` 等）は docs ではなくコード領域（CLAUDE.md に登録された静的チェック・テストコマンドの対象。backend / frontend の区別がないプロダクトでは backend 扱い。ただし nextjs-react を選んだ導入先で `backend/**`・`frontend/**` に当たらないパスは、サーバー側 — `route.ts`、`'use server'` を含むファイル、`server-only` を import するモジュール、`apps/api/**` 等 — を backend、それ以外を frontend とする）として扱い、Step 2〜3 を実行し、「レビュー体制の決定」では「コード変更」に数える。
+表に該当しない実行コードのパス（単一パッケージ構成の `lib/**` `bin/**` `src/**` `templates/hooks/**` 等）は docs ではなくコード領域（CLAUDE.md に登録された静的チェック・テストコマンドの対象。backend / frontend の区別がないプロダクトでは backend 扱い。ただし nextjs-react を選んだ導入先（`.ai-dev-helm.json` の `stacks` で判定）で `backend/**`・`frontend/**` に当たらないパスは、ブラウザに送られずサーバーでのみ実行されるコード（`route.ts`・`pages/api/**`・`middleware.ts`・`'use server'` を含むファイル・`server-only` を import するモジュール・`src/server/**`・`prisma/**`・`apps/api/**` 等）を backend、それ以外を frontend とする。サーバー側とクライアント側の両方を持つファイル（Server Action をインラインで書いた `page.tsx` 等）は両方の領域とする。java-springboot も選んでいて `.github/review-backend.md` が Java 版の導入先では、Next.js 側のパスはサーバー側も含めて frontend とする（Next.js のサーバー側の観点は `review-frontend.md` §8 にある）として扱い、Step 2〜3 を実行し、「レビュー体制の決定」では「コード変更」に数える。
 
 ### 変更領域別ステップ適用テーブル
 

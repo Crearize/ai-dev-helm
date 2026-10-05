@@ -721,7 +721,7 @@ your-project/
         └── backend-rules.md        # (java-springboot 選択時)
 ```
 
-`.github/` のレビューガイドのうち、`review-docs.md`・`review-infra.md`・`review-performance.md`・`review-security.md`・`review-requirements.md`・`review-prompt.md` は共通で、どのスタックでも配られます。領域別ガイドはスタックごとです: java-springboot は `review-backend.md`（Java 版）だけ、nextjs-react は `review-frontend.md` と `review-backend.md`（Node/TypeScript 版）を配ります。両方を選ぶと `review-backend.md` がぶつかるため、**ほかの選択スタックが `review-backend.md` を持つときは nextjs-react 版を配らず、Java 版を使います**（Next.js 側のサーバーコードは frontend ガイドと統合レビューで見ます）。領域のガイドが無い導入先（例: java-springboot だけで frontend を変更）では、quality-check は統合レビューの観点だけで進め、ガイドが無かった事実を `_notes` に記録します。
+`.github/` のレビューガイドのうち、`review-docs.md`・`review-infra.md`・`review-performance.md`・`review-security.md`・`review-requirements.md`・`review-prompt.md` は共通で、どのスタックでも配られます。領域別ガイドはスタックごとです: java-springboot は `review-backend.md`（Java 版）だけ、nextjs-react は `review-frontend.md` と `review-backend.md`（Node/TypeScript 版）を配ります。両方を選ぶと `review-backend.md` がぶつかるため、**ほかの選択スタックが `review-backend.md` を持つときは nextjs-react 版を配らず、Java 版を使います**（Next.js 側のサーバーコードは frontend ガイドと統合レビューで見ます）。領域のガイドが無い導入先（例: java-springboot だけで frontend を変更）では、quality-check はその領域別ガイドを使わずに各役割の観点と専用ガイドで進め（レビュー体制・専用ガイドは変えません）、ガイドが無かった事実を `_notes` に記録します。
 
 ### Codex を含めた場合の追加ファイル
 
