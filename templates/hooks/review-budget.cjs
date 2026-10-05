@@ -330,9 +330,11 @@ function main() {
   process.stdin.on('data', (chunk) => { size += chunk.length; if (size <= 1024 * 1024) chunks.push(chunk); });
   process.stdin.on('end', () => {
     const raw = Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
+    let parsed = false;
     try {
       if (size > 1024 * 1024) throw new Error('Review hook payload too large');
       const payload = JSON.parse(raw);
+      parsed = true;
       if (!payload || typeof payload !== 'object') throw new Error('Invalid review hook payload');
       if (payload.hook_event_name === 'PostToolUse') {
         try { recordAgent(payload); } catch (error) { process.stderr.write(`Review agent tracking failed: ${error.message}\n`); }
@@ -342,7 +344,9 @@ function main() {
       }
     } catch (error) {
       // An unreadable PostToolUse payload (most often an oversized Agent response) gets no PreToolUse-shaped deny.
-      if (/"hook_event_name"\s*:\s*"PostToolUse"/.test(raw)) return;
+      // Only unreadable or oversized input is looked at, and only the part read (the first 1 MiB): Claude Code puts
+      // hook_event_name near the top. A parsed PreToolUse payload that fails later is still denied.
+      if (!parsed && /"hook_event_name"\s*:\s*"PostToolUse"/.test(raw)) return;
       deny(error.message);
     }
   });
