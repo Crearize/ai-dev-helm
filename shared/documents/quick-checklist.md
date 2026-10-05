@@ -40,12 +40,14 @@ A quick-reference checklist for AI tools when working on development tasks.
 - [ ] **High/Medium findings = 0** (full definition: the quality-check skill's 完了条件)
 - [ ] **Report data saved** (`.quality-check-report.json`)
 
-### Additional Tests (Step 5, propose-then-decide)
-- [ ] **test-recommendation heuristics run**; strong/recommended items presented with rationale
-- [ ] **User decision recorded** (declines are non-blocking; an executed E2E that fails must be fixed)
+### Additional Tests (Step 5)
+- [ ] **test-recommendation heuristics run**; strong + small scope + no side effects ran without asking, the rest asked once in the final report
+- [ ] **Decision recorded with `decided_by`** (auto / user; declines are non-blocking; an executed E2E that fails must be fixed)
 - [ ] **Ledger and Step 5 artifacts committed before the flag** (`documents/development/test-recommendation-ledger.md`)
 
 ### Final Confirmation
+- [ ] **Deviations from the design recorded before the flag** (spec `## 実装時の差異` / plan / working note)
+- [ ] **Final message**: completion / deviations from the design / decisions needed only (`documents/development/development-policy.md` §1.0)
 - [ ] Related documentation consistency verified
 - [ ] (Optional) Self-improvement candidates noted (not a completion condition)
 - [ ] PR created (with /implementation-report, closes #[issue-number])

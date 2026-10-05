@@ -123,7 +123,7 @@ Run tests to ensure workspace starts clean:
 npm test / cargo test / pytest / go test ./...
 ```
 
-**If tests fail:** Investigate and distinguish baseline failures from the proposed change. Report material limitations; ask only when progress requires missing information or a scope decision.
+**If tests fail:** Investigate and distinguish baseline failures from the proposed change. If a failure existed before your change and is unrelated to it, record it and continue (report it in the final message). Stop only when it breaks a premise of the approved work (`documents/development/development-policy.md` §1.0 "承認後の進め方").
 
 **If tests pass:** Report ready.
 
@@ -160,4 +160,4 @@ Ready to implement <feature-name>
 | "`git worktree add` is quicker than hunting for a native tool" | A native tool (e.g. `EnterWorktree`) owns placement, branching, and cleanup. Bypassing it is the #1 mistake — it creates phantom state your harness can't see or manage. |
 | "The worktree directory is surely ignored already" | Run `git check-ignore`. An unignored worktree directory commits the whole tree into the repo. |
 | "Any directory name works" | Explicit instructions beat an existing project-local directory, which beats the `.worktrees/` default. |
-| "The workspace is fresh — baseline tests can wait" | A dirty baseline makes every later failure ambiguous. Run the tests now; proceeding past failures is your human partner's call. |
+| "The workspace is fresh — baseline tests can wait" | A dirty baseline makes every later failure ambiguous. Run the tests now; record pre-existing unrelated failures and continue, and stop only when they break a premise of the approved work. |

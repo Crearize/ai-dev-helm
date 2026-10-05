@@ -20,9 +20,10 @@ This file defines project-specific rules for Cursor.
 - 1. One Issue, one branch.
 - 2. Every completed design gets an independent design review (normally one round - only a serious problem or a large design gets more), then the user reviews the design with the review results and approves it once before implementation starts. This review is why per-task review is unnecessary. Questions are batched into one message.
 - 3. The plan may be reviewed, but no user confirmation is required after that review (a design exists at this point).
+- After approval: the approval covers planning, implementation, documentation, quality-check, commits, feature-branch pushes and the PR - do not ask again. Record deviations from the design and report only those, in one final message. Mid-way stops are limited to the exceptions X1-X8 (`documents/development/development-policy.md` §1.0 "承認後の進め方").
 - 4-6. Choose parent implementation or bounded delegation by complexity and total effort; final quality review remains consolidated.
 - 7. quality-check runs mechanical checks (build, tests, static checks) first; the review roster (integrated reviewer, falsification QA on code changes, at most one specialist) runs only after they pass, sized by the change content.
-- 8. The hook only blocks direct pushes/merges into main (or the trunk equivalent); mutation/E2E runs are proposed separately by quality-check Step 5 (`test-recommendation`), not by the hook.
+- 8. The hook only blocks direct pushes/merges into main (or the trunk equivalent); mutation/E2E runs are decided by quality-check Step 5 (`test-recommendation`), not by the hook: strongly recommended, small, side-effect-free runs execute without asking; the rest are asked in the final report.
 - Passing is judged from review and quality-check results - self-reported completion needs evidence attached.
 - Mandatory for every product that uses this harness.
 
@@ -32,17 +33,28 @@ Full text: `documents/development/development-policy.md` §1.0.
 
 AI should act autonomously by default.
 
-Ask the user only when:
+Before the design is approved, ask the user only when:
 
 1. The answer cannot be determined after investigation
 2. An unexpected situation causes a loop or prevents reliable progress
-3. The Design Gate approval is still pending (Design Confirmation Rules), or a substantive decision outside the approved design has not been authorized in the conversation
+3. The Design Gate approval is still pending (Design Confirmation Rules)
 
-Approval from the user is required only for: design approval, exceeding review limits, a release, closing a security advisory (GHSA), and a merge that an adopter rule requires the user to approve. Do not ask the user to run commands or do operations; run them yourself and verify.
+After the design is approved, do not ask again. Decide within the approved design, record deviations from it, and report only those in one final message (completion, deviations from the design, decisions needed). Stop mid-way only for these exceptions (full text: `documents/development/development-policy.md` §1.0 "承認後の進め方"):
+
+- X1 quality-check review limit, stagnation or structural stagnation (and the review limit of a production's final quality review)
+- X2 a release, closing a security advisory (GHSA), or a merge that an adopter rule requires the user to approve
+- X3 an irreversible operation the design does not include (deleting data or others' work, force push, changing shared environments, publishing externally), and pushing or opening a PR for a fix of an undisclosed vulnerability to a public repository (use the advisory's private fork)
+- X4 the approved design cannot reach its goal, or reaching it needs reversing an explicit owner decision, adding a feature or breaking change the design lacks, or exceeding a limit the user set - ask once for the deviation design and, if needed, one more design review round
+- X5 an executed E2E still fails after two fix-and-recheck iterations
+- X6 the cause of a failure is unknown and progress is impossible, or only a temporary workaround exists
+- X7 a state file, ledger or harness setting is broken and cannot be repaired by the rules
+- X8 something the work needs cannot be obtained by the AI (credentials, paid services, accounts, manual login)
+
+Additional tests that need confirmation and self-improvement candidates waiting for a decision go into the final message, not a mid-way stop. In upstream skills (`superpowers:*`), "ask your human partner" after approval means: decide within the approved design and record a deviation, unless one of these exceptions applies. Do not ask the user to run commands or do operations; run them yourself and verify.
 
 Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
 
-When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask.
+When errors occur, investigate and fix them autonomously if a durable fix is clear. Do not use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask (exception X6).
 
 ### Design Confirmation Rules
 
@@ -54,7 +66,7 @@ Explore existing context first and batch the questions that are still needed int
 2. Send the user one message with the design, the review findings and how each was resolved.
 3. Stop until the user explicitly approves. A request to implement is not approval of a design that did not exist yet.
 
-This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again after writing the spec or reviewing the plan. The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
+This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again: the approval covers the spec update, plan and plan review, implementation, documentation, quality-check, commits, feature-branch pushes and the PR. It does not cover merging unless the project's rules say to merge, and it is not an approval to exceed a review limit. Record deviations from the design and report only those in the final report (`documents/development/development-policy.md` §1.0 "承認後の進め方"). The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
 
 ### Subagent Model Selection
 
@@ -65,7 +77,7 @@ Use `documents/development/harness-runtime.md` for the shared model table, live 
 1. Choose direct implementation or bounded delegation by total effort: planning, handoff, repeated exploration, integration and rework. A capable parent may implement small or medium tasks directly. Delegate independent work when parallelism or context isolation helps; delegation is not a completion requirement.
 2. Keep plans proportional: scope, affected contracts, independent test oracles and validation. Do not write the implementation twice as detailed plan code and then a transcription task. Local plan files under `docs/superpowers/plans/` are not committed; clean them up after merge.
 3. During implementation, use self-checks and tests. Final quality review belongs to `quality-check`; do not add per-task reviewer loops or a second whole-branch review. Design/plan document reviews follow quality-policy §5.5. Review depth follows risk and uncertainty; the current review roster is retained pending comparison.
-4. Respect user budgets. Estimate agent use when delegating; report a material overrun against the agreed budget. Resume interrupted agents after inspecting their committed/uncommitted work and restating ownership. Do not restore, stash or clean another task's files. One writing agent or session per worktree; see `worktree-parallel`.
+4. Respect user budgets. Estimate agent use when delegating; stay within a limit the user set explicitly (needing more is exception X4); report an overrun of an estimate in the final report. Resume interrupted agents after inspecting their committed/uncommitted work and restating ownership. Do not restore, stash or clean another task's files. One writing agent or session per worktree; see `worktree-parallel`.
 5. Verify external platform limits against official documentation when the design relies on them.
 
 
@@ -106,7 +118,8 @@ More Windows shell rules (Git Bash path conversion, `taskkill`, encodings): `doc
 - Run backend quality checks
 - Run frontend linting, formatting, build (after running the `lint-scaffolding` skill, `lint:all` is the registered static check command and `quality-check` Step 2 runs it as the deterministic check layer)
 - Run the review roster via `quality-check`, which owns a single outer cycle (static checks -> tests -> review roster -> consolidated-findings fixes; the roster is sized by change content (Step 1 roster table in the quality-check skill): the integrated reviewer always, falsification QA on any code change, at most one specialist (Security > Requirements > Performance); docs-only = the integrated reviewer alone, unless gate control-plane files, harness config files, CI workflows or dependency files changed (then Security joins); the coordinator writes one shared context pack per cycle that every reviewer reads; mechanical checks (static checks, tests) must pass in that cycle before reviewers run; normally 1 cycle; cycles 2+ verify fixes with a single verification reviewer (no revert to the full roster; a re-verification after new High findings counts as a new cycle)). The falsification QA works falsification-first: hunt for inputs that prove the implementation wrong, rather than confirming the tests look sufficient
-- After the cycle completes, run the additional-test proposal (test-recommendation skill: heuristics recommend mutation/E2E runs with rationale, record it as a proposal for the owner; it is not an approval gate and does not block work; approved runs execute, declines are recorded - except an executed E2E that fails must be fixed)
+- After the cycle completes, run the additional tests (test-recommendation skill: strong + small scope + no side effects -> run without asking; the rest are asked once in the final report, and the flag waits for that answer; declines are recorded and never block - except an executed E2E that fails must be fixed)
+- **Completion criteria**: no High/Medium findings remaining in the consolidated results, minimum 1 cycle, and Step 5 judged with its automatic runs done and the user's answer recorded for any item that needed confirmation (the `quality-check` skill holds the full definition - read it there)
 - `self-improvement` is optional and does not block merge completion.
 - **The gate stops accidental pushes/merges to main; deliberate evasion is out of scope by design** (enumerated forms live in the hook's own header)
 - Harness-only diffs (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/review-*.md`, and the `.md` / `.mdc` documents only under `.claude/`, `.codex/`, `.cursor/`, `skills/project/`, `skills/superpowers/`, `documents/development/coding-rules/` - scripts and config files there are not exempt; the base is `origin/main`, or the local `main` / `master` when there is no remote-tracking trunk) skip the gate and the quality check entirely, except a diff that changes gate parameters (the `Quality Gate Overrides` keys below) or touches a gate control-plane file - the hook enforces this carve-out and blocks such diffs with `Gate control-plane changed:`. **The complete unconditional-block list, the full gate-control-plane file set, and fail-open scope live in the `quality-check` skill's "最重要ルール" section (`hook の完全な契約`) - read the full list there, it is not restated here.** Trunk names are fixed to `main` / `master` - other trunk names are not gated by the hook and rely on the `permissions.deny` layer and convention. Syncing the current trunk from its own remote needs no flag: exactly `git pull`, `git pull origin <trunk>`, or `git merge origin/<trunk>` (each optionally with `--ff-only`), or `git pull --rebase` while the local trunk has no commits ahead of origin (using the trunk's own name, e.g. the `master` form on a `master` checkout), optionally after `git checkout <trunk> &&` and followed by `&& git branch -d <x>`. Everyday commands that never touch the trunk are allowed next to other git commands: on a feature branch a commit then a push, `git fetch && git rebase origin/main` (with further commands after it), `git push --force-with-lease` to the branch's own upstream, and `git checkout -b <x> && ... && git push -u origin HEAD`; a force push to the trunk is always refused, and a commit chained with a push on the trunk is refused (the push needs the quality check on the new commit). Other combinations can still be blocked by an unconditional-block condition (intentional over-detection; splitting across newlines does not help, since it is still one tool call). A command that mentions push/pull/merge/rebase is judged only in a simple form (segments joined by newlines, `;` or `&&`, each starting with `git`, `gh`, a location change or a build/test runner; paths written as the tool's shell reads them, `C:/...` everywhere; no variables, special characters inside quotes or other shell constructs); anything else is refused - run the push/merge as its own simple command, optionally after `cd <path>` or as `git -C <path>`. If the session's working directory is not the worktree, a merge into that worktree's main made through a statically resolvable `cd` / `pushd` / `-C` is judged with that worktree's branch and flag, one made through a move the hook cannot resolve is blocked, and any other route (a script, for example) is invisible to this hook; if the session's working directory is the worktree, that main is gated normally. The only correct procedure for merging into a `main` checked out in a git worktree is to run quality-check to completion in a session whose working directory is that worktree, creating the flag inside the worktree, then merge from there. If main advanced independently after the flag was issued, the merged main (feature + main combined) is unverified: the merge may succeed but the push to main is blocked - re-run `quality-check` on the merged main, then push
@@ -152,7 +165,7 @@ Skills are installed under `.cursor/skills/` (symlink to `skills/`). Cursor does
 | Testing implementation | `.cursor/skills/superpowers/test-driven-development/SKILL.md` |
 | Before completion / merge | `.cursor/skills/superpowers/verification-before-completion/SKILL.md` |
 | Pre-push quality check | `.cursor/skills/project/quality-check/SKILL.md` |
-| Additional-test proposal (mutation / E2E), standalone or via quality-check Step 5 | `.cursor/skills/project/test-recommendation/SKILL.md` |
+| Additional tests (mutation / E2E): judge, run automatically or confirm; standalone or via quality-check Step 5 | `.cursor/skills/project/test-recommendation/SKILL.md` |
 | Recurring process issue or explicit improvement task | `.cursor/skills/project/self-improvement/SKILL.md` |
 | Parallel worktree development | `.cursor/skills/project/worktree-parallel/SKILL.md` |
 
