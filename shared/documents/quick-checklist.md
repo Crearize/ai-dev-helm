@@ -46,6 +46,8 @@ A quick-reference checklist for AI tools when working on development tasks.
 - [ ] **Ledger and Step 5 artifacts committed before the flag** (`documents/development/test-recommendation-ledger.md`)
 
 ### Final Confirmation
+- [ ] **Deviations from the design recorded before the flag** (spec `## 実装時の差異` / plan / working note)
+- [ ] **Final message**: completion / deviations from the design / decisions needed only (`documents/development/development-policy.md` §1.0)
 - [ ] Related documentation consistency verified
 - [ ] (Optional) Self-improvement candidates noted (not a completion condition)
 - [ ] PR created (with /implementation-report, closes #[issue-number])

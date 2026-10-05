@@ -59,7 +59,7 @@ Explore existing context first and batch the questions that are still needed int
 2. Send the user one message with the design, the review findings and how each was resolved.
 3. Stop until the user explicitly approves. A request to implement is not approval of a design that did not exist yet.
 
-This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again: the approval covers the spec update, plan and plan review, implementation, documentation, quality-check, commits, feature-branch pushes and the PR. Record deviations from the design and report only those in the final report (`documents/development/development-policy.md` §1.0 "承認後の進め方"). The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
+This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again: the approval covers the spec update, plan and plan review, implementation, documentation, quality-check, commits, feature-branch pushes and the PR. It does not cover merging unless the project's rules say to merge, and it is not an approval to exceed a review limit. Record deviations from the design and report only those in the final report (`documents/development/development-policy.md` §1.0 "承認後の進め方"). The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
 
 ### Plan Execution Rules
 
@@ -227,9 +227,9 @@ Before the design is approved, ask the user only when:
 
 After the design is approved, do not ask again. Decide within the approved design, record deviations from it, and report only those in one final message (completion, deviations from the design, decisions needed). Stop mid-way only for these exceptions (full text: `documents/development/development-policy.md` §1.0 "承認後の進め方"):
 
-- X1 quality-check review limit, stagnation or structural stagnation
+- X1 quality-check review limit, stagnation or structural stagnation (and the review limit of a production's final quality review)
 - X2 a release, closing a security advisory (GHSA), or a merge that an adopter rule requires the user to approve
-- X3 an irreversible operation the design does not include (deleting data or others' work, force push, changing shared environments, publishing externally)
+- X3 an irreversible operation the design does not include (deleting data or others' work, force push, changing shared environments, publishing externally), and pushing or opening a PR for a fix of an undisclosed vulnerability to a public repository (use the advisory's private fork)
 - X4 the approved design cannot reach its goal, or reaching it needs reversing an explicit owner decision, adding a feature or breaking change the design lacks, or exceeding a limit the user set - ask once for the deviation design and, if needed, one more design review round
 - X5 an executed E2E still fails after two fix-and-recheck iterations
 - X6 the cause of a failure is unknown and progress is impossible, or only a temporary workaround exists
@@ -280,7 +280,7 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 | `test-design` | Pre-implementation test design (test oracles) |
 | `lint-scaffolding` | Wire deterministic checks (lint/static analysis) and maintain the coverage map |
 | `quality-check` | Pre-push quality check |
-| `test-recommendation` | Additional-test proposal (mutation / E2E), standalone or via quality-check Step 5 |
+| `test-recommendation` | Additional tests (mutation / E2E): judge, run automatically or confirm; standalone or via quality-check Step 5 |
 | `worktree-parallel` | Parallel worktree development |
 | `self-improvement` | Optional improvement for recurring process issues |
 | `implementation-report` | PR report generation |

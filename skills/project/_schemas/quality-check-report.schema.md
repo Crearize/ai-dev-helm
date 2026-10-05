@@ -70,7 +70,7 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）が�
 | `recommendation` | `"strong" \| "recommended" \| "none" \| null` | 必須（判定した場合） | `test-recommendation` スキルの提案ヒューリスティクス判定結果（quality-policy.md §2 / `test-recommendation` SKILL.md Step 1）。判定自体を行っていない場合は `null` |
 | `recommendation_basis` | `string[]` | 必須（判定した場合） | 該当したヒューリスティクス項目（判定不能だった事実を含む — `test-recommendation` SKILL.md「判定不能の対象は `recommended` に倒す」）。`recommendation` が `null` の場合は空配列または省略 |
 | `user_decision` | `"executed" \| "declined" \| "added_only" \| "not_proposed" \| null` | 必須（判定した場合） | 判断（自動実施を含む。誰が決めたかは `decided_by`）。`executed`: 少なくとも1つのシナリオ（既存シナリオ経路、または `new_scenarios` の `added_and_run`）を実施した（自動実施、または確認で実施と決まった）/ `declined`: 提示のうえ見送り（`decline_reason` 必須）/ `added_only`: 新規シナリオを追加したが実行は見送り（`result: "skipped"`・`new_scenarios[].decision: "added_only"` と整合させる）/ `not_proposed`: `recommendation` が `none` のため提示せず記録のみ。`recommendation` が `null` の場合は `null` |
-| `decided_by` | `"auto" \| "user" \| null` | 必須（`user_decision` が `executed` / `declined` / `added_only` の場合） | 誰が決めたか。`auto`: 自動実施の区分で AI が確認なしに実施した（`test-recommendation` SKILL.md Step 2）/ `user`: 確認の区分でユーザーが決めた / `null`: `not_proposed` または未判定。`auto` と `declined` の組み合わせは存在しない（自動実施の区分は必ず実施する）。1 つのオブジェクトの中で自動と確認が混ざる場合（E2E で既存シナリオは自動、新規導線は確認 等）は、一部でもユーザーが決めたら `user` とし、内訳を `recommendation_basis` に書く。**移行**: 3.3.0 以前のレポートにこのフィールドが無いことは不正ではない。読み手は欠落を `user` とみなす |
+| `decided_by` | `"auto" \| "user" \| null` | 必須（`user_decision` が `executed` / `declined` / `added_only` の場合） | 誰が決めたか。`auto`: 自動実施の区分で AI が確認なしに実施した（`test-recommendation` SKILL.md Step 2）/ `user`: 確認の区分でユーザーが決めた / `null`: `not_proposed` または未判定。`auto` と `declined` の組み合わせは存在しない（自動実施の区分は必ず実施する）。1 つのオブジェクトの中で自動と確認が混ざる場合（E2E で既存シナリオは自動、新規導線は確認 等）は、一部でもユーザーが決めたら `user` とし、内訳を `recommendation_basis` に書く。**確認待ち**（順序 B で最後の 1 通の返答を待つ間）は、`recommendation` が非 null のまま `user_decision` と `decided_by` を `null` にして表す（PR 本文には「確認待ち」と書く）。**移行**: 3.3.0 以前のレポートにこのフィールドが無いことは不正ではない。読み手は欠落を `user` とみなす |
 | `decline_reason` | `string \| null` | 必須（判定した場合） | 見送り理由。`user_decision` が `"declined"` の場合のみ必須、それ以外は `null` |
 | `result` | `"pass" \| "fail" \| "skipped"` | 必須 | E2E テストの結果。`skipped`: `user_decision` が `"declined"` / `"added_only"` / `"not_proposed"`、または `new_scenarios` に `added_and_run` がなく既存シナリオも未実施の場合 / `pass` \| `fail`: 実施したシナリオ（既存シナリオ経路 + `added_and_run` の新規シナリオ）の結果。失敗が残ったまま記録してはならない — 失敗は `test-recommendation` SKILL.md Step 4 の手順で修正し、影響範囲を再検証した上での最終結果を記録する |
 | `issues` | `string[]` | 必須 | E2E で検出された問題（実施中に発見し修正したものを含む）。なければ空配列 |
@@ -123,7 +123,7 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）が�
 | `recommendation` | `"strong" \| "recommended" \| "none" \| null` | 必須（判定した場合） | `test-recommendation` スキルの提案ヒューリスティクス判定結果（quality-policy.md §2 / `test-recommendation` SKILL.md Step 1）。`not_configured` / `out_of_scope` で判定自体を行っていない場合は `null` |
 | `recommendation_basis` | `string[]` | 必須（判定した場合） | 該当したヒューリスティクス項目（判定不能だった事実を含む — `test-recommendation` SKILL.md「判定不能の対象は `recommended` に倒す」）。`recommendation` が `null` の場合は空配列または省略 |
 | `user_decision` | `"executed" \| "declined" \| "not_proposed" \| null` | 必須（判定した場合） | 判断（自動実施を含む。誰が決めたかは `decided_by`）。`executed`: 実施した（自動実施、または確認で実施と決まった。結果が `empty_scope` / `scope_error` になった場合を含む）/ `declined`: 提示のうえ見送り（`decline_reason` 必須）/ `not_proposed`: `recommendation` が `none` のため提示せず記録のみ。`recommendation` が `null` の場合は `null` |
-| `decided_by` | `"auto" \| "user" \| null` | 必須（`user_decision` が `executed` / `declined` / `added_only` の場合） | 誰が決めたか。`auto`: 自動実施の区分で AI が確認なしに実施した（`test-recommendation` SKILL.md Step 2）/ `user`: 確認の区分でユーザーが決めた / `null`: `not_proposed` または未判定。`auto` と `declined` の組み合わせは存在しない（自動実施の区分は必ず実施する）。1 つのオブジェクトの中で自動と確認が混ざる場合（E2E で既存シナリオは自動、新規導線は確認 等）は、一部でもユーザーが決めたら `user` とし、内訳を `recommendation_basis` に書く。**移行**: 3.3.0 以前のレポートにこのフィールドが無いことは不正ではない。読み手は欠落を `user` とみなす |
+| `decided_by` | `"auto" \| "user" \| null` | 必須（`user_decision` が `executed` / `declined` / `added_only` の場合） | 誰が決めたか。`auto`: 自動実施の区分で AI が確認なしに実施した（`test-recommendation` SKILL.md Step 2）/ `user`: 確認の区分でユーザーが決めた / `null`: `not_proposed` または未判定。`auto` と `declined` の組み合わせは存在しない（自動実施の区分は必ず実施する）。1 つのオブジェクトの中で自動と確認が混ざる場合（E2E で既存シナリオは自動、新規導線は確認 等）は、一部でもユーザーが決めたら `user` とし、内訳を `recommendation_basis` に書く。**確認待ち**（順序 B で最後の 1 通の返答を待つ間）は、`recommendation` が非 null のまま `user_decision` と `decided_by` を `null` にして表す（PR 本文には「確認待ち」と書く）。**移行**: 3.3.0 以前のレポートにこのフィールドが無いことは不正ではない。読み手は欠落を `user` とみなす |
 | `decline_reason` | `string \| null` | 必須（判定した場合） | 見送り理由。`user_decision` が `"declined"` の場合のみ必須、それ以外は `null` |
 | `scope` | `"changed_lines" \| "changed_classes" \| "changed_files"` | 任意 | 差分スコープの粒度。`changed_lines`: Stryker の変更行スコープ / `changed_classes`: PIT の変更クラススコープ / `changed_files`: 旧配線のままファイル単位で実行した場合の暫定値 — 計測結果の解釈に使ってはならない（quality-policy.md §2「差分スコープの定義」）。`executed` が `true` の場合は必須 |
 | `base_ref` | `string` | 任意 | 差分スコープの基準 ref（既定 `origin/main`。Step 1 の差分判定と同一でなければならない。`HEAD` は Step 1 の基幹になり得ないため無効 — 作業ツリーのみを測った実行は `executed` として記録しない）。`executed` が `true` の場合は必須 |
@@ -139,8 +139,8 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）が�
 
 - **判定・実行そのものが不能**（`reason` が `not_configured` / `out_of_scope`）: `{ "executed": false, "reason": "not_configured" }` のように `executed` と `reason` のみを記録する（`recommendation` 以下のキーは**省略**する — ヒューリスティクス判定自体を行っていないため）。
 - **提示のうえ見送り、または `none` のため未提示**（`user_decision` が `"declined"` / `"not_proposed"`）: `executed: false`・`reason: null` とし、`recommendation` / `recommendation_basis` / `user_decision`（`"declined"` の場合は `decline_reason` も）を記録する。実行時フィールド（`scope` 以下）は省略する。
-- **実施を承認したが計測が一切得られなかった**（`reason` が `empty_scope` / `scope_error` / `tool_error`）: `executed: false` とし、`recommendation` / `recommendation_basis` / `user_decision: "executed"` を記録する。実行時フィールドは省略してよい。
-- **承認して実行したがバジェット内に完走しなかった（部分結果あり）**: `executed: true`・`aborted_reason: "unmeasurable_within_budget"` とし、部分結果（`score_raw` 等）と台帳（`survivors`）を記録する。計測が一切得られなかった場合はこのケースではなく `executed: false` / `reason: "tool_error"` を記録する。
+- **実施と決まった（自動実施を含む）が計測が一切得られなかった**（`reason` が `empty_scope` / `scope_error` / `tool_error`）: `executed: false` とし、`recommendation` / `recommendation_basis` / `user_decision: "executed"` を記録する。実行時フィールドは省略してよい。
+- **実施と決まって実行したがバジェット内に完走しなかった（部分結果あり）**: `executed: true`・`aborted_reason: "unmeasurable_within_budget"` とし、部分結果（`score_raw` 等）と台帳（`survivors`）を記録する。計測が一切得られなかった場合はこのケースではなく `executed: false` / `reason: "tool_error"` を記録する。
 - **実行が完了した**（`executed: true`）: `reason: null` とし、`recommendation` / `recommendation_basis` / `user_decision: "executed"` と実行時フィールド（`scope` 以下）を記録する。
 
 トリアージ・生存の対処（その場でテスト追加 / 台帳に持ち越し / 対処不要。既定の規則で AI が決める）は quality-policy.md §2 および `test-recommendation` SKILL.md を正とする。**通過判定はなく、いずれの選択もフラグ作成をブロックしない。**
@@ -280,9 +280,9 @@ quality-policy.md §2「上書きの契約」に基づき、プロダクトの�
 }
 ```
 
-### 完全例（リスクレベル・テスト設計照合・ミューテーション/E2E 提案・上書き記録を含む）
+### 完全例（リスクレベル・テスト設計照合・追加テスト・上書き記録を含む）
 
-High リスクの backend 変更で、`test-recommendation` スキル（Step 5）がミューテーションテストを `strong` 推奨として提示し、ユーザーが実施を承認したケース。生存5件のうちメモ紐付きの1件を追加テストで撃殺（`killed`。再計測により killed 10 → 11 となり、`score_raw: 73.3` は最後の実行の値・`runs: 2`）、2件を `accepted`、1件を `unresolved`、1件を `tool_false_negative` としてトリアージした（通過判定なし・非ブロック）。E2E は既存シナリオ経路の変更に該当し `strong` 推奨で実施・合格。ミューテーションの実行時間バジェットを既定値から上書きしたケース。全フィールドを含む。
+High リスクの backend 変更で、`test-recommendation` スキル（Step 5）がミューテーションテストを `strong` と判定し、範囲が上限以内・副作用なしのため確認なしで自動実施したケース（`decided_by: "auto"`）。生存5件のうちメモ紐付きの1件を追加テストで撃殺（`killed`。再計測により killed 10 → 11 となり、`score_raw: 73.3` は最後の実行の値・`runs: 2`）、2件を `accepted`、1件を `unresolved`、1件を `tool_false_negative` としてトリアージした（通過判定なし・非ブロック）。E2E は既存シナリオ経路の変更に該当し `strong` 推奨で実施・合格。ミューテーションの実行時間バジェットを既定値から上書きしたケース。全フィールドを含む。
 
 ```json
 {

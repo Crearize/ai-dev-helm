@@ -8,7 +8,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const PHASES = ['requirements', 'design', 'plan', 'quality', 'production', 'mutation'];
-const OWNER_STOP_PHASES = ['quality', 'production', 'design'];
+// Phases whose limit waits for the owner: the final quality reviews, and the reviews before the design approval.
+const OWNER_STOP_PHASES = ['quality', 'production', 'design', 'requirements'];
 const BRANCH_PHASES = ['requirements', 'design', 'plan', 'production']; // reservations are per branch, so not on the trunk
 const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-engineer'];
 const STALE_LOCK_MS = 10 * 60 * 1000;
@@ -187,7 +188,8 @@ function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
       if (OWNER_STOP_PHASES.includes(phase)) {
         throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); report the remaining findings to the owner. If the owner approves another round, ${extend}`);
       }
-      throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); do not stop for the owner: record the remaining findings and how you handle them, and continue. Only if the owner has already approved another round, ${extend}`);
+      const more = phase === 'mutation' ? 'The mutation limit cannot be extended.' : `Only if the owner has already approved another round, ${extend}`;
+      throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); do not stop for the owner: record the remaining findings and how you handle them, and continue. ${more}`);
     }
     validateRoles(phase, roles, group.rounds.length + 1);
     group.limit = effectiveLimit;
