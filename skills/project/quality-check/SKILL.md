@@ -169,6 +169,8 @@ Step 0 で取得済みの変更ファイル一覧を再利用してよい（同�
 
 表に該当しない実行コードのパス（単一パッケージ構成の `lib/**` `bin/**` `src/**` `templates/hooks/**` 等）は docs ではなくコード領域（CLAUDE.md に登録された静的チェック・テストコマンドの対象。backend / frontend の区別がないプロダクトでは backend 扱い）として扱い、Step 2〜3 を実行し、「レビュー体制の決定」では「コード変更」に数える。
 
+ただし nextjs-react を選んだ導入先（`.ai-dev-helm.json` の `stacks` で判定）で `backend/**`・`frontend/**` に当たらないパスは、ブラウザに送られずサーバーでのみ実行されるコード（`route.ts`・`pages/api/**`・`middleware.ts`・`'use server'` を含むファイル・`server-only` を import するモジュール・`src/server/**`・`prisma/**`・`apps/api/**` 等）を backend、それ以外を frontend とする。サーバー側とクライアント側の両方を持つファイル（Server Action をインラインで書いた `page.tsx` 等）は両方の領域とする。java-springboot も選んでいて `.github/review-backend.md` が Java 版の導入先では、Next.js 側のパスはサーバー側も含めて frontend とする（Next.js のサーバー側は `review-frontend.md` §8 の認証・認可と `server-only`、専用ガイド、統合レビューで見る）。
+
 ### 変更領域別ステップ適用テーブル
 
 | 変更領域 | Step 2（静的チェック） | Step 3（テスト） | Step 4（レビュー） | Step 5（追加テスト提案） |
@@ -342,6 +344,8 @@ Step 1「レビュー体制の決定」で決めた体制（統合レビュア�
 | frontend | `.github/review-frontend.md` |
 | docs | `.github/review-docs.md` |
 | infra | `.github/review-infra.md` |
+
+領域のガイドファイルが `.github/` に無い場合（選んだスタックがその領域のガイドを持たない導入先など）は、止まらずに、その領域別ガイドを使わずに各役割の観点と下表の専用ガイドで進め、ガイドが無かった事実を `_notes` に記録する（レビュー体制・専用ガイドは変えない）。
 
 加えて、以下の専用ガイドを変更領域に関わらず併用する。ガイドは役割ごとに必要なものだけを指示文で名指しする（全役割に全ガイドを配らない — 4-0「分量の規則」）：
 

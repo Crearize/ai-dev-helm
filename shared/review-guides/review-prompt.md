@@ -7,6 +7,8 @@ Check the files changed in this PR and review only the applicable areas:
 - Backend changes (backend/**) -> Refer to `.github/review-backend.md`
 - Frontend changes (frontend/**) -> Refer to `.github/review-frontend.md`
 - Infra/CI changes (.github/workflows/**, Dockerfile, etc.) -> Refer to `.github/review-infra.md`
+- Next.js paths outside `backend/**` / `frontend/**` (when the project selected nextjs-react in `.ai-dev-helm.json`): code that runs only on the server (`route.ts`, `pages/api/**`, `middleware.ts`, files with `'use server'`, modules importing `server-only`, `src/server/**`, `prisma/**`, `apps/api/**`) -> backend guide, other app code -> frontend guide, a file with both -> both. If `.github/review-backend.md` is the Java one (java-springboot selected too), all Next.js paths, server code included, -> frontend guide
+- If an area guide file does not exist, skip it and review that area with the general viewpoints
 - Performance-sensitive changes (queries, loops over collections, bundle-affecting frontend changes) -> Also refer to `.github/review-performance.md`
 - HTTP handling, authentication, response headers, caching, frontend external resources, or dependency changes -> Also refer to `.github/review-security.md`
 - Any code change tied to an Issue/requirement -> Also refer to `.github/review-requirements.md`

@@ -599,12 +599,12 @@ ai-dev-helm/
 ├── stacks/                     # 技術スタック別リソース
 │   ├── java-springboot/        #   Java + Spring Boot
 │   │   ├── rules/              #     コーディングルール
-│   │   ├── review-guides/      #     レビューチェックリスト
+│   │   ├── review-guides/      #     review-backend.md（Java 版）
 │   │   ├── documents/          #     詳細な規約ドキュメント
 │   │   └── lint/               #     Checkstyle / ArchUnit / PIT（mutation）設定
 │   ├── nextjs-react/           #   Next.js + React
 │   │   ├── rules/
-│   │   ├── review-guides/
+│   │   ├── review-guides/      #     review-frontend.md / review-backend.md（Node 版。java-springboot と併用時は配らない）
 │   │   ├── documents/
 │   │   └── lint/               #     ESLint / ast-grep / Stryker（mutation）設定
 │   └── _template/              #   新規スタック追加用テンプレート
@@ -697,8 +697,8 @@ your-project/
 │
 ├── .github/                        # GitHub 設定
 │   ├── PULL_REQUEST_TEMPLATE.md    #   PR テンプレート
-│   ├── review-frontend.md          #   フロントエンドレビューガイド
-│   ├── review-backend.md           #   バックエンドレビューガイド
+│   ├── review-frontend.md          #   フロントエンドレビューガイド（nextjs-react を選んだとき）
+│   ├── review-backend.md           #   バックエンドレビューガイド（java-springboot は Java 版、nextjs-react は Node 版。両方選ぶと Java 版）
 │   ├── review-docs.md              #   ドキュメントレビューガイド
 │   ├── review-infra.md             #   インフラレビューガイド
 │   ├── review-performance.md       #   パフォーマンスレビューガイド
@@ -720,6 +720,8 @@ your-project/
         ├── frontend-rules.md       # (nextjs-react 選択時)
         └── backend-rules.md        # (java-springboot 選択時)
 ```
+
+`.github/` のレビューガイドのうち、`review-docs.md`・`review-infra.md`・`review-performance.md`・`review-security.md`・`review-requirements.md`・`review-prompt.md` は共通で、どのスタックでも配られます。領域別ガイドはスタックごとです: java-springboot は `review-backend.md`（Java 版）だけ、nextjs-react は `review-frontend.md` と `review-backend.md`（Node/TypeScript 版）を配ります。両方を選ぶと `review-backend.md` がぶつかるため、**ほかの選択スタックが `review-backend.md` を持つときは nextjs-react 版を配らず、Java 版を使います**（Next.js 側のサーバーコードは frontend ガイドと統合レビューで見ます）。領域のガイドが無い導入先（例: java-springboot だけで frontend を変更）では、quality-check はその領域別ガイドを使わずに各役割の観点と専用ガイドで進め（レビュー体制・専用ガイドは変えません）、ガイドが無かった事実を `_notes` に記録します。
 
 ### Codex を含めた場合の追加ファイル
 
@@ -781,7 +783,7 @@ your-project/
 | ファイル | 内容 |
 |---------|------|
 | **review-prompt.md** | レビューのメタガイド。変更ファイルに応じて該当するガイドのみ適用する。出力は指摘事項のみ（通過した項目は非表示）。Must-Fix / Recommended / Minor / Good Points の 4 段階で分類 |
-| **review-backend.md** | バックエンド固有の観点。Google Java Style Guide 準拠、Spring Boot のアノテーション・DI・`@Transactional` の正しい使い方、ORM/クエリ最適化（N+1、インデックス）、DB マイグレーションルール、セキュリティ（Spring Security、JWT、IDOR、CORS）、テストカバレッジ（80%+ ライン、90%+ ビジネスロジック） |
+| **review-backend.md** | バックエンド固有の観点。スタックで中身が違う。java-springboot: Google Java Style Guide 準拠、Spring Boot のアノテーション・DI・`@Transactional` の正しい使い方、ORM/クエリ最適化（N+1、インデックス）、DB マイグレーションルール、セキュリティ（Spring Security、JWT、IDOR、CORS）、テストカバレッジ（80%+ ライン、90%+ ビジネスロジック）。nextjs-react 単独: Node/TypeScript のサーバー側（Route Handlers・Server Actions の入力検証と認可、mass assignment、`server-only` と `NEXT_PUBLIC_*`、キャッシュと再検証、DB アクセス、ログ）。両方を選ぶと java-springboot 版を配る |
 | **review-frontend.md** | フロントエンド固有の観点。TypeScript strict mode 必須、Server/Client Component の適切な選択、React Hook Form + Zod でのバリデーション、TanStack Query の設定（staleTime/gcTime）、パフォーマンス最適化（不要な再レンダリング防止、バンドルサイズ）、アクセシビリティ（WCAG 2.1 AA: コントラスト比 4.5:1、キーボード操作、セマンティック HTML） |
 | **review-docs.md** | ドキュメントレビューの観点。構造の一貫性（見出しレベル、目次）、技術的正確性（コード例の動作確認、リンク切れ）、CLAUDE.md との整合性、DB 設計ドキュメント（テーブル定義、インデックス、外部キー） |
 | **review-infra.md** | インフラ/CI レビューの観点。GitHub Actions（バージョン固定、timeout 設定、最小権限、シークレット管理）、Docker（マルチステージビルド、非 root ユーザー、ヘルスチェック）、ビルド設定（依存バージョン固定、脆弱性チェック）、セキュリティ（ハードコード秘密鍵の検出、CORS/SSL 設定） |
