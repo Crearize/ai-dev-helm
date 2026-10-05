@@ -17,7 +17,7 @@ PR作成時に実装レポートを生成するスキル。`quality-check` ス�
 
 - `quality-check` スキルが完了し `.quality-check-report.json` が存在すること
 - `.quality-check-report.json` が見つからない場合はエラーとし、先に `quality-check` スキルを実行する（AI が実行する。ユーザーに促さない）。例外: 差分がハーネスのみの免除（quality-check「ハーネスのみ変更の免除」）に当たる場合はエラーにしない（Step 1 を参照）
-- **Step 5 の確認待ちで PR を作る場合**（`documents/development/development-policy.md` §1.0「承認後の進め方」 7 の順序 B）: quality-check はフラグ作成の前だが、`.quality-check-report.json` があれば PR を draft で作ってよい（`gh pr create --draft`。フラグ作成の後に `gh pr ready`。draft を使えないリポジトリでは通常の PR にし、本文に「確認待ち」と書く）。確認の対象は「確認待ち（判断は最後の 1 通）」と書く。返答を受けて実行・記録した後、レポートを再生成して PR 本文を更新する（`gh pr edit <n> --body-file <file>`）
+- **Step 5 の確認待ちで PR を作る場合**（`documents/development/development-policy.md` §1.0「承認後の進め方」 7 の順序 B）: quality-check はフラグ作成の前だが、`.quality-check-report.json` があれば通常の PR を作ってよい（draft にはしない）。確認の対象は「確認待ち（判断は最後の 1 通）」と書く。返答を受けて実行・記録し、追加するテストなどを同じ PR にコミットした後、レポートを再生成して PR 本文を更新する（`gh pr edit <n> --body-file <file>`）
 
 ---
 
