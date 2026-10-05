@@ -11,6 +11,7 @@ const PHASES = ['requirements', 'design', 'plan', 'quality', 'production', 'muta
 const BRANCH_PHASES = ['requirements', 'design', 'plan', 'production']; // reservations are per branch, so not on the trunk
 const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-engineer'];
 const STALE_LOCK_MS = 10 * 60 * 1000;
+const KEEP_ENTRIES = 500; // receipts / agents kept per branch state
 const TOKEN = /^HELM_REVIEW:([a-f0-9]{32}):([a-z-]+)[ \t]*(?:\r?\n|$)/; // first line of the prompt/message only
 const DISPATCH = /^(Agent|Task|spawn_agent)$/;
 const FOLLOWUP = /^(followup_task|send_message|send_input|resume_agent|SendMessage)$/;
@@ -107,6 +108,13 @@ function acquireLock(lock) {
   }
 }
 
+// Keeps the newest KEEP_ENTRIES keys (insertion order) so receipts / agents do not grow for the life of a branch.
+// A follow-up to a reviewer pruned out of agents is then no longer counted; accepted for branches past 500 entries.
+function prune(map) {
+  const keys = Object.keys(map);
+  for (const key of keys.slice(0, Math.max(0, keys.length - KEEP_ENTRIES))) delete map[key];
+}
+
 function transact(cwd, mutate, fn) {
   const loc = location(cwd);
   if (!fs.existsSync(loc.root)) {
@@ -124,6 +132,8 @@ function transact(cwd, mutate, fn) {
     if (!validState(state, loc.branch)) throw new Error(`Invalid review budget state in ${loc.file}. Do not delete or edit it; report it with the output of status to the owner and wait for the owner's decision.`);
     const result = fn(state, loc);
     if (mutate) {
+      prune(state.receipts);
+      prune(state.agents);
       temp = `${loc.file}.${crypto.randomBytes(8).toString('hex')}.tmp`;
       fs.writeFileSync(temp, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
       fs.renameSync(temp, loc.file);
@@ -317,11 +327,20 @@ function main() {
   }
   const chunks = [];
   let size = 0;
-  process.stdin.on('data', (chunk) => { size += chunk.length; if (size <= 1024 * 1024) chunks.push(chunk); });
+  // Keep the first 1 MiB even when a single chunk is larger (Windows pipes can deliver the whole input at once),
+  // so an oversized PostToolUse payload can still be recognised below.
+  process.stdin.on('data', (chunk) => {
+    const room = 1024 * 1024 - Math.min(size, 1024 * 1024);
+    if (room > 0) chunks.push(chunk.subarray(0, room));
+    size += chunk.length;
+  });
   process.stdin.on('end', () => {
+    const raw = Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
+    let parsed = false;
     try {
       if (size > 1024 * 1024) throw new Error('Review hook payload too large');
-      const payload = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
+      const payload = JSON.parse(raw);
+      parsed = true;
       if (!payload || typeof payload !== 'object') throw new Error('Invalid review hook payload');
       if (payload.hook_event_name === 'PostToolUse') {
         try { recordAgent(payload); } catch (error) { process.stderr.write(`Review agent tracking failed: ${error.message}\n`); }
@@ -329,7 +348,13 @@ function main() {
         const result = checkReview(payload);
         if (!result.allowed) deny(result.reason);
       }
-    } catch (error) { deny(error.message); }
+    } catch (error) {
+      // An unreadable PostToolUse payload (most often an oversized Agent response) gets no PreToolUse-shaped deny.
+      // Only unreadable or oversized input is looked at, and only the part read (the first 1 MiB): Claude Code puts
+      // hook_event_name near the top. A parsed PreToolUse payload that fails later is still denied.
+      if (!parsed && /"hook_event_name"\s*:\s*"PostToolUse"/.test(raw)) return;
+      deny(error.message);
+    }
   });
 }
 
