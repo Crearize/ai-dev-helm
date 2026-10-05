@@ -599,12 +599,12 @@ ai-dev-helm/
 ├── stacks/                     # 技術スタック別リソース
 │   ├── java-springboot/        #   Java + Spring Boot
 │   │   ├── rules/              #     コーディングルール
-│   │   ├── review-guides/      #     レビューチェックリスト
+│   │   ├── review-guides/      #     review-backend.md（Java 版）
 │   │   ├── documents/          #     詳細な規約ドキュメント
 │   │   └── lint/               #     Checkstyle / ArchUnit / PIT（mutation）設定
 │   ├── nextjs-react/           #   Next.js + React
 │   │   ├── rules/
-│   │   ├── review-guides/
+│   │   ├── review-guides/      #     review-frontend.md / review-backend.md（Node 版。java-springboot と併用時は配らない）
 │   │   ├── documents/
 │   │   └── lint/               #     ESLint / ast-grep / Stryker（mutation）設定
 │   └── _template/              #   新規スタック追加用テンプレート
@@ -697,8 +697,8 @@ your-project/
 │
 ├── .github/                        # GitHub 設定
 │   ├── PULL_REQUEST_TEMPLATE.md    #   PR テンプレート
-│   ├── review-frontend.md          #   フロントエンドレビューガイド
-│   ├── review-backend.md           #   バックエンドレビューガイド
+│   ├── review-frontend.md          #   フロントエンドレビューガイド（nextjs-react を選んだとき）
+│   ├── review-backend.md           #   バックエンドレビューガイド（java-springboot は Java 版、nextjs-react は Node 版。両方選ぶと Java 版）
 │   ├── review-docs.md              #   ドキュメントレビューガイド
 │   ├── review-infra.md             #   インフラレビューガイド
 │   ├── review-performance.md       #   パフォーマンスレビューガイド
@@ -720,6 +720,8 @@ your-project/
         ├── frontend-rules.md       # (nextjs-react 選択時)
         └── backend-rules.md        # (java-springboot 選択時)
 ```
+
+`.github/` のレビューガイドのうち、`review-docs.md`・`review-infra.md`・`review-performance.md`・`review-security.md`・`review-requirements.md`・`review-prompt.md` は共通で、どのスタックでも配られます。領域別ガイドはスタックごとです: java-springboot は `review-backend.md`（Java 版）だけ、nextjs-react は `review-frontend.md` と `review-backend.md`（Node/TypeScript 版）を配ります。両方を選ぶと `review-backend.md` がぶつかるため、**ほかの選択スタックが `review-backend.md` を持つときは nextjs-react 版を配らず、Java 版を使います**（Next.js 側のサーバーコードは frontend ガイドと統合レビューで見ます）。領域のガイドが無い導入先（例: java-springboot だけで frontend を変更）では、quality-check は統合レビューの観点だけで進め、ガイドが無かった事実を `_notes` に記録します。
 
 ### Codex を含めた場合の追加ファイル
 
