@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.2](https://github.com/Crearize/ai-dev-helm/compare/v3.4.1...v3.4.2) (2026-10-06)
+
+
+### Fixed
+
+* **harness:** 3.4.1 rollout findings - deviation record, worktree skill links, remote-less integration, X2 scope, promotion range ([#200](https://github.com/Crearize/ai-dev-helm/issues/200)) ([cbe787a](https://github.com/Crearize/ai-dev-helm/commit/cbe787a6a27de8e338795e0dcd272804762ae66a))
+
 ## [3.4.1](https://github.com/Crearize/ai-dev-helm/compare/v3.4.0...v3.4.1) (2026-10-06)
 
 
