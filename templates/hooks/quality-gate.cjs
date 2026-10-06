@@ -1224,10 +1224,12 @@ const ONE_OPERATION = 'Run one gated operation per command: split the merge, pul
 const ONE_SOURCE = 'Merge or rebase one branch at a time on main/master (no --onto): run `git merge <branch>` with a single source.';
 const pullSource = (trunk) => `On ${trunk}, a \`git pull\` from another branch brings in commits the gate cannot check. Run \`git fetch\`, then \`git merge <remote>/<branch>\` once the quality-check skill has passed on that branch - or use one of the sync forms (\`git pull\`, \`git pull origin ${trunk}\`).`;
 const diverged = (trunk, ref) => `${trunk} has commits that ${ref} does not have, so the result would not be the commit the quality check ran on. Merge ${trunk} into the branch (or rebase it onto ${trunk}), re-run the quality-check skill there, then integrate.`;
-// D9 (3.4.3): the remote-less hint follows whether the trunk has a remote-tracking
-// ref, not whether any remote exists - a push-only remote (no `<remote>/<trunk>`)
-// leaves the project without a PR route. Reason text only; no verdict reads it.
-// A ctx without `trunkTracked` (a test stub) falls back to `hasRemote`.
+// D9 (3.4.3): the remote-less hint follows whether origin - the remote the
+// pull request hints name - has a remote-tracking ref of the trunk
+// (`refs/remotes/origin/<trunk>`), not whether any remote exists: another
+// remote's `<remote>/<trunk>` (a publishing, deploy or backup remote) does not
+// count. Reason text only; no verdict reads it. A ctx without `trunkTracked`
+// (a test stub) falls back to `hasRemote`.
 const untrackedTrunk = (ctx, trunk) => (typeof ctx.trunkTracked === 'function'
   ? ctx.trunkTracked(String(trunk)) === false
   : ctx.hasRemote === false);
@@ -1235,21 +1237,21 @@ const integrateReason = (trunk, ref, noRemote) => `The quality-check flag here d
 const TRUNK_NEVER = 'Deleting main/master or force-fetching into it is never allowed here. Integrate a branch with `git merge`, a pull request, or - without a remote - `git push . HEAD:main` from the checked branch.';
 const FETCH_INTO_TRUNK = 'A fetch into main/master from another remote branch cannot be checked here. Fetch the branch, run the quality-check skill on it, then integrate it (`git merge`, a pull request, or `git push . HEAD:main`).';
 const otherRepo = (repo, origin) => `This gh call names another repository (${repo}) than this checkout's origin (${origin || 'none'}), so this checkout's quality-check flag says nothing about it. Run it from that repository's own directory, without -R / --repo, after its quality check.`;
-const PR_HINT = ' - or push the feature branch (`git push -u origin HEAD`) and open a pull request (`gh pr create`) instead of merging here.';
+const PR_HINT = ' - or push the feature branch (`git push -u origin HEAD`) and open a pull request (`gh pr create`) instead of merging here (if origin takes no pull requests - a bare backup, for example - use the remote-less integration of the branch-workflow skill instead).';
 // #199-6: a flag made on a main checkout names main, not the pull request. The
 // verdict is unchanged; only the reason says where the flag belongs.
 const PR_MERGE_HINT = " Make the flag in the worktree of the pull request's branch: run the quality-check skill there and run gh pr merge from it. Do not make the flag on a main checkout.";
 const PUSH_TARGET = 'This push has no refspec, and its push target (@{push}) is main/master. ';
-// 3.4.3: without a remote-tracking trunk (a push-only remote at most) there is
-// no pull request route, so the hint names the local integration instead.
-const noPrRoute = (trunk) => ` - there is no remote-tracking ${trunk} here (a push-only remote at most), so integrate locally: re-run the quality-check skill in this worktree, then run \`git push . HEAD:${trunk}\` (if git push cannot be used, the merge in this worktree from the branch-workflow skill).`;
-// No pull request route at all: neither main nor master has a remote-tracking
-// ref (a repository whose trunk is master still has one when origin/master
-// exists, whatever the push names). Reason text only.
+// 3.4.3: when origin has no remote-tracking trunk there is no pull request
+// route the hint could name, so it names the local integration instead.
+const noPrRoute = (trunk) => ` - origin has no remote-tracking ${trunk} (another remote's <remote>/${trunk} does not count), so integrate locally: re-run the quality-check skill in this worktree, then run \`git push . HEAD:${trunk}\` (if git push cannot be used, the merge in this worktree from the branch-workflow skill).`;
+// No pull request route at all: origin has neither `origin/main` nor
+// `origin/master` (a repository whose trunk is master still has one when
+// origin/master exists, whatever the push names). Reason text only.
 const noPrRouteHere = (ctx) => Boolean(ctx) && untrackedTrunk(ctx, 'main') && untrackedTrunk(ctx, 'master');
 // L4: the trunk-push refusals that recommend a pull request say instead how to
 // integrate locally when there is no pull request route.
-const FORCE_TRUNK_LOCAL = (trunk) => `Force, delete, --all, --branches and --mirror pushes to main/master are always refused, with or without a quality check: they rewrite or delete trunk history. There is no remote-tracking ${trunk} here (a push-only remote at most), so integrate locally: integrate a branch with \`git push . HEAD:${trunk}\` from its own worktree after the quality-check skill (see the branch-workflow skill).`;
+const FORCE_TRUNK_LOCAL = (trunk) => `Force, delete, --all, --branches and --mirror pushes to main/master are always refused, with or without a quality check: they rewrite or delete trunk history. origin has no remote-tracking ${trunk} (another remote's <remote>/${trunk} does not count), so integrate locally: integrate a branch with \`git push . HEAD:${trunk}\` from its own worktree after the quality-check skill (see the branch-workflow skill).`;
 function localizeForceTrunk(verdict, cands, ctx) {
   if (!verdict || verdict.reason !== FORCE_TRUNK || !noPrRouteHere(ctx)) return verdict;
   const cand = cands.find((c) => c.kind === 'push' && c.toTrunk) || cands.find((c) => c.kind === 'push');
@@ -1349,7 +1351,7 @@ function reverseRefspec(gated, branch, ctx) {
       if (src.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '') === branch) continue;
       const trunk = dst.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '').toLowerCase();
       const route = noPrRouteHere(ctx)
-        ? `Check out that branch and integrate it from its own worktree with \`git push . HEAD:${trunk}\` after the quality-check skill (there is no remote-tracking ${trunk} here, so integrate locally).`
+        ? `Check out that branch and integrate it from its own worktree with \`git push . HEAD:${trunk}\` after the quality-check skill (origin has no remote-tracking ${trunk}, so integrate locally).`
         : 'Check out that branch and push from it, or push this branch with `git push -u origin HEAD`.';
       return deny('2', `Push from the branch itself: ${src}:${dst} pushes a branch other than the current one; only HEAD or the current branch can be pushed to the trunk here. ${route}`);
     }

@@ -60,7 +60,7 @@ JSON の先頭にある UTF-8 BOM は除去してから解析する。文字コ�
 
 **fail-open**（無条件で allow）は、入力ペイロードが不正な場合（理由を stderr に出力する）と、git リポジトリの外で実行された場合の2つに限る。ただし、`tool_name` がシェルのツール（`Bash` / `PowerShell`）なのに `tool_input.command` が無い・文字列でない場合は、読めないシェルの実行として block する（H-52(5)）。Claude Code では hook を `^(Bash|PowerShell)$` に登録し、PowerShell ツールの実行も判定する（Codex の登録は `Bash` のまま。変えると Codex の hook の信頼が外れるため）。後者は payload の cwd だけに適用し、`cd` / `-C` で移動した先での block と、解決できない移動による block は、cwd がリポジトリの外でも block のままとする。単純な形でないことによる block も git を読まずに決まるため、そのままとする。それ以外の git 呼び出し失敗はゲート対象候補があればブロックする。
 
-**worktree 上の main**（#116）: セッションの作業ディレクトリが worktree でない場合、その worktree 内の main へのマージは、静的に解決できる `cd` / `pushd` / `-C` で行えばその worktree のブランチとフラグで判定され、解決できない移動を使う形は block される。それ以外の経路（スクリプト経由など）はこの hook からは見えない。セッションの作業ディレクトリが worktree なら、その main は通常どおりゲートされる。hook はセッションの作業ディレクトリのリポジトリを基準に判定し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読む。main / master 上の `git merge <feature>` は、フラグの `commit` が `<feature>` の先端（またはその祖先で、差分がハーネスファイルだけ）であるときに通る。1 つのチェックアウトで feature 上の quality-check を完走してから main に切り替えて merge する形はこれで通る（フラグは追跡されないファイルなので切り替えても残る）。feature を別の worktree で開いている場合、main の worktree にはフラグが無いので、リモートのある導入先は PR で、リモートの無い導入先（PR を作る remote（通常は origin）の trunk の remote-tracking ref が無い。`<remote>/main` があっても PR を受けない remote（公開用・デプロイ先・バックアップ）しか無い場合を含み、その remote に feature ブランチを push しない）は branch-workflow スキルの「リモートの無いプロジェクトの取り込み」（先に feature の worktree で `integrate-check` を実行して main のチェックアウトの状態を確かめ、feature の worktree から `git push . HEAD:main`。`git push` が使えなければ、フラグのある feature の worktree でのマージ）で取り込む。統括側の別ディレクトリで先にフラグを作ってから merge する手順は誤りであり、成立しない。merge が終わったら `.quality-check-passed` を削除する（hook はフラグを消費しない）。
+**worktree 上の main**（#116）: セッションの作業ディレクトリが worktree でない場合、その worktree 内の main へのマージは、静的に解決できる `cd` / `pushd` / `-C` で行えばその worktree のブランチとフラグで判定され、解決できない移動を使う形は block される。それ以外の経路（スクリプト経由など）はこの hook からは見えない。セッションの作業ディレクトリが worktree なら、その main は通常どおりゲートされる。hook はセッションの作業ディレクトリのリポジトリを基準に判定し、フラグもそのリポジトリ直下（worktree ならその worktree 直下）を読む。main / master 上の `git merge <feature>` は、フラグの `commit` が `<feature>` の先端（またはその祖先で、差分がハーネスファイルだけ）であるときに通る。1 つのチェックアウトで feature 上の quality-check を完走してから main に切り替えて merge する形はこれで通る（フラグは追跡されないファイルなので切り替えても残る）。feature を別の worktree で開いている場合、main の worktree にはフラグが無いので、リモートのある導入先は PR で、リモートの無い導入先（PR を作る remote（通常は origin）の trunk の remote-tracking ref が無い。`<remote>/main` があっても PR を受けない remote（公開用・デプロイ先・バックアップ）しか無い場合を含み、その remote に feature ブランチを push しない。hook の案内は origin だけを見る）は branch-workflow スキルの「リモートの無いプロジェクトの取り込み」（先に feature の worktree で `integrate-check` を実行して main のチェックアウトの状態を確かめ、feature の worktree から `git push . HEAD:main`。`git push` が使えなければ、フラグのある feature の worktree でのマージ）で取り込む。統括側の別ディレクトリで先にフラグを作ってから merge する手順は誤りであり、成立しない。merge が終わったら `.quality-check-passed` を削除する（hook はフラグを消費しない）。
 
 **意図的な過検出**: ゲート語を含み単純な形でないコマンドは、push / merge をしないもの（`grep -rn push src`・括弧を含むコミットメッセージ等）でも block される（書き直すか、push / merge と別のコマンドにする）。フラグ不要な feature ブランチへの push であっても、候補（`merge` / `pull` / `rebase` / refspec 省略の `push` / refspec に `%` を含む語・`~` で始まる語がある `push`）を含むコマンドは、同じコマンドの別 git 操作・解決できない移動・hard flag の各条件でブロックされうる（意図的な設計。`git fetch && git rebase -i origin/main` のように上記の形から外れるコマンドは分けて実行する。`fetch` はコマンド全体で判定するため、改行で分けても同じ tool 呼び出しなら block される）。main / master 上では、`git commit` と refspec 省略の `git push` は改行で分けても 1 回の tool 呼び出しであるためブロックされる（commit を単独で実行し、品質チェックを通してから push する）。`cd` / `-C` で移動した先のリポジトリで block したときは、理由の先頭で判定したリポジトリとブランチを示す。
 
@@ -687,7 +687,7 @@ JSONフォーマット例：
 （`skills/project/test-recommendation/SKILL.md`）を実行する。判定・提示・実行・台帳・記録の
 手順は同スキルを正とし、本スキルには転記しない。
 
-- 判定は 3 区分（自動実施 / 確認 / 記録のみ）。自動実施分は確認せずに実行する。確認の対象があるときは、自動実施分と Step 5 の差分のコミット → push → PR 作成の後に、最後の 1 通（`documents/development/development-policy.md` §1.0「承認後の進め方」）で聞き、返答を受けて実行・記録し、同じ PR にコミットし、PR 本文を更新してから Step 6 に進み、フラグを作ったら PR 本文の Flag commit を更新する（返答までフラグは作らない）。返答を受けたら Step 5 の続き（実施と決まったものの実行・記録・同じ PR へのコミット → PR 本文の更新 → Step 6 → PR 本文の Flag commit を更新。設計との差異の項目がある場合は、その項目への OK を受けてから Step 6）から再開する。Step 0 からやり直さず、`.quality-check-report.json` も削除しない
+- 判定は 3 区分（自動実施 / 確認 / 記録のみ）。自動実施分は確認せずに実行する。確認の対象があるときは、自動実施分と Step 5 の差分のコミット → `--check-untracked` で未追跡の確認（最初の push の前。Step 6 の手順）→ push → PR 作成の後に、最後の 1 通（`documents/development/development-policy.md` §1.0「承認後の進め方」）で聞き、返答を受けて実行・記録し、同じ PR にコミットし、PR 本文を更新してから Step 6 に進み、フラグを作ったら PR 本文の Flag commit を更新する（返答までフラグは作らない）。返答を受けたら Step 5 の続き（実施と決まったものの実行・記録・同じ PR へのコミット → PR 本文の更新 → Step 6 → PR 本文の Flag commit を更新。設計との差異の項目がある場合は、その項目への OK を受けてから Step 6）から再開する。Step 0 からやり直さず、`.quality-check-report.json` も削除しない
 - 見送りはフラグ作成をブロックしない（推奨度・根拠・判断と `decided_by` を `.quality-check-report.json` に記録する）
 - **E2E を実施して失敗した場合のみ例外**: 実バグとして修正 + 影響範囲のみ再検証（静的チェック・該当テスト・E2E 再実行。サイクルには含めない）を経ないとフラグを作成できない
 - 実施したミューテーションの生存への対処（テスト追加 / 台帳持ち越し / 対処不要）はいずれもフラグ作成をブロックしない
@@ -720,10 +720,15 @@ Step 0 以降の各ステップで蓄積してきた`.quality-check-report.json`
 
 **その後、フラグ作成の前に、最後のサイクルで未追跡だったファイルが変更に入っていないことを確かめる（MUST）**: `npx @crearize/ai-dev-helm quality-context --check-untracked --cycle <最後のサイクル> --out <scratchpad>/quality-check`（基準 ref は 4-0 と同じ）。この後にコミットを足したら、この確認をやり直す。
 
+**最初の push の前にも同じ確認をする（MUST）**: Step 5 のコミットの後、push・PR 作成より前（development-policy §1.0「承認後の進め方」7 の (A) 差異あり・(B) は push がフラグより前に来る）。push するのは最後の行が `untracked-check: OK` のときだけ。NG の扱いは下と同じ（push 前なので、外す手順が使える）。フラグの前の確認はそのまま行う。
+
 - フラグを作るのは、出力の最後の行が `untracked-check: OK` のときだけ
 - 最後の行が `untracked-check: NG` なら、フラグを作らない。出た名前ごとに、変更に属するかを確かめる
   - 属するなら、共通コンテキストを新しいサイクルで作り直してレビューをやり直す（レビューされていないため）
-  - 属さない（ユーザーのファイル等）なら、ファイルは消さない。中身は feature の履歴に残り、push すればリモートに上がるので、そのファイルを入れたコミットから外す: まだ push していない直前のコミットなら `git rm --cached -- <名前>` → `git commit --amend` で外し、もう一度この確認をする。それより前のコミットに入っている、またはすでに push している場合は、名前を示して止まる（例外 X3）
+  - 属さない（ユーザーのファイル等）なら、ファイルは消さない。中身は feature の履歴に残り、push すればリモートに上がるので、変更から外す。外したら、もう一度この確認をする
+    - まだコミットしていない（ステージしただけ）なら、`git rm --cached -- <名前>` だけでよい
+    - まだ push していない直前のコミットに入っているなら、`git rm --cached -- <名前>` → `git commit --amend`。そのコミットがそのファイルだけなら（amend は空のコミットになって失敗する）、`git reset --soft HEAD~1` → `git rm --cached -- <名前>`。push 済みかは、そのコミットが `git log --oneline @{upstream}..HEAD` に出るか（upstream が無ければ未 push）で確かめる
+    - それより前のコミットに入っている、またはすでに push している場合は、名前を示して止まる（例外 X3）
   - どちらか判断できなければ、名前を示して止まり、オーナーに確かめる（ユーザーのファイルを変更に入れる・外す判断のため。例外 X3）
 - 出力が `untracked-check:` で始まらなければ、判定ではない（meta.json が読めない・古い形式、`--check-untracked` を知らない古い CLI 等）。`--out` と CLI の版を直し（`npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> quality-context …`）、実行し直す。そのサイクルの meta.json が無い・古いために context を作り直すなら、新しいサイクルとして作り直し、レビューもやり直す（同じサイクルを作り直すと、レビュー時の未追跡の一覧が失われ、確認を素通りする）
 
@@ -784,6 +789,7 @@ PR が既にあるときは、フラグを作った（作り直した）後に P
 - [ ] 自動実施分を実行した。確認の区分があれば最後の 1 通で聞き、返答を記録し、実施と決まったものを実行した（見送りは理由付き — フラグ作成をブロックしない）
 - [ ] 永続台帳を更新した
 - [ ] 台帳・Step 5 生成物の差分をコミットしてから Step 6 に進んだ
+- [ ] `quality-context --check-untracked` の最後の行が `untracked-check: OK` であることを、最初の push の前とフラグの前に確かめた（コミットを足したら確かめ直した）
 - [ ] （E2E 実施時）失敗を実バグとして修正し、影響範囲のみ再検証した
 
 ### 最終確認
