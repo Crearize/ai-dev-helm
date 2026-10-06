@@ -158,7 +158,7 @@ E2E テストは `test-recommendation` スキル（quality-policy.md §2）が�
 | `decision` | `"killed" \| "equivalent" \| "accepted" \| "unresolved" \| "untriaged" \| "tool_false_negative"` | 必須 | トリアージの決定（値の意味の定義は quality-policy.md §2、判定手続き — red-green 検証の手順・`equivalent` の判定基準の詳細・`tool_false_negative` の機械判定条件 — は `test-recommendation` SKILL.md「トリアージ規律」を正とする）。`killed`: red-green 検証を経て、追加したテストが検出できるようになったことを確認した変異 / `equivalent`: 動作が変わらない変異（判断根拠を1件ずつ記録する）/ `accepted`: 振る舞いに影響しないことが確認できる変異（`category` 必須）/ `unresolved`: 振る舞いに影響するがテストによる検出に至らなかった変異（台帳に持ち越し可） / `untriaged`: 未判断のまま台帳に持ち越し可（非ブロック）/ `tool_false_negative`: ツール偽陰性。`score_raw` はツール算出の生値でありこれを含む。件数を台帳に明示し、スコアの解釈時に差し引いて読む |
 | `category` | `"logging" \| "defensive_guard" \| "type_only" \| "ui_text" \| "dev_only" \| null` | 必須 | `decision` が `accepted` のときのカテゴリ（閉集合）。それ以外は `null` |
 | `reason` | `string` | 必須 | 判断の理由（`untriaged` / `tool_false_negative` では空文字でよい） |
-| `memo_linked` | `boolean` | 必須 | テスト設計メモの「保証すべき状態遷移・不変条件」「ファルシフィケーション項目」に対応する変更行のミュータントか。`true` の生存は対処提案の優先度を上げる（quality-policy.md §2） |
+| `memo_linked` | `boolean` | 必須 | テスト設計メモの「保証すべき状態遷移・不変条件」「ファルシフィケーション項目」に対応する変更行のミュータントか。`true` の生存は優先して対処する（quality-policy.md §2） |
 
 ### TestDesign オブジェクト
 

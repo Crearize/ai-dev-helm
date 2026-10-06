@@ -28,7 +28,7 @@ Exemption: a typo fix that involves no design choice, or an obviously correct ch
 
 None of these replaces the gate: your own self-check, a request to implement given before the design existed, a plan review, or the final quality-check. If the reservation is denied, follow the hook's message; ask the owner for approval only when a review limit is reached, then run extend yourself.
 
-Once the user approves, do not ask again. The approval covers the spec update, the plan and its review, implementation, tests, documentation, quality-check, commits, feature-branch pushes and the PR (`documents/development/development-policy.md` §1.0 "承認後の進め方").
+Once the user approves, do not ask again. The approval covers the spec update, the plan and its review, implementation, tests, documentation, quality-check, commits, feature-branch pushes, the PR and the merge when no deviation from the design was recorded (with deviations, a final confirmation before merging) (`documents/development/development-policy.md` §1.0 "承認後の進め方").
 
 ## After Approval
 
