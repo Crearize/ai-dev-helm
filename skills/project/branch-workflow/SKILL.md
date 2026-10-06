@@ -62,7 +62,7 @@ main への取り込みは quality-check を完走してから行う。quality-g
 1. feature の worktree で quality-check を完走し、フラグを作る（フラグは feature の HEAD を指す）
 2. main のチェックアウトに触る前に、feature の worktree で事前確認を実行する: `npx --no ai-dev-helm integrate-check --main <main のチェックアウト>`（CLI が手元に無ければ `npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> integrate-check --main <main のチェックアウト>`。trunk が main 以外なら `--trunk <名前>`）
    - 読み取りだけのコマンドで、何も変更しない（push・merge・switch もしない）。git を引数の配列で呼ぶので、シェル・引用・文字コードの違いを受けない
-   - 確かめること（見つけたものは名前つきで出す）: main のチェックアウトが trunk を開いている、その追跡ファイルに未コミットの変更が無い、trunk が feature の祖先である、feature が足すパス（名前の変更先を含む）と同じ場所に main のチェックアウトで追跡されていないもの（未追跡・ignore 済みのファイル、それらを含むディレクトリ、ファイルになっている親のパス）が無い。大文字小文字の違いはファイルシステムの実際の挙動で判定する
+   - 確かめること（見つけたものは名前つきで出す）: main のチェックアウトが trunk を開いている、その追跡ファイルに未コミットの変更が無い、trunk が feature の祖先である、feature が足すパス（名前の変更先を含む）と同じ場所に main のチェックアウトで追跡されていないもの（未追跡・ignore 済みのファイル、それらを含むディレクトリ、ファイルになっている親のパス）が無い、feature が変えるファイルに main のチェックアウトで skip-worktree / assume-unchanged が付いていない（`git status` に出ない手元の変更）。大文字小文字の違いはファイルシステムの実際の挙動で判定する
    - 関係の無い未追跡ファイル（ユーザーの資料など）は見ない。統合を妨げないので、触れずにそのまま残す
    - 出力の最後の行が `integrate-check: OK`（終了コード 0）: 次へ進む
    - 最後の行が `integrate-check: NG (<trunk> is not an ancestor only)`: main を feature に取り込み、quality-check をやり直してから、手順 1 からやり直す（integrate-check も再実行する。main のチェックアウトには触れないので止まらない）

@@ -183,14 +183,15 @@ yargs(hideBin(process.argv))
           if (gap.ok) {
             console.log(`untracked-check: OK - none of the ${gap.untrackedAtReview} file(s) untracked at cycle ${argv.cycle}'s review is part of the change`);
           } else {
-            console.log(`untracked-check: NG - ${gap.gap.length} file(s) untracked (so not reviewed) at cycle ${argv.cycle} are now part of the change:`);
             for (const name of gap.gap) console.log(`  ${name}`);
-            console.log('Review them: rebuild the context (quality-context) and redo the review cycle before creating the flag.');
+            console.log('Create no flag. For each name: if it belongs to the change, rebuild the context (quality-context) and redo the review; if it does not (the user\'s file), keep the file, take it out of the change with git rm --cached -- <name>, commit, and run this check again; if unsure, stop and ask the owner, naming the files.');
+            console.log(`untracked-check: NG - ${gap.gap.length} file(s) untracked (so not reviewed) at cycle ${argv.cycle} are now part of the change (listed above)`);
             process.exitCode = 1;
           }
         } catch (err) {
+          // Not a verdict: exit 2, never the NG's 1.
           console.error(`Error: ${err.message}`);
-          process.exitCode = 1;
+          process.exitCode = 2;
         }
         return;
       }
@@ -270,7 +271,7 @@ yargs(hideBin(process.argv))
   )
   .command(
     'integrate-check',
-    'Read-only pre-check of the remote-less integration, run in the feature worktree: the main checkout is on the trunk with no tracked change, the trunk is an ancestor, and nothing there stands at a path the feature adds (exit 0 OK, 1 problems found, 2 error). Changes nothing',
+    'Read-only pre-check of the remote-less integration, run in the feature worktree: the main checkout is on the trunk with no tracked change, the trunk is an ancestor, nothing there stands at a path the feature adds, and no skip-worktree / assume-unchanged file there is one the feature changes (exit 0 OK, 1 problems found, 2 error; the last line is the verdict). Changes nothing',
     (yargs) => yargs
       .option('main', { type: 'string', demandOption: true, describe: 'The checkout that has the trunk open (a relative path is resolved against the current directory)' })
       .option('trunk', { type: 'string', default: 'main', describe: 'Trunk branch name' })

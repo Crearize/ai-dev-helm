@@ -1242,7 +1242,19 @@ const PR_MERGE_HINT = " Make the flag in the worktree of the pull request's bran
 const PUSH_TARGET = 'This push has no refspec, and its push target (@{push}) is main/master. ';
 // 3.4.3: without a remote-tracking trunk (a push-only remote at most) there is
 // no pull request route, so the hint names the local integration instead.
-const noPrRoute = (trunk) => ` - there is no remote-tracking ${trunk} here (a push-only remote at most), so there is no pull request route: re-run the quality-check skill in this worktree, then run \`git push . HEAD:${trunk}\` (if git push cannot be used, the merge in this worktree from the branch-workflow skill).`;
+const noPrRoute = (trunk) => ` - there is no remote-tracking ${trunk} here (a push-only remote at most), so integrate locally: re-run the quality-check skill in this worktree, then run \`git push . HEAD:${trunk}\` (if git push cannot be used, the merge in this worktree from the branch-workflow skill).`;
+// No pull request route at all: neither main nor master has a remote-tracking
+// ref (a repository whose trunk is master still has one when origin/master
+// exists, whatever the push names). Reason text only.
+const noPrRouteHere = (ctx) => Boolean(ctx) && untrackedTrunk(ctx, 'main') && untrackedTrunk(ctx, 'master');
+// L4: the trunk-push refusals that recommend a pull request say instead how to
+// integrate locally when there is no pull request route.
+const FORCE_TRUNK_LOCAL = (trunk) => `Force, delete, --all, --branches and --mirror pushes to main/master are always refused, with or without a quality check: they rewrite or delete trunk history. There is no remote-tracking ${trunk} here (a push-only remote at most), so integrate locally: integrate a branch with \`git push . HEAD:${trunk}\` from its own worktree after the quality-check skill (see the branch-workflow skill).`;
+function localizeForceTrunk(verdict, cands, ctx) {
+  if (!verdict || verdict.reason !== FORCE_TRUNK || !noPrRouteHere(ctx)) return verdict;
+  const cand = cands.find((c) => c.kind === 'push' && c.toTrunk) || cands.find((c) => c.kind === 'push');
+  return { ...verdict, reason: FORCE_TRUNK_LOCAL(cand ? pushTrunk(cand, ctx) : 'main') };
+}
 // The trunk a push candidate writes: the first main/master refspec, else the
 // @{push} target, else main.
 function pushTrunk(cand, ctx) {
@@ -1323,7 +1335,7 @@ function staticRules(a, commandMover, plan) {
 // Rule 2 item 6: `<x>:main` from something that is not this branch. The
 // candidate carries word indices, so the words themselves are read back from
 // the segment facts here.
-function reverseRefspec(gated, branch) {
+function reverseRefspec(gated, branch, ctx) {
   for (const c of gated) {
     if (!c.mainSpecs) continue;
     const facts = c.inv.facts.words;
@@ -1335,7 +1347,11 @@ function reverseRefspec(gated, branch) {
       // `HEAD` and `@` both name the current branch, in any case spelling.
       if (UPSTREAM_REFS.has(src.toLowerCase())) continue;
       if (src.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '') === branch) continue;
-      return deny('2', `Push from the branch itself: ${src}:${dst} pushes a branch other than the current one; only HEAD or the current branch can be pushed to the trunk here. Check out that branch and push from it, or push this branch with \`git push -u origin HEAD\`.`);
+      const trunk = dst.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '').toLowerCase();
+      const route = noPrRouteHere(ctx)
+        ? `Check out that branch and integrate it from its own worktree with \`git push . HEAD:${trunk}\` after the quality-check skill (there is no remote-tracking ${trunk} here, so integrate locally).`
+        : 'Check out that branch and push from it, or push this branch with `git push -u origin HEAD`.';
+      return deny('2', `Push from the branch itself: ${src}:${dst} pushes a branch other than the current one; only HEAD or the current branch can be pushed to the trunk here. ${route}`);
     }
   }
   return null;
@@ -1446,7 +1462,7 @@ function contextRules(a, ctx, plan = null) {
   if (gated.length === 0) return allow();
   if (gated.length > 1) return deny('2', ONE_OPERATION);
   const cand = gated[0];
-  if (cand.kind === 'push' && cand.hard) return deny('2', FORCE_TRUNK);
+  if (cand.kind === 'push' && cand.hard) return localizeForceTrunk(deny('2', FORCE_TRUNK), [cand], ctx);
   if (cand.kind === 'gh' && cand.repo !== null) {
     // H-19(a): another repository's PR is judged in that repository.
     const origin = ctx.originRepo;
@@ -1471,7 +1487,7 @@ function contextRules(a, ctx, plan = null) {
     }
   }
 
-  const reverse = reverseRefspec(gated, branch); // Rule 2 item 6, ahead of every exemption.
+  const reverse = reverseRefspec(gated, branch, ctx); // Rule 2 item 6, ahead of every exemption.
   if (reverse) return reverse;
 
   if (kind === 'sync') {
@@ -1516,7 +1532,7 @@ function contextRules(a, ctx, plan = null) {
   if (verdict.decision !== 'block' || verdict.rule !== '3' || !offTrunk) return verdict;
   const prefix = cand.kind === 'push' && cand.mainOnly ? PUSH_TARGET : '';
   const trunk = pushTrunk(cand, ctx);
-  const hint = untrackedTrunk(ctx, trunk) ? noPrRoute(trunk) : PR_HINT;
+  const hint = noPrRouteHere(ctx) ? noPrRoute(trunk) : PR_HINT;
   return { ...verdict, reason: `${prefix}${verdict.reason.replace(/\.$/, '')}${hint}` };
 }
 
@@ -2047,7 +2063,7 @@ function classifyText(text, ctx) {
   const plan = deferralPlan(judged, lines, analyzed, commandMover);
   for (const a of analyzed) {
     const verdict = staticRules(a, commandMover, plan);
-    if (verdict) return verdict;
+    if (verdict) return localizeForceTrunk(verdict, a.cands, ctx);
   }
   const candLines = analyzed.filter((a) => a.cands.length > 0);
   if (candLines.length === 0) return allow();

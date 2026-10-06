@@ -93,7 +93,7 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 - 既存の package.json や CI に、`@crearize/` を付けない `npx` で `ai-dev-helm lint` を呼ぶ箇所が残っていれば置き換える（package.json の scripts の中なら `ai-dev-helm lint`、外なら `npx --no ai-dev-helm lint`、導入前や版を固定するなら `npx -y @crearize/ai-dev-helm@<version> …`）。スコープ無しの `npx` は、手元に無いと npm の別の名前を取りに行く。
 - `@crearize/ai-dev-helm` を devDependency にしている導入先は、その版を 3.4.3 以上に上げる（古い版の CLI には `integrate-check` が無く、`Unknown argument` になる。出力が `integrate-check:` で始まらなければ判定ではないので、版を固定した `npx -y @crearize/ai-dev-helm@<version> integrate-check …` で実行し直す）。
 - `.gitignore` を確かめる。`init` の再実行で `.claude/worktrees/` が足される（3.4.2 の節）。3.4.3 からは、無くてもリモートの無い統合は止まらない（`git status` の表示のため）。
-- quality-check の共通コンテキスト（`quality-context`）は、未追跡ファイルを変更に含めず、件数と名前を別の節と WARNING に出す（スナップショットにもコピーしない）。変更に含める新規ファイルは、共通コンテキストを作る前に `git add`（`-N` 可）する。フラグの作成前に `quality-context --check-untracked` で、レビュー時に未追跡だったファイルが変更に入っていないことを確かめる（quality-check の 4-0 と Step 6）。
+- quality-check の共通コンテキスト（`quality-context`）は、未追跡ファイルを変更に含めず、件数と名前を別の節と WARNING に出す（スナップショットにもコピーしない）。変更に含める新規ファイルは、共通コンテキストを作る前に `git add`（`-N` 可）する。フラグの作成前に `quality-context --check-untracked` で、レビュー時に未追跡だったファイルが変更に入っていないことを確かめ、最後の行が `untracked-check: OK` のときだけフラグを作る（NG なら、変更に属するものはレビューをやり直し、属さないユーザーのファイルは消さずに `git rm --cached` で外す。`untracked-check:` で始まらない出力は判定ではないので、`--out` と版を直して実行し直す。quality-check の 4-0 と Step 6）。Step 5 のコミットはパスを指定して行う（`git add -A` を使わない）。
 
 ## 計測の範囲
 
