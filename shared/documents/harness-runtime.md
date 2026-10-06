@@ -67,7 +67,7 @@ node .claude/hooks/review-budget.cjs status
 node .claude/hooks/review-budget.cjs begin --phase quality --roles integrated-reviewer,falsification-qa
 ```
 
-正式な呼び方は上の `node .claude/hooks/review-budget.cjs`（Codex のみなら `.codex`）。パッケージ CLI の `ai-dev-helm review-budget …` は同じ状態を扱い、`.ai-dev-helm.json` の `reviewBudgetScript`、`.claude/hooks/review-budget.cjs`、`.codex/hooks/review-budget.cjs` の順に見つけたスクリプトへ処理を任せる。どれも無いときだけ同梱のスクリプトを警告つきで使う。未インストールの旧リリースを `npx` で取得して回避しない。
+正式な呼び方は上の `node .claude/hooks/review-budget.cjs`（Codex のみなら `.codex`）。パッケージ CLI（`npx --no ai-dev-helm review-budget …`。CLI が入っていなければ `npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> review-budget …`）は同じ状態を扱い、`.ai-dev-helm.json` の `reviewBudgetScript`、`.claude/hooks/review-budget.cjs`、`.codex/hooks/review-budget.cjs` の順に見つけたスクリプトへ処理を任せる。どれも無いときだけ同梱のスクリプトを警告つきで使う。未インストールの旧リリースを `npx` で取得して回避しない。
 
 1. チェックが通り、レビューを行う場合にだけ `begin` を呼ぶ。戻り値の `round` はレビュー回数であり、レポートの `total_cycles`（機械チェックを含む工程数）とは別。`quality-context --cycle` には継続中の工程番号を渡す。例えば失敗した3工程の次で初めてレビューする場合、工程番号は4、予約の round は1となる。レビュー開始のために工程番号を1へ戻したり、継続中のレポートやスナップショットを初期化したりしない。
 2. 戻り値 `markers` の該当ロールの行（`HELM_REVIEW:…:integrated-reviewer` 等）を **各レビュアーへの message / prompt の先頭にそのまま置く**。起動名も `reviewer` を含む名前にする。Claude の `Agent` / `Task`、Codex の `spawn_agent` で同じ手順を使う。マーカーは message / prompt の**1 行目**に置く（2 行目以降の `HELM_REVIEW:` はマーカーとして扱わない）。実装の依頼で 1 行目にマーカーを書き写さない。レビューでない作業（制作・修正）は、名前と description にレビュー語（review / reviewer / レビュー）を入れない。
