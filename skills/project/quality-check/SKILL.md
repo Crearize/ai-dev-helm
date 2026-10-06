@@ -716,9 +716,9 @@ Step 0 以降の各ステップで蓄積してきた`.quality-check-report.json`
 
 **フラグ作成の前に、Step 5 で生じた差分（永続台帳の更新・撃殺テスト・新規 E2E シナリオ・E2E 失敗の修正）がコミット済みであることを確認する（MUST）**（台帳はハーネス免除の対象外のため、フラグ発行後のコミットはフラグを無効化する — 下記「フラグの性質」）。
 
-サイクルを打ち切って終了した場合（上限到達・停滞）は、`documents/development/quality-policy.md` §5 に従いユーザーの明示承認なしにフラグを作成しない。
+サイクルを打ち切って終了した場合（上限到達・停滞）は、`documents/development/quality-policy.md` §5 に従いユーザーの明示承認なしにフラグを作成しない。承認時は `.quality-check-report.json` の `gate_override` に記録する（スキーマ参照）。
 
-設計との差異（`documents/development/development-policy.md` §1.0「承認後の進め方」 1。spec・計画の記録と PR 本文の差異欄）があるときは、最後の 1 通の「この差異を認めてマージしてよいか」への OK を受けるまでフラグを作成しない。フラグの作成後に差異が見つかった場合は、`.quality-check-passed` を削除してから確認する。承認時は `.quality-check-report.json` の `gate_override` に記録する（スキーマ参照）。
+設計との差異（`documents/development/development-policy.md` §1.0「承認後の進め方」 1。spec・計画の記録と PR 本文の差異欄）があるときは、最後の 1 通の「この差異を認めてマージしてよいか」への OK を受けるまでフラグを作成しない。フラグの作成後に差異が見つかった場合は、`.quality-check-passed` を削除してから確認する。
 
 全チェック通過後、現在ブランチ名と HEAD ハッシュを記録した JSON フラグを作成する：
 
