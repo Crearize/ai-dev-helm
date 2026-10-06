@@ -1224,6 +1224,13 @@ const ONE_OPERATION = 'Run one gated operation per command: split the merge, pul
 const ONE_SOURCE = 'Merge or rebase one branch at a time on main/master (no --onto): run `git merge <branch>` with a single source.';
 const pullSource = (trunk) => `On ${trunk}, a \`git pull\` from another branch brings in commits the gate cannot check. Run \`git fetch\`, then \`git merge <remote>/<branch>\` once the quality-check skill has passed on that branch - or use one of the sync forms (\`git pull\`, \`git pull origin ${trunk}\`).`;
 const diverged = (trunk, ref) => `${trunk} has commits that ${ref} does not have, so the result would not be the commit the quality check ran on. Merge ${trunk} into the branch (or rebase it onto ${trunk}), re-run the quality-check skill there, then integrate.`;
+// D9 (3.4.3): the remote-less hint follows whether the trunk has a remote-tracking
+// ref, not whether any remote exists - a push-only remote (no `<remote>/<trunk>`)
+// leaves the project without a PR route. Reason text only; no verdict reads it.
+// A ctx without `trunkTracked` (a test stub) falls back to `hasRemote`.
+const untrackedTrunk = (ctx, trunk) => (typeof ctx.trunkTracked === 'function'
+  ? ctx.trunkTracked(String(trunk)) === false
+  : ctx.hasRemote === false);
 const integrateReason = (trunk, ref, noRemote) => `The quality-check flag here does not cover ${ref}: the flag must name the commit that ${trunk} receives. Run the quality-check skill on ${ref} in this checkout, then integrate it.${noRemote ? ` From a separate worktree of the branch, run \`git push . HEAD:${trunk}\` there instead (if git push cannot be used, merge in the worktree that has the flag; see the branch-workflow skill).` : ''}`;
 const TRUNK_NEVER = 'Deleting main/master or force-fetching into it is never allowed here. Integrate a branch with `git merge`, a pull request, or - without a remote - `git push . HEAD:main` from the checked branch.';
 const FETCH_INTO_TRUNK = 'A fetch into main/master from another remote branch cannot be checked here. Fetch the branch, run the quality-check skill on it, then integrate it (`git merge`, a pull request, or `git push . HEAD:main`).';
@@ -1464,14 +1471,14 @@ function contextRules(a, ctx, plan = null) {
   const resolves = typeof ctx.resolveCommit === 'function';
   if (cand.kind === 'write') {
     if (cand.ref === undefined) return cand.sameName ? allow() : deny('2', FETCH_INTO_TRUNK);
-    const why = integrateReason(cand.trunk, cand.ref, ctx.hasRemote === false);
+    const why = integrateReason(cand.trunk, cand.ref, untrackedTrunk(ctx, cand.trunk));
     return resolves ? judgeTrunkMove(ctx, cand.trunk, cand.ref, { noFlag: why, stale: why }) : rule3Flag(ctx, why);
   }
   if (cand.kind === 'git') {
     const source = integrationSource(cand, branch);
     if (source.deny) return source.deny;
     if (source.ref !== undefined && resolves) {
-      const why = integrateReason(branch, source.ref, ctx.hasRemote === false);
+      const why = integrateReason(branch, source.ref, untrackedTrunk(ctx, branch));
       const noFlag = SYNC_SOURCE_RE.test(source.ref) ? needFlagReason(a, branch) : why;
       return judgeTrunkMove(ctx, branch, source.ref, { noFlag, stale: why });
     }
@@ -1961,6 +1968,9 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 //                 resolveCommit (a test stub) judges merges against HEAD.
 //   pushTarget    `@{push}` (`origin/main`), or null/undefined.
 //   hasRemote     false when the repository has no remote.
+//   trunkTracked(trunk) true when some `refs/remotes/<remote>/<trunk>` exists,
+//                 false when none does, null when git failed. Read only for
+//                 the remote-less hint in a reason (D9).
 //   originRepo    origin's `owner/repo` in lower case, or null.
 //   cwd           the payload cwd (absolute path) - where the location walk
 //                 starts. Missing: every move is UNRESOLVED.
@@ -2258,6 +2268,14 @@ function makeCtx(cwd) {
       return once('remotes', () => {
         const r = git(['remote']);
         return r.ok ? r.out.trim() !== '' : true;
+      });
+    },
+    // D9: whether any remote-tracking ref of `trunk` exists (a push-only remote has none).
+    trunkTracked(trunk) {
+      return once(`tracked:${trunk}`, () => {
+        const r = git(['for-each-ref', '--format=%(refname)', 'refs/remotes']);
+        if (!r.ok) return null;
+        return r.out.split(/\r?\n/).some((ref) => /^refs\/remotes\/.+\/[^/]+$/.test(ref) && ref.endsWith(`/${trunk}`));
       });
     },
     // H-19(a): origin's `owner/repo` (lower case), or null.

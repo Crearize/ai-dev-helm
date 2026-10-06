@@ -58,8 +58,9 @@ main への取り込みは quality-check を完走してから行う。quality-g
 ### リモートの無いプロジェクトの取り込み
 
 1. feature の worktree で quality-check を完走し、フラグを作る（フラグは feature の HEAD を指す）
-2. main のチェックアウトに触る前に、次の 3 つを確かめる
-   - `git -C <main のチェックアウト> status --porcelain` が空であること。空でなければ detach せずに統合を止める（ユーザーの作業中の変更に触れない。例外 X3）。最後の 1 通で知らせる
+2. main のチェックアウトに触る前に、次の 4 つを確かめる。ほかの未追跡ファイル（ユーザーの資料など）は統合を妨げないので、触れずにそのまま残す。main のチェックアウトの未追跡ファイルの一覧は出さない（ユーザーの作業中のファイル・顧客データの名前を会話に出さない）。未追跡の確認は feature が足すパスだけを個別に調べ、当たったときも知らせるのは当たった件数と feature 側のパスだけにする
+   - 追跡ファイルに未コミットの変更が無いこと: `git -C <main のチェックアウト> status --porcelain --untracked-files=no` が空
+   - feature が足すファイル（feature の worktree で `git diff --name-only --diff-filter=A main...HEAD`）と同じパスの未追跡ファイルが、main のチェックアウトに無いこと: `git -C <main のチェックアウト> ls-files --others --exclude-standard -- <そのパス>` が空。この 2 つのどちらかに当たれば、detach せずに統合を止める（ユーザーの作業中の変更に触れない。例外 X3）。最後の 1 通で知らせる
    - feature の worktree で `git merge-base --is-ancestor main HEAD` が成功すること。失敗したら detach せず、main を feature に取り込み、quality-check をやり直してから統合する
    - このプロジェクトで `git push . HEAD:main` が使えること（エージェントの設定の deny 規則（`Bash(git push:*)` 等）・プロジェクトの規則）。使えなければ、下の「`git push` が使えない場合」の手順に替える
 3. main を開いているチェックアウトで `git switch --detach` を実行する（チェックアウト中のブランチは更新できないため）

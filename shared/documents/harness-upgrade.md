@@ -83,8 +83,13 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 - main から本番ブランチ（`release` 等）へ反映する運用の OK の範囲は §1.0「承認後の進め方」8 による。
 - 導入先が独自に書いた同じ趣旨の規則（「staging は X2 でない」、本番への反映の範囲の聞き方）は、配布元の文と重なるので、配布元への参照に置き換える。
 - `init` の再実行は、`.gitignore` に `.claude/worktrees/`（Claude Code の標準の作業ツリーの置き場所）を足す。
-- `init` を再実行しない導入先は、同じ行を手で足す（無いと main のチェックアウトの `git status --porcelain` が空にならず、リモートの無い統合が進まない）。
-- リモートの無い導入先で `.claude/worktrees/` に作業ツリーがあるときは、更新を統合する前に `"$(git rev-parse --git-common-dir)/info/exclude"` に `.claude/worktrees/` を足す（追跡されず、すべての作業ツリーに効く）。
+- `init` を再実行しない導入先は、同じ行を手で足す（`git status` の表示に作業ツリーが出ないようにするため。3.4.3 からは、無くてもリモートの無い統合は止まらない）。
+- 必要なら（`.gitignore` の更新を統合する前から `git status` の表示を整えたいとき）、`"$(git rev-parse --git-common-dir)/info/exclude"` に `.claude/worktrees/` を足す（追跡されず、すべての作業ツリーに効く）。
+
+## 3.4.3 の更新
+
+- リモートの無い統合の事前確認を変えた（`branch-workflow` の「リモートの無いプロジェクトの取り込み」）。3.4.2 の「main のチェックアウトの `git status --porcelain` が空」は、ユーザーの未追跡ファイル（資料・レポート等）があると毎回止まった。3.4.3 からは、追跡ファイルに未コミットの変更が無いこと（`git -C <main のチェックアウト> status --porcelain --untracked-files=no` が空）と、feature が足すファイルと同じパスの未追跡ファイルが無いことだけを確かめる。ほかの未追跡ファイルには触れない。
+- 導入先が 3.4.2 の確認に合わせて独自に書いた手当て（未追跡ファイルを退避する手順など）は、不要になるので消す。
 
 ## 計測の範囲
 
