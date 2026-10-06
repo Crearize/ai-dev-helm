@@ -60,31 +60,28 @@ main への取り込みは quality-check を完走してから行う。quality-g
 ### リモートの無いプロジェクトの取り込み
 
 1. feature の worktree で quality-check を完走し、フラグを作る（フラグは feature の HEAD を指す）
-2. main のチェックアウトに触る前に、次の 4 つを確かめる
-   - 追跡ファイルに未コミットの変更が無いこと: `git -C <main のチェックアウト> status --porcelain --untracked-files=no` が空
-   - feature が足すパスに、main のチェックアウトの未追跡ファイル（ignore 済みのものを含む）が無いこと。手順は下の「未追跡ファイルの確認」
-   - feature の worktree で `git merge-base --is-ancestor main HEAD` が成功すること。失敗したら detach せず、main を feature に取り込み、quality-check をやり直してから統合する
-   - このプロジェクトで `git push . HEAD:main` が使えること（エージェントの設定の deny 規則（`Bash(git push:*)` 等）・プロジェクトの規則）。使えなければ、下の「`git push` が使えない場合」の手順に替える
+2. main のチェックアウトに触る前に、feature の worktree で事前確認を実行する: `npx --no ai-dev-helm integrate-check --main <main のチェックアウト>`（CLI が手元に無ければ `npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> integrate-check --main <main のチェックアウト>`。trunk が main 以外なら `--trunk <名前>`）
+   - 読み取りだけのコマンドで、何も変更しない（push・merge・switch もしない）。git を引数の配列で呼ぶので、シェル・引用・文字コードの違いを受けない
+   - 確かめること（見つけたものは名前つきで出す）: main のチェックアウトが trunk を開いている、その追跡ファイルに未コミットの変更が無い、trunk が feature の祖先である、feature が足すパス（名前の変更先を含む）と同じ場所に main のチェックアウトで追跡されていないもの（未追跡・ignore 済みのファイル、それらを含むディレクトリ、ファイルになっている親のパス）が無い。大文字小文字の違いはファイルシステムの実際の挙動で判定する
+   - 関係の無い未追跡ファイル（ユーザーの資料など）は見ない。統合を妨げないので、触れずにそのまま残す
+   - 終了コード 0: 次へ進む
+   - 終了コード 1: 何も変えずに統合を止め、出力を最後の 1 通で知らせる（例外 X3。オーナーの返答の後に進める）。ただし、問題が「trunk が祖先でない」だけなら、main を feature に取り込み、quality-check をやり直してから統合する（main のチェックアウトには触れないので止まらない）
+   - 終了コード 2: コマンドの誤り（`--main` の場所など）。直して実行し直す
+3. このプロジェクトで `git push . HEAD:main` が使えるかを確かめる（エージェントの設定の deny 規則（`Bash(git push:*)` 等）・プロジェクトの規則）。使えなければ、下の「`git push` が使えない場合」の手順に替える
+4. main を開いているチェックアウトで `git switch --detach` を実行する（チェックアウト中のブランチは更新できないため）
+5. feature の worktree で `git push . HEAD:main` を実行する（fast-forward 以外は git が拒否する。hook はフラグ = HEAD で通す）。deny 規則で止められたら、detach したまま下の「`git push` が使えない場合」の 2 に進む
+6. main のチェックアウトで `git switch main` を実行する（失敗したときは下の「最後の `git switch main` が失敗したとき」）
+7. `.quality-check-passed` を削除する
 
-   最初の 2 つのどちらかに当たれば、detach せずに統合を止める（ユーザーの作業中の変更に触れない。例外 X3）。最後の 1 通で知らせるのは、当たった件数と feature 側のパスだけにする。
-3. main を開いているチェックアウトで `git switch --detach` を実行する（チェックアウト中のブランチは更新できないため）
-4. feature の worktree で `git push . HEAD:main` を実行する（fast-forward 以外は git が拒否する。hook はフラグ = HEAD で通す）。deny 規則で止められたら、detach したまま下の「`git push` が使えない場合」の 2 に進む
-5. main のチェックアウトで `git switch main` を実行する（出力は捨てて終了コードだけを見る。下の「最後の `git switch main` が失敗したとき」）
-6. `.quality-check-passed` を削除する
+実際の detach・push・merge・switch は、上のとおり手順に書いた git コマンドで行う（quality-gate の hook に見える形を保つ。integrate-check の中では行わない）。
 
-**未追跡ファイルの確認**: main のチェックアウトの未追跡ファイルの一覧は出さない（ユーザーの作業中のファイル・顧客データの名前を会話に出さない）。ほかの未追跡ファイル（ユーザーの資料など）は統合を妨げないので、触れずにそのまま残す。feature のパスだけを指定して、件数だけを数える。
-
-1. feature の worktree で、feature が足すパスの一覧を取る: `git -c core.quotePath=false diff --name-only --no-renames --diff-filter=A main...HEAD`（`--no-renames` で名前の変更先も、`core.quotePath=false` で日本語の名前もそのまま出る）
-2. 一覧が空なら、この確認はしない（パスを付けない `git ls-files --others` は、未追跡ファイルをすべて出してしまう）
-3. 空でなければ、パスごとに `git -C <main のチェックアウト> ls-files --others -- ":(literal,icase)<パス>" | wc -l`（PowerShell は `| Measure-Object`）で件数だけを数える。`literal` は `[id]` のような文字を glob にしない（別の名前に当たって出力されるのを防ぐ）。`icase` は大文字小文字の違いも拾う（Windows・macOS）。`--exclude-standard` は付けない（ignore 済みのユーザーのファイルも上書きから守る）。パスが main 側でディレクトリになっている場合も、その中のファイルが数えられて止まる。`ls-files` に `--pathspec-from-file` は無いので、パスは引数で渡す
-
-**最後の `git switch main` が失敗したとき**: 確認を通っても、確認で見えない衝突（feature が足すパスの親が main 側ではファイルになっている等）で失敗することがある。失敗の出力には main 側のファイルの名前が出るので、出力は捨てて終了コードだけを見る（`git -C <main のチェックアウト> switch main >/dev/null 2>&1`）。失敗したら、ユーザーのファイルには触れない。main のチェックアウトは統合前の commit で detached のまま残し（この場合だけ）、失敗したことと feature 側のパスを最後の 1 通で知らせる（例外 X3）。
+**最後の `git switch main` が失敗したとき**: integrate-check を通っても、その後に main のチェックアウトにファイルが置かれた等で失敗することがある。ファイルの移動・削除や `git switch -f` はしない。main のチェックアウトは統合前の commit で detached のまま残し（この場合だけ）、git の出力（妨げているファイルの名前）と状態を最後の 1 通で知らせる（例外 X3）。
 
 **`git push` が使えない場合**: 上の表の「1 つのチェックアウト」と同じローカルのマージ（`git merge --no-ff <feature>`）を、フラグのある feature の worktree で行う。hook はコマンドを実行したチェックアウトのフラグを読むので、フラグの無い main のチェックアウトでの `git merge` は止まる。
 
 1. main を開いているチェックアウトで `git switch --detach` を実行する（detach 済みならそのまま）
 2. feature の worktree で `git switch main` → `git merge --no-ff <feature>` → `git switch <feature>` を実行する
-3. main のチェックアウトで `git switch main` を実行する（出力の扱いと失敗したときは上と同じ）
+3. main のチェックアウトで `git switch main` を実行する（失敗したときは上と同じ）
 4. `.quality-check-passed` を削除する
 
 deny 以外の理由（quality gate、git の non-fast-forward 拒否 等）で push / merge が拒否されたら、両方を元に戻し（feature の worktree が main にいれば `git switch <feature>`、main のチェックアウトは `git switch main`）、quality-check をやり直す（main が先に進んでいれば、main を取り込んでから）。main のチェックアウトを detached のまま残さない（例外は上の「最後の `git switch main` が失敗したとき」だけ）。

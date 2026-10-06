@@ -34,7 +34,7 @@ git status --short --untracked-files=no
 git worktree list
 ```
 
-`--untracked-files=no` は、main のチェックアウトで実行したときに、ユーザーの未追跡ファイル（作業中のファイル・顧客データ）の名前を一覧に出さないため。
+`--untracked-files=no` は、main のチェックアウトで実行したときに、ユーザーの未追跡ファイル（作業中の資料など）の長い一覧を出さないため（前提確認に要るのは追跡ファイルの変更だけ）。
 
 確認すること:
 

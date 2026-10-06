@@ -188,7 +188,7 @@ yargs(hideBin(process.argv))
       }
       console.log(`context: ${result.contextPath}`);
       if (result.measurementPath) console.log(`measurements: ${result.measurementPath} (helper timing and on-disk inventory; not runtime token usage)`);
-      console.log(`changed files: ${result.names.length} (+ ${result.untracked.length} untracked), diff ${result.diffLines} lines${result.diffInline ? ' (inline)' : ' -> diff.patch'}`);
+      console.log(`changed files: ${result.names.length} (untracked, not part of the change: ${result.untracked.length}), diff ${result.diffLines} lines${result.diffInline ? ' (inline)' : ' -> diff.patch'}`);
       console.log(`snapshot: ${result.snapshotDir} (${result.snapshotCopied.length} files${result.snapshotSkipped.length ? `, ${result.snapshotSkipped.length} not copied` : ''})${result.replacedSnapshot ? ' - replaced the previous snapshot of this cycle' : ''}`);
       if (result.fixDiff) {
         console.log(`fix diff: ${result.fixDiff.path} (${result.fixDiff.files.length} files)`);
@@ -199,7 +199,7 @@ yargs(hideBin(process.argv))
         console.log(`findings: previous findings.json unreadable - ${result.findingsError}`);
       }
       if (result.untrackedOverLimit) {
-        console.log(`warning: ${result.untracked.length} untracked files - only the first ${result.untrackedSnapshotted} untracked files snapshotted; fix .gitignore if these are build outputs`);
+        console.log(`warning: ${result.untracked.length} untracked files (not reviewed, not snapshotted) - fix .gitignore if these are build outputs; commit what belongs to the change`);
       }
       console.log(`integrity: ${result.integrityOk ? 'ok' : 'MISMATCH - name-only list and diff headers differ'}`);
       if (!result.integrityOk) process.exitCode = 1;
@@ -238,6 +238,25 @@ yargs(hideBin(process.argv))
       } catch (error) {
         console.error('Error: ' + error.message);
         process.exitCode = 1;
+      }
+    }
+  )
+  .command(
+    'integrate-check',
+    'Read-only pre-check of the remote-less integration, run in the feature worktree: the main checkout is on the trunk with no tracked change, the trunk is an ancestor, and nothing there stands at a path the feature adds (exit 0 OK, 1 problems found, 2 error). Changes nothing',
+    (yargs) => yargs
+      .option('main', { type: 'string', demandOption: true, describe: 'The checkout that has the trunk open' })
+      .option('trunk', { type: 'string', default: 'main', describe: 'Trunk branch name' })
+      .option('dir', { type: 'string', describe: 'Feature worktree', default: process.cwd() }),
+    (argv) => {
+      try {
+        const { integrateCheck } = require('../lib/integrate-check');
+        const result = integrateCheck({ dir: argv.dir, main: argv.main, trunk: argv.trunk });
+        console.log(result.lines.join(String.fromCharCode(10)));
+        process.exitCode = result.exitCode;
+      } catch (error) {
+        console.error('Error: ' + error.message);
+        process.exitCode = 2;
       }
     }
   )
@@ -329,7 +348,7 @@ yargs(hideBin(process.argv))
       }
     }
   )
-  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, link-skills, hook-selftest, codex-trust, quality-report, or review-budget')
+  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, link-skills, integrate-check, hook-selftest, codex-trust, quality-report, or review-budget')
   .strict()
   .help()
   .version(require('../package.json').version)
