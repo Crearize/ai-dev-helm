@@ -46,7 +46,7 @@ description: マージ前に必ず実行。静的チェック・テスト・体�
 - 実効ディレクトリの `git rev-parse --show-toplevel` の実体パスが cwd のものと同じなら、移動しなかったものとして通常どおり判定する（同じリポジトリの中の `cd sub` の後の push・merge は過剰に拒否しない）。違うリポジトリなら、**移動先のリポジトリのブランチ・フラグ・差分**で規則 2 の `<x>:main`・規則 3・規則 4 を判定する（現在のリポジトリのフラグでは通さない）。移動先の git は、そのリポジトリの設定が実行させるプログラム（fsmonitor・外部 diff・textconv）を無効にして呼ぶ。フラグは 4 KB 以下の通常のファイルだけを読む（シンボリックリンクなどはフラグ無し）。移動先で git が失敗した場合と、作業ツリーでない場合は、理由の文を分けて block する。hook が呼ぶ git はネットワークに出ない（partial clone で足りないオブジェクトを取りに行かず（`GIT_NO_LAZY_FETCH=1`）、認証のプロンプトも出さない）。取れないオブジェクトは git の失敗として block する
 - 残る限界: 判定はパスの文字列とローカルのファイルシステムで行うため、ネットワークドライブに割り当てたドライブ文字・UNC を指すジャンクション・NFS 上の作業ツリーなど、ローカルパスに見えて実体がネットワーク上にある場所は、ネットワークパスと同じ扱い（触れない）にはならない。応答しない共有では hook が判定前に時間切れで終了しうる（出力前に終了した hook は allow と同じになる）。この経路は残余リスクとして扱う
 
-**限定した例外**: `git add` / `git commit` と、最後に置いた 1 つの push（refspec 省略か `HEAD` のみ。`-u` などのオプションと remote は可）だけからなるコマンド（区切りは改行・`;`・`&&`。git グローバルオプション・展開文字・作業場所変更・ほかのコマンドなし。例: `git add -A && git commit -m "x" && git push`）は、実行前のブランチが feature と確認できれば上記 mover ブロックを免除する。main / master では「trunk への push には新しいコミットでの品質チェックの合格が必要」と理由を示して block し、detached HEAD・ブランチ不明でも免除しない。`checkout` / `switch` / `bisect` / branch 引数付き `rebase` / `update-ref` 等には広げない。
+**限定した例外**: `git add` / `git commit` と、最後に置いた 1 つの push（refspec 省略か `HEAD` のみ。`-u` などのオプションと remote は可）だけからなるコマンド（区切りは改行・`;`・`&&`。git グローバルオプション・展開文字・作業場所変更・ほかのコマンドなし。例: `git add <パス> && git commit -m "x" && git push`）は、実行前のブランチが feature と確認できれば上記 mover ブロックを免除する。main / master では「trunk への push には新しいコミットでの品質チェックの合格が必要」と理由を示して block し、detached HEAD・ブランチ不明でも免除しない。`checkout` / `switch` / `bisect` / branch 引数付き `rebase` / `update-ref` 等には広げない。
 
 **分類予算**（無条件ブロックの閉じた集合には含まれない別枠の規則）: 64 KB を超えるコマンドは解析しない。ゲート語を含めば（上記と同じく、行継続を畳みクォート等を除いた形でも探す）block、含まず展開文字（`$` `` ` `` `{` `}` `%`）も含まなければ allow、展開文字を含めば block とする（`$'\x70'ush` 等を静的に読み切れないための fail-closed。`classify` 例外時の fallback も同じ判定関数を使う）。1 MB を超える hook ペイロード（stdin 全体）は解析せず無条件 block する（読み切れない入力を allow にしない）。単純な形のコマンドはコマンドごとに先頭語が 1 つだけなので、解析は長さに比例し、git / gh 語の数の上限は設けない。fail-open は下記の2つのままであり、この上限超過は fail-open に含めない。
 
@@ -687,7 +687,7 @@ JSONフォーマット例：
 （`skills/project/test-recommendation/SKILL.md`）を実行する。判定・提示・実行・台帳・記録の
 手順は同スキルを正とし、本スキルには転記しない。
 
-- 判定は 3 区分（自動実施 / 確認 / 記録のみ）。自動実施分は確認せずに実行する。確認の対象があるときは、自動実施分と Step 5 の差分のコミット → `--check-untracked` で未追跡の確認（最初の push の前。Step 6 の手順）→ push → PR 作成の後に、最後の 1 通（`documents/development/development-policy.md` §1.0「承認後の進め方」）で聞き、返答を受けて実行・記録し、同じ PR にコミットし、PR 本文を更新してから Step 6 に進み、フラグを作ったら PR 本文の Flag commit を更新する（返答までフラグは作らない）。返答を受けたら Step 5 の続き（実施と決まったものの実行・記録・同じ PR へのコミット → PR 本文の更新 → Step 6 → PR 本文の Flag commit を更新。設計との差異の項目がある場合は、その項目への OK を受けてから Step 6）から再開する。Step 0 からやり直さず、`.quality-check-report.json` も削除しない
+- 判定は 3 区分（自動実施 / 確認 / 記録のみ）。自動実施分は確認せずに実行する。確認の対象があるときは、自動実施分と Step 5 の差分のコミット → `--check-untracked` で未追跡の確認（最初の push の前。Step 6 の手順）→ push → PR 作成の後に、最後の 1 通（`documents/development/development-policy.md` §1.0「承認後の進め方」）で聞き、返答を受けて実行・記録し、同じ PR にコミットし、PR 本文を更新してから Step 6 に進み、フラグを作ったら PR 本文の Flag commit を更新する（返答までフラグは作らない）。返答を受けたら Step 5 の続き（実施と決まったものの実行・記録・同じ PR へのコミット → PR 本文の更新 → Step 6 → PR 本文の Flag commit を更新 → push（その後にマージ）。設計との差異の項目がある場合は、その項目への OK を受けてから Step 6）から再開する。Step 0 からやり直さず、`.quality-check-report.json` も削除しない
 - 見送りはフラグ作成をブロックしない（推奨度・根拠・判断と `decided_by` を `.quality-check-report.json` に記録する）
 - **E2E を実施して失敗した場合のみ例外**: 実バグとして修正 + 影響範囲のみ再検証（静的チェック・該当テスト・E2E 再実行。サイクルには含めない）を経ないとフラグを作成できない
 - 実施したミューテーションの生存への対処（テスト追加 / 台帳持ち越し / 対処不要）はいずれもフラグ作成をブロックしない
@@ -727,7 +727,7 @@ Step 0 以降の各ステップで蓄積してきた`.quality-check-report.json`
   - 属するなら、共通コンテキストを新しいサイクルで作り直してレビューをやり直す（レビューされていないため）
   - 属さない（ユーザーのファイル等）なら、ファイルは消さない。中身は feature の履歴に残り、push すればリモートに上がるので、変更から外す。外したら、もう一度この確認をする
     - まだコミットしていない（ステージしただけ）なら、`git rm --cached -- <名前>` だけでよい
-    - まだ push していない直前のコミットに入っているなら、`git rm --cached -- <名前>` → `git commit --amend`。そのコミットがそのファイルだけなら（amend は空のコミットになって失敗する）、`git reset --soft HEAD~1` → `git rm --cached -- <名前>`。push 済みかは、そのコミットが `git log --oneline @{upstream}..HEAD` に出るか（upstream が無ければ未 push）で確かめる
+    - まだ push していない直前のコミットに入っているなら、`git rm --cached -- <名前…>` → `git commit --amend --no-edit`。そのコミットが NG に出たファイル（ユーザーのファイル）だけなら（amend は空のコミットになって失敗する）、`git reset --soft HEAD~1` → `git rm --cached -- <名前…>`。push 済みかは、そのコミットが `git log --oneline "@{upstream}..HEAD"` に出るか（upstream が無ければ未 push）で確かめる（引用符は PowerShell 5.1 のため）
     - それより前のコミットに入っている、またはすでに push している場合は、名前を示して止まる（例外 X3）
   - どちらか判断できなければ、名前を示して止まり、オーナーに確かめる（ユーザーのファイルを変更に入れる・外す判断のため。例外 X3）
 - 出力が `untracked-check:` で始まらなければ、判定ではない（meta.json が読めない・古い形式、`--check-untracked` を知らない古い CLI 等）。`--out` と CLI の版を直し（`npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> quality-context …`）、実行し直す。そのサイクルの meta.json が無い・古いために context を作り直すなら、新しいサイクルとして作り直し、レビューもやり直す（同じサイクルを作り直すと、レビュー時の未追跡の一覧が失われ、確認を素通りする）

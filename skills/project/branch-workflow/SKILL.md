@@ -52,7 +52,7 @@ main への取り込みは quality-check を完走してから行う。quality-g
 | 状況 | 手順 |
 |------|------|
 | リモートがある（PR を作る remote（通常は origin）の trunk の remote-tracking ref、例: `origin/main` がある） | feature ブランチを push して PR を作る（`git push -u origin HEAD` → `gh pr create`）。merge は PR で行う |
-| リモートが無く、1 つのチェックアウトで作業している | feature 上で quality-check を完走する → `git switch main` → `git merge <feature>`（`--no-ff` 可。main が feature に無いコミットを持っていれば拒否されるので、main を feature に取り込んで quality-check をやり直す）→ `.quality-check-passed` を削除する |
+| リモートが無く、1 つのチェックアウトで作業している | feature 上で quality-check を完走する → `git switch main` → `git merge <feature>`（`--no-ff` 可。main が feature に無いコミットを持っていれば拒否されるので、main を feature に取り込んで quality-check をやり直す）→ `.quality-check-passed` を削除する（公開用・デプロイ先・バックアップへの送り出しは、下の「公開用・デプロイ先・バックアップの remote への main の送り出し」） |
 | リモートが無く、main を別の worktree で開いている | 下の「リモートの無いプロジェクトの取り込み」 |
 
 ここで「リモートが無い」は、PR を作る remote（通常は origin）の trunk の remote-tracking ref（例: `origin/main`）が無いことを言う。`<remote>/main` があっても、PR を受けない remote（公開用・デプロイ先・バックアップ。push 専用の remote は一度 push すると `<remote>/main` ができる）しか無ければ、リモートの無い取り込みを使う。そのような remote に feature ブランチを push しない（PR の道は無い）。hook の案内は origin の trunk の追跡 ref（`origin/main` / `origin/master`）だけを見る。PR を受ける remote が origin 以外の名前なら、hook の案内ではなく、この表で判断する。
@@ -74,7 +74,10 @@ main への取り込みは quality-check を完走してから行う。quality-g
 6. main のチェックアウトで `git switch main` を実行する（失敗したときは下の「最後の `git switch main` が失敗したとき」）
 7. `.quality-check-passed` を削除する
 
-公開用・デプロイ先の remote への main の送り出しは、プロジェクトの規則に従う（本番に影響するなら例外 X2）。送るなら手順 6 の前に、feature の worktree から `git push <remote> HEAD:<trunk>` で送る（main のチェックアウトからでは、そこにフラグが無いため hook に止められる）。
+**公開用・デプロイ先・バックアップの remote への main の送り出し**: プロジェクトの規則に従う。
+- 本番に影響する（例外 X2）なら、統合に入る前（手順 4 の detach の前。1 つのチェックアウトでは `git switch main` の前）に最後の 1 通で OK を受け、OK の後に統合と送り出しを続けて行う（途中で止まらない。detached のまま待たない）
+- 送るのは統合の後（手順 5 の `git push . HEAD:main` の後。「`git push` が使えない場合」では手順 2 の `git merge --no-ff` の後、`git switch <feature>` の前。1 つのチェックアウトでは `git merge` の後）で、`.quality-check-passed` を消す前。フラグのある作業ツリーから送る: feature の worktree が feature にいるなら `git push <remote> HEAD:<trunk>`、trunk にいるなら `git push <remote> <trunk>`。main のチェックアウトにはフラグが無く、フラグを消した後は、hook に止められる
+- 送らない運用（origin が bare のバックアップで、統合のたびには送らない等）では、origin/main が古いまま差分の基準 ref になり、次の feature の共通コンテキストに前の変更が入る。quality-check の 4-0 と Step 6 の両方で `--base <trunk>` を付ける
 
 実際の detach・push・merge・switch は、上のとおり手順に書いた git コマンドで行う（quality-gate の hook に見える形を保つ。integrate-check の中では行わない）。
 
