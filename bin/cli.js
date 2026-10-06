@@ -184,13 +184,14 @@ yargs(hideBin(process.argv))
             console.log(`untracked-check: OK - none of the ${gap.untrackedAtReview} file(s) untracked at cycle ${argv.cycle}'s review is part of the change`);
           } else {
             for (const name of gap.gap) console.log(`  ${name}`);
-            console.log('Create no flag. For each name: if it belongs to the change, rebuild the context (quality-context) and redo the review; if it does not (the user\'s file), keep the file, take it out of the change with git rm --cached -- <name>, commit, and run this check again; if unsure, stop and ask the owner, naming the files.');
+            console.log('Create no flag. For each name: if it belongs to the change, rebuild the context as a new cycle and redo the review. If it does not (the user\'s file), keep the file and take it out of the commit that added it - its content stays in the history and goes up with a push: when that is the last commit and not pushed yet, git rm --cached -- <name>, then git commit --amend, and run this check again; when it is an earlier commit or already pushed, stop and name the files (exception X3). If unsure, stop and ask the owner, naming the files.');
             console.log(`untracked-check: NG - ${gap.gap.length} file(s) untracked (so not reviewed) at cycle ${argv.cycle} are now part of the change (listed above)`);
             process.exitCode = 1;
           }
         } catch (err) {
           // Not a verdict: exit 2, never the NG's 1.
           console.error(`Error: ${err.message}`);
+          console.error('No verdict. If the context has to be rebuilt, rebuild it as a new cycle and redo the review: rebuilding the same cycle loses the untracked list of the review and lets this check pass unseen.');
           process.exitCode = 2;
         }
         return;

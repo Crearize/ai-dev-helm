@@ -51,11 +51,11 @@ main への取り込みは quality-check を完走してから行う。quality-g
 
 | 状況 | 手順 |
 |------|------|
-| リモートがある（trunk の remote-tracking ref、例: `origin/main` がある） | feature ブランチを push して PR を作る（`git push -u origin HEAD` → `gh pr create`）。merge は PR で行う |
+| リモートがある（PR を作る remote（通常は origin）の trunk の remote-tracking ref、例: `origin/main` がある） | feature ブランチを push して PR を作る（`git push -u origin HEAD` → `gh pr create`）。merge は PR で行う |
 | リモートが無く、1 つのチェックアウトで作業している | feature 上で quality-check を完走する → `git switch main` → `git merge <feature>`（`--no-ff` 可。main が feature に無いコミットを持っていれば拒否されるので、main を feature に取り込んで quality-check をやり直す）→ `.quality-check-passed` を削除する |
 | リモートが無く、main を別の worktree で開いている | 下の「リモートの無いプロジェクトの取り込み」 |
 
-ここで「リモートが無い」は、trunk の remote-tracking ref（例: `origin/main`）が無いことを言う。push 専用の remote しか無い場合（trunk を取り込まない公開用の remote など）を含む。そのような remote に feature ブランチを push しない（PR の道は無い）。
+ここで「リモートが無い」は、PR を作る remote（通常は origin）の trunk の remote-tracking ref（例: `origin/main`）が無いことを言う。`<remote>/main` があっても、PR を受けない remote（公開用・デプロイ先・バックアップ。push 専用の remote は一度 push すると `<remote>/main` ができる）しか無ければ、リモートの無い取り込みを使う。そのような remote に feature ブランチを push しない（PR の道は無い）。
 
 ### リモートの無いプロジェクトの取り込み
 
