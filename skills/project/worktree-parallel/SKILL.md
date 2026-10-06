@@ -30,9 +30,11 @@ SuperPowers の `using-git-worktrees` で分離ワークスペースを確保し
 
 ```bash
 git branch --show-current
-git status --short
+git status --short --untracked-files=no
 git worktree list
 ```
+
+`--untracked-files=no` は、main のチェックアウトで実行したときに、ユーザーの未追跡ファイル（作業中のファイル・顧客データ）の名前を一覧に出さないため。
 
 確認すること:
 

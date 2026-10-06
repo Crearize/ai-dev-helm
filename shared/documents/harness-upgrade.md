@@ -88,8 +88,11 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 
 ## 3.4.3 の更新
 
-- リモートの無い統合の事前確認を変えた（`branch-workflow` の「リモートの無いプロジェクトの取り込み」）。3.4.2 の「main のチェックアウトの `git status --porcelain` が空」は、ユーザーの未追跡ファイル（資料・レポート等）があると毎回止まった。3.4.3 からは、追跡ファイルに未コミットの変更が無いこと（`git -C <main のチェックアウト> status --porcelain --untracked-files=no` が空）と、feature が足すファイルと同じパスの未追跡ファイルが無いことだけを確かめる。ほかの未追跡ファイルには触れない。
+- リモートの無い統合の事前確認を変えた（`branch-workflow` の「リモートの無いプロジェクトの取り込み」）。3.4.2 の確認（main のチェックアウトの status が、未追跡ファイルを含めて空であること）は、ユーザーの未追跡ファイル（資料・レポート等）があると毎回止まった。3.4.3 からは、追跡ファイルに未コミットの変更が無いこと（`git -C <main のチェックアウト> status --porcelain --untracked-files=no` が空）と、feature が足すファイルと同じパスの未追跡ファイルが無いことだけを確かめる。ほかの未追跡ファイルには触れない。
 - 導入先が 3.4.2 の確認に合わせて独自に書いた手当て（未追跡ファイルを退避する手順など）は、不要になるので消す。
+- 確認では main のチェックアウトの未追跡ファイルの一覧を出さない（ユーザーの作業中のファイル・顧客データの名前を会話に出さない）。feature のパスだけを指定して件数を数える。導入先が独自に書いた手順に、main のチェックアウトの未追跡ファイルまで一覧にする status の呼び出し（`--untracked-files=no` を付けないもの。short 形式を含む）があれば、配布元の手順への参照に置き換える。
+- 「リモートが無い」は、trunk の remote-tracking ref（例: `origin/main`）が無いことを言う。push 専用の remote しか無い導入先もリモート無しの手順を使い、その remote に feature ブランチを push しない。
+- 既存の package.json や CI に、`@crearize/` を付けない `npx` で `ai-dev-helm lint` を呼ぶ箇所が残っていれば置き換える（package.json の scripts の中なら `ai-dev-helm lint`、外なら `npx --no ai-dev-helm lint`、導入前や版を固定するなら `npx -y @crearize/ai-dev-helm@<version> …`）。スコープ無しの `npx` は、手元に無いと npm の別の名前を取りに行く。
 
 ## 計測の範囲
 

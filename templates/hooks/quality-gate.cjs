@@ -1967,8 +1967,9 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 //                 like diffSinceFlag for the range r. A ctx without
 //                 resolveCommit (a test stub) judges merges against HEAD.
 //   pushTarget    `@{push}` (`origin/main`), or null/undefined.
-//   hasRemote     false when the repository has no remote.
-//   trunkTracked(trunk) true when some `refs/remotes/<remote>/<trunk>` exists,
+//   hasRemote     false when the repository has no remote (test-stub fallback
+//                 for trunkTracked; no rule reads it).
+//   trunkTracked(trunk) true when `refs/remotes/<remote>/<trunk>` exists for a configured remote,
 //                 false when none does, null when git failed. Read only for
 //                 the remote-less hint in a reason (D9).
 //   originRepo    origin's `owner/repo` in lower case, or null.
@@ -2263,19 +2264,26 @@ function makeCtx(cwd) {
         return r.ok ? r.out.trim() || null : null;
       });
     },
-    // True when the repository has no remote at all.
+    // True when the repository has no remote at all. Not read by any rule here:
+    // the remote-less hint reads `trunkTracked`, and `hasRemote` is only the
+    // fallback for test stubs that do not provide it (D9).
     get hasRemote() {
       return once('remotes', () => {
         const r = git(['remote']);
         return r.ok ? r.out.trim() !== '' : true;
       });
     },
-    // D9: whether any remote-tracking ref of `trunk` exists (a push-only remote has none).
+    // D9: whether `refs/remotes/<remote>/<trunk>` exists for a configured remote
+    // (exact names: `origin/feature/main` is not origin's main; a push-only
+    // remote has none). null when git fails.
     trunkTracked(trunk) {
       return once(`tracked:${trunk}`, () => {
-        const r = git(['for-each-ref', '--format=%(refname)', 'refs/remotes']);
-        if (!r.ok) return null;
-        return r.out.split(/\r?\n/).some((ref) => /^refs\/remotes\/.+\/[^/]+$/.test(ref) && ref.endsWith(`/${trunk}`));
+        const remotes = git(['remote']);
+        const refs = git(['for-each-ref', '--format=%(refname)', 'refs/remotes']);
+        if (!remotes.ok || !refs.ok) return null;
+        const have = new Set(refs.out.split(/\r?\n/).map((ref) => ref.trim()).filter(Boolean));
+        return remotes.out.split(/\r?\n/).map((r) => r.trim()).filter(Boolean)
+          .some((remote) => have.has(`refs/remotes/${remote}/${trunk}`));
       });
     },
     // H-19(a): origin's `owner/repo` (lower case), or null.
