@@ -50,7 +50,7 @@ After the design is approved, do not ask again. Decide within the approved desig
 - X7 a state file, ledger or harness setting is broken and cannot be repaired by the rules
 - X8 something the work needs cannot be obtained by the AI (credentials, paid services, accounts, manual login)
 
-Additional tests that need confirmation and self-improvement candidates waiting for a decision go into the final message, not a mid-way stop. In upstream skills (`superpowers:*`), "ask your human partner" after approval means: decide within the approved design and record a deviation, unless one of these exceptions applies. Do not ask the user to run commands or do operations; run them yourself and verify.
+Additional tests that need confirmation, self-improvement candidates waiting for a decision, and a merge that waits because deviations from the design were recorded go into the final message, not a mid-way stop. In upstream skills (`superpowers:*`), "ask your human partner" after approval means: decide within the approved design and record a deviation, unless one of these exceptions applies. Do not ask the user to run commands or do operations; run them yourself and verify.
 
 Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration.
 
@@ -66,7 +66,7 @@ Explore existing context first and batch the questions that are still needed int
 2. Send the user one message with the design, the review findings and how each was resolved.
 3. Stop until the user explicitly approves. A request to implement is not approval of a design that did not exist yet.
 
-This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again: the approval covers the spec update, plan and plan review, implementation, documentation, quality-check, commits, feature-branch pushes and the PR. It does not cover merging unless the project's rules say to merge, and it is not an approval to exceed a review limit. Record deviations from the design and report only those in the final report (`documents/development/development-policy.md` §1.0 "承認後の進め方"). The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
+This applies to bounded changes too. Exemption: a typo fix that involves no design choice, or an obviously correct change of a few lines; a fix within an already approved design (such as a response to a quality-check finding) that does not change that design needs no new Design Gate. After approval, do not ask again: the approval covers the spec update, plan and plan review, implementation, documentation, quality-check, commits, feature-branch pushes and the PR. It also covers the merge when no deviation from the design was recorded; with deviations, finish everything else and ask for a final confirmation before merging (the deviations are a change to what was approved). It is not an approval to exceed a review limit. Record deviations from the design and report only those in the final report (`documents/development/development-policy.md` §1.0 "承認後の進め方"). The shipped brainstorming skill (Design Gate) and writing-plans skill implement this workflow.
 
 ### Subagent Model Selection
 
