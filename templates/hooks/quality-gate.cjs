@@ -1240,6 +1240,19 @@ const PR_HINT = ' - or push the feature branch (`git push -u origin HEAD`) and o
 // verdict is unchanged; only the reason says where the flag belongs.
 const PR_MERGE_HINT = " Make the flag in the worktree of the pull request's branch: run the quality-check skill there and run gh pr merge from it. Do not make the flag on a main checkout.";
 const PUSH_TARGET = 'This push has no refspec, and its push target (@{push}) is main/master. ';
+// 3.4.3: without a remote-tracking trunk (a push-only remote at most) there is
+// no pull request route, so the hint names the local integration instead.
+const noPrRoute = (trunk) => ` - there is no remote-tracking ${trunk} here (a push-only remote at most), so there is no pull request route: re-run the quality-check skill in this worktree, then run \`git push . HEAD:${trunk}\` (if git push cannot be used, the merge in this worktree from the branch-workflow skill).`;
+// The trunk a push candidate writes: the first main/master refspec, else the
+// @{push} target, else main.
+function pushTrunk(cand, ctx) {
+  for (const i of cand.mainSpecs || []) {
+    const dst = cand.inv.facts.words[i].dst;
+    if (dst) return dst.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '').toLowerCase();
+  }
+  const target = /^[^/]+\/(main|master)$/i.exec(ctx.pushTarget || '');
+  return target ? target[1].toLowerCase() : 'main';
+}
 // H-49: a harness-only diff that is not exempt only because of the override
 // strings says so, instead of reading like an ordinary code change.
 const overrideReason = (files) => `Quality Gate Overrides / mutation_budget_minutes changed in ${gateConfigFiles(files).join(', ')}: such a change is not harness-exempt. Run the quality-check skill before merging into main.`;
@@ -1502,7 +1515,9 @@ function contextRules(a, ctx, plan = null) {
   const offTrunk = cand.kind === 'push' && !isMainBranch(branch);
   if (verdict.decision !== 'block' || verdict.rule !== '3' || !offTrunk) return verdict;
   const prefix = cand.kind === 'push' && cand.mainOnly ? PUSH_TARGET : '';
-  return { ...verdict, reason: `${prefix}${verdict.reason.replace(/\.$/, '')}${PR_HINT}` };
+  const trunk = pushTrunk(cand, ctx);
+  const hint = untrackedTrunk(ctx, trunk) ? noPrRoute(trunk) : PR_HINT;
+  return { ...verdict, reason: `${prefix}${verdict.reason.replace(/\.$/, '')}${hint}` };
 }
 
 // A command line the classifier will not read (over the byte budget, or a

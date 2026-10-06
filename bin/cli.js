@@ -164,6 +164,11 @@ yargs(hideBin(process.argv))
           type: 'string',
           describe: 'Output directory (<scratchpad>/quality-check), must be outside the repository. Default: OS temp dir. The pack contains the full diff - protect or delete it',
         })
+        .option('check-untracked', {
+          type: 'boolean',
+          describe: 'quality-check Step 6: build nothing; check that no file untracked at cycle <N>\'s review is now part of the change (exit 1 if one is)',
+          default: false,
+        })
         .option('verbose', {
           type: 'boolean',
           describe: 'Show detailed output and stack traces on error',
@@ -171,7 +176,24 @@ yargs(hideBin(process.argv))
         });
     },
     (argv) => {
-      const { buildContextPack } = require('../lib/quality-check-context');
+      const { buildContextPack, checkUntrackedReviewGap } = require('../lib/quality-check-context');
+      if (argv.checkUntracked) {
+        try {
+          const gap = checkUntrackedReviewGap({ dir: process.cwd(), cycle: argv.cycle, baseRef: argv.base, outDir: argv.out });
+          if (gap.ok) {
+            console.log(`untracked-check: OK - none of the ${gap.untrackedAtReview} file(s) untracked at cycle ${argv.cycle}'s review is part of the change`);
+          } else {
+            console.log(`untracked-check: NG - ${gap.gap.length} file(s) untracked (so not reviewed) at cycle ${argv.cycle} are now part of the change:`);
+            for (const name of gap.gap) console.log(`  ${name}`);
+            console.log('Review them: rebuild the context (quality-context) and redo the review cycle before creating the flag.');
+            process.exitCode = 1;
+          }
+        } catch (err) {
+          console.error(`Error: ${err.message}`);
+          process.exitCode = 1;
+        }
+        return;
+      }
       let result;
       try {
         result = buildContextPack({
@@ -197,6 +219,11 @@ yargs(hideBin(process.argv))
       }
       if (result.findingsError) {
         console.log(`findings: previous findings.json unreadable - ${result.findingsError}`);
+      }
+      if (result.untracked.length > 0) {
+        const shown = result.untracked.slice(0, 20).join(', ');
+        const more = result.untracked.length > 20 ? ` ... and ${result.untracked.length - 20} more` : '';
+        console.log(`WARNING: ${result.untracked.length} untracked file(s) are not part of the reviewed change: ${shown}${more}. If any belongs to the change, git add it (git add -N is enough) and rebuild the context.`);
       }
       if (result.untrackedOverLimit) {
         console.log(`warning: ${result.untracked.length} untracked files (not reviewed, not snapshotted) - fix .gitignore if these are build outputs; commit what belongs to the change`);
@@ -245,7 +272,7 @@ yargs(hideBin(process.argv))
     'integrate-check',
     'Read-only pre-check of the remote-less integration, run in the feature worktree: the main checkout is on the trunk with no tracked change, the trunk is an ancestor, and nothing there stands at a path the feature adds (exit 0 OK, 1 problems found, 2 error). Changes nothing',
     (yargs) => yargs
-      .option('main', { type: 'string', demandOption: true, describe: 'The checkout that has the trunk open' })
+      .option('main', { type: 'string', demandOption: true, describe: 'The checkout that has the trunk open (a relative path is resolved against the current directory)' })
       .option('trunk', { type: 'string', default: 'main', describe: 'Trunk branch name' })
       .option('dir', { type: 'string', describe: 'Feature worktree', default: process.cwd() }),
     (argv) => {
@@ -364,6 +391,10 @@ yargs(hideBin(process.argv))
       console.error(msg);
       console.error('');
       yargs.showHelp();
+      // A usage error (unknown argument, missing option) is exit 2, so that a
+      // command whose exit 1 means 'found a problem' (integrate-check) is never
+      // confused with a mistyped call (3.4.3).
+      process.exit(2);
     }
     process.exit(1);
   })

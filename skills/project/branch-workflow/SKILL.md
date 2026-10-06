@@ -64,9 +64,10 @@ main への取り込みは quality-check を完走してから行う。quality-g
    - 読み取りだけのコマンドで、何も変更しない（push・merge・switch もしない）。git を引数の配列で呼ぶので、シェル・引用・文字コードの違いを受けない
    - 確かめること（見つけたものは名前つきで出す）: main のチェックアウトが trunk を開いている、その追跡ファイルに未コミットの変更が無い、trunk が feature の祖先である、feature が足すパス（名前の変更先を含む）と同じ場所に main のチェックアウトで追跡されていないもの（未追跡・ignore 済みのファイル、それらを含むディレクトリ、ファイルになっている親のパス）が無い。大文字小文字の違いはファイルシステムの実際の挙動で判定する
    - 関係の無い未追跡ファイル（ユーザーの資料など）は見ない。統合を妨げないので、触れずにそのまま残す
-   - 終了コード 0: 次へ進む
-   - 終了コード 1: 何も変えずに統合を止め、出力を最後の 1 通で知らせる（例外 X3。オーナーの返答の後に進める）。ただし、問題が「trunk が祖先でない」だけなら、main を feature に取り込み、quality-check をやり直してから統合する（main のチェックアウトには触れないので止まらない）
-   - 終了コード 2: コマンドの誤り（`--main` の場所など）。直して実行し直す
+   - 出力の最後の行が `integrate-check: OK`（終了コード 0）: 次へ進む
+   - 最後の行が `integrate-check: NG (<trunk> is not an ancestor only)`: main を feature に取り込み、quality-check をやり直してから、手順 1 からやり直す（integrate-check も再実行する。main のチェックアウトには触れないので止まらない）
+   - 最後の行が `integrate-check: NG - change nothing …`（終了コード 1）: 何も変えずに統合を止め、出力を最後の 1 通で知らせる（例外 X3。オーナーの返答の後に進める）
+   - 出力が `integrate-check:` で始まらなければ、判定ではない（使い方の誤りは終了コード 2。CLI が手元に無い・古い devDependency の `Unknown argument` なども判定ではない）。`--main` の場所などを直すか、`npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> integrate-check …` で実行し直す
 3. このプロジェクトで `git push . HEAD:main` が使えるかを確かめる（エージェントの設定の deny 規則（`Bash(git push:*)` 等）・プロジェクトの規則）。使えなければ、下の「`git push` が使えない場合」の手順に替える
 4. main を開いているチェックアウトで `git switch --detach` を実行する（チェックアウト中のブランチは更新できないため）
 5. feature の worktree で `git push . HEAD:main` を実行する（fast-forward 以外は git が拒否する。hook はフラグ = HEAD で通す）。deny 規則で止められたら、detach したまま下の「`git push` が使えない場合」の 2 に進む
