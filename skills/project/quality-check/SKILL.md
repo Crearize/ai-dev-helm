@@ -726,6 +726,8 @@ Step 0 以降の各ステップで蓄積してきた`.quality-check-report.json`
 node -e "const c=require('child_process'),f=require('fs');const g=a=>c.execSync('git '+a).toString().trim();f.writeFileSync('.quality-check-passed',JSON.stringify({branch:g('branch --show-current'),commit:g('rev-parse HEAD')})+'\n')"
 ```
 
+PR が既にあるときは、フラグを作った（作り直した）後に PR 本文の Flag commit を更新する。
+
 フラグの性質:
 
 - hook はフラグを**消費（削除）しない**。マージ時に「記録コミット以降の差分がハーネスファイルのみか」で有効性を検証する
