@@ -59,7 +59,8 @@ main への取り込みは quality-check を完走してから行う。quality-g
 
 1. feature の worktree で quality-check を完走し、フラグを作る（フラグは feature の HEAD を指す）
 2. main のチェックアウトに触る前に、次の 2 つを確かめる
-   - `git -C <main のチェックアウト> status --porcelain` が空であること。空でなければ detach せず、最後の 1 通で知らせる（ユーザーの作業中の変更に触れない。例外 X3）
+   - `git -C <main のチェックアウト> status --porcelain` が空であること。空でなければ detach せずに統合を止める（ユーザーの作業中の変更に触れない。例外 X3）。最後の 1 通で知らせる
+   - feature の worktree で `git merge-base --is-ancestor main HEAD` が成功すること。失敗したら detach せず、main を feature に取り込み、quality-check をやり直してから統合する
    - このプロジェクトで `git push . HEAD:main` が使えること（エージェントの設定の deny 規則（`Bash(git push:*)` 等）・プロジェクトの規則）。使えなければ、下の「`git push` が使えない場合」の手順に替える
 3. main を開いているチェックアウトで `git switch --detach` を実行する（チェックアウト中のブランチは更新できないため）
 4. feature の worktree で `git push . HEAD:main` を実行する（fast-forward 以外は git が拒否する。hook はフラグ = HEAD で通す）。deny 規則で止められたら、detach したまま下の「`git push` が使えない場合」の 2 に進む
@@ -73,7 +74,7 @@ main への取り込みは quality-check を完走してから行う。quality-g
 3. main のチェックアウトで `git switch main` を実行する
 4. `.quality-check-passed` を削除する
 
-push / merge が quality-gate に止められたら、両方を元に戻し（feature の worktree が main にいれば `git switch <feature>`、main のチェックアウトは `git switch main`）、quality-check をやり直す。main のチェックアウトを detached のまま残さない。
+deny 以外の理由（quality gate、git の non-fast-forward 拒否 等）で push / merge が拒否されたら、両方を元に戻し（feature の worktree が main にいれば `git switch <feature>`、main のチェックアウトは `git switch main`）、quality-check をやり直す（main が先に進んでいれば、main を取り込んでから）。main のチェックアウトを detached のまま残さない。
 
 `git branch -f main <feature>`・`git fetch . <feature>:main` も、フラグが `<feature>` の先端を指していれば通るが、手順は上の 2 つにそろえる。
 
