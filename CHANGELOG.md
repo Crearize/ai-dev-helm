@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.3](https://github.com/Crearize/ai-dev-helm/compare/v3.4.2...v3.4.3) (2026-10-06)
+
+
+### Fixed
+
+* **harness:** 3.4.3 - integrate-check for the remote-less integration, no-remote definition, no unscoped npx, quality-context untracked files, lint at zero ([#204](https://github.com/Crearize/ai-dev-helm/issues/204)) ([fed0139](https://github.com/Crearize/ai-dev-helm/commit/fed0139e8e144803bb8cb66cdca4afdacaf9b308))
+
 ## [3.4.2](https://github.com/Crearize/ai-dev-helm/compare/v3.4.1...v3.4.2) (2026-10-06)
 
 
