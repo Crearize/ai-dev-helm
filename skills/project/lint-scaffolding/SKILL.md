@@ -113,7 +113,7 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 | ESLint（`lint/eslint/`） | プロダクトの `eslint.config.mjs` から `./lint/eslint/harness.config.mjs` を import し、プロダクト固有の上書きは**プリセットより下**に置く。プリセットは `projectService: true` を使うため**プロダクトの `tsconfig.json` が必須**（詳細は `lint/README-nextjs-react.md`）。不採用グループはプリセットの下で該当ルールを off にする |
 | Checkstyle（`lint/checkstyle/`） | Gradle の `checkstyle` プラグインを追加し `configFile` を `lint/checkstyle/checkstyle.xml` に向ける（`lint/README-java-springboot.md`）。不採用グループはグループコメント単位で削除する |
 | ArchUnit（`lint/archunit/`） | `archunit-junit5` を testImplementation に追加し、テンプレートを `src/test/java/` 配下へコピーして `__BASE_PACKAGE__` をプロダクトのベースパッケージに置換する（`lint/README-java-springboot.md`） |
-| 横断リンター | `@crearize/ai-dev-helm` を devDependency に追加し、`npx ai-dev-helm lint` を組み込む。プロダクトルートに `.ai-dev-helm-lint.json` を生成し、カバレッジマップの採否に応じて各チェック（secrets / commented-code / todo-deadline / import-exists / file-naming / branch-naming / commit-message）の `enabled` と `exclude` グロブを設定する。終了コードは 0 = 問題なし / 1 = 違反あり / 2 = 実行エラー |
+| 横断リンター | `@crearize/ai-dev-helm` を devDependency に追加し、package.json の scripts から `ai-dev-helm lint` を呼ぶ形で組み込む（scripts の外で直接呼ぶときは `npx --no ai-dev-helm lint`。`@crearize/` も `--no` も付けない `npx` は、手元に無いと npm の別の名前を取りに行くので使わない）。プロダクトルートに `.ai-dev-helm-lint.json` を生成し、カバレッジマップの採否に応じて各チェック（secrets / commented-code / todo-deadline / import-exists / file-naming / branch-naming / commit-message）の `enabled` と `exclude` グロブを設定する。終了コードは 0 = 問題なし / 1 = 違反あり / 2 = 実行エラー |
 
 branch-naming の既定 `pattern` は Issue 番号を要求しない。番号を必須にしたい導入先は `.ai-dev-helm-lint.json` の `branch-naming.pattern` を上書きする（例: `^(feat|fix|chore|docs|refactor|test|ci|perf)/[a-z0-9._-]+-[0-9]+$`。`feat/foo-bar` は違反、`feat/foo-bar-123` は通る）。
 
