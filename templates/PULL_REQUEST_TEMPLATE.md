@@ -51,6 +51,7 @@ Closes #
 - Mutation testing (recommendation / decision and who decided: auto or user, or "awaiting confirmation"; raw score, survivors killed / equivalent / accepted / unresolved / untriaged / tool_false_negative, or skip reason):
 - Quality check cycles:
 - E2E tests (recommendation / decision and who decided: auto or user, or "awaiting confirmation"; result):
+- Flag commit (`.quality-check-passed` `commit`): `<sha>` (before the flag exists, "not created yet"; update it after the flag is created)
 
 ### Gate Overrides and Approvals
 <!-- Write "None" explicitly when nothing applies -->
