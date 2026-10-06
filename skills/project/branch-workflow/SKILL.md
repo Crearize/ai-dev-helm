@@ -75,8 +75,8 @@ main への取り込みは quality-check を完走してから行う。quality-g
 7. `.quality-check-passed` を削除する
 
 **公開用・デプロイ先・バックアップの remote への main の送り出し**: プロジェクトの規則に従う。
-- 本番に影響する（例外 X2）なら、統合に入る前（手順 4 の detach の前。1 つのチェックアウトでは `git switch main` の前）に最後の 1 通で OK を受け、OK の後に統合と送り出しを続けて行う（途中で止まらない。detached のまま待たない）
-- 送るのは統合の後（手順 5 の `git push . HEAD:main` の後。「`git push` が使えない場合」では手順 2 の `git merge --no-ff` の後、`git switch <feature>` の前。1 つのチェックアウトでは `git merge` の後）で、`.quality-check-passed` を消す前。フラグのある作業ツリーから送る: feature の worktree が feature にいるなら `git push <remote> HEAD:<trunk>`、trunk にいるなら `git push <remote> <trunk>`。main のチェックアウトにはフラグが無く、フラグを消した後は、hook に止められる
+- 本番に影響する（例外 X2）なら、統合に入る前（手順 4 の detach の前。1 つのチェックアウトでは `git switch main` の前）に最後の 1 通で OK を受け、OK の後に統合と送り出しを続けて行う（途中で止まらない。detached のまま待たない）。OK を受けた後、detach（1 つのチェックアウトでは `git switch main`）の前に integrate-check をもう一度実行する（待つ間に main のチェックアウトが変わっていないか確かめる）
+- 送るのは統合の後（手順 5 の `git push . HEAD:main` の後。「`git push` が使えない場合」では手順 2 の `git merge --no-ff` の後、`git switch <feature>` の前。1 つのチェックアウトでは `git merge` の後）で、`.quality-check-passed` を消す前。フラグのある作業ツリーから送る: feature の worktree が feature にいるなら `git push <remote> HEAD:<trunk>`、trunk にいるなら `git push <remote> <trunk>`。main のチェックアウトにはフラグが無く、フラグを消した後は、hook に止められる。送り出しが拒否・失敗したら（デプロイ先の拒否、ネットワーク・認証の失敗等）、`.quality-check-passed` を消さずに残し、git の出力を最後の 1 通で知らせる（例外 X3）。再送はフラグのある作業ツリーから行う
 - 送らない運用（origin が bare のバックアップで、統合のたびには送らない等）では、origin/main が古いまま差分の基準 ref になり、次の feature の共通コンテキストに前の変更が入る。quality-check の 4-0 と Step 6 の両方で `--base <trunk>` を付ける
 
 実際の detach・push・merge・switch は、上のとおり手順に書いた git コマンドで行う（quality-gate の hook に見える形を保つ。integrate-check の中では行わない）。
