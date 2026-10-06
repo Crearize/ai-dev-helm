@@ -43,7 +43,7 @@ Step 5: PR descriptionに実装レポートを含めてPR作成
 
 > フォーマットの詳細は [`_schemas/quality-check-report.schema.md`](../_schemas/quality-check-report.schema.md) を参照。
 
-**ファイルが存在しない場合**: 差分（`git diff --name-only origin/main...HEAD`）がハーネスのみの免除に当たるときは、レポートに「品質チェック: 免除（ハーネスのみの変更。変更ファイルの一覧）」と書いて作成を続ける。それ以外はエラーを出力し、先に `quality-check` スキルを実行するよう促して処理を中断する。
+**ファイルが存在しない場合**: 差分（`git diff --name-only origin/main...HEAD`）がハーネスのみの免除に当たるときは、レポートに「品質チェック: 免除（ハーネスのみの変更。変更ファイルの一覧）」と書いて作成を続ける。それ以外は、レポートを作らずに先に `quality-check` スキルを実行し（AI が実行する。ユーザーに促さない — 前提条件と同じ）、そのレポートでこの手順をやり直す。
 
 ---
 
