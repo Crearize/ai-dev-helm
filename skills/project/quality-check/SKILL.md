@@ -718,7 +718,7 @@ Step 0 以降の各ステップで蓄積してきた`.quality-check-report.json`
 
 サイクルを打ち切って終了した場合（上限到達・停滞）は、`documents/development/quality-policy.md` §5 に従いユーザーの明示承認なしにフラグを作成しない。承認時は `.quality-check-report.json` の `gate_override` に記録する（スキーマ参照）。
 
-設計との差異（`documents/development/development-policy.md` §1.0「承認後の進め方」 1。spec・計画の記録と PR 本文の差異欄）があるときは、最後の 1 通の「この差異を認めてマージしてよいか」への OK を受けるまでフラグを作成しない。フラグの作成後に差異が見つかった場合は、`.quality-check-passed` を削除してから確認する。
+設計との差異（`documents/development/development-policy.md` §1.0「承認後の進め方」 1。spec・計画の記録と PR 本文の差異欄）があるときは、最後の 1 通の「この差異を認めてマージしてよいか」への OK を受けるまでフラグを作成しない。フラグの作成後に差異が見つかった場合は、`.quality-check-passed` を削除してから確認する。差異の記録のコミットでフラグは無効になるので、OK を受けてから、その HEAD で Step 6 を行う（前回のチェックからの差分が記録だけのとき。ほかの変更があれば quality-check をやり直す）。
 
 全チェック通過後、現在ブランチ名と HEAD ハッシュを記録した JSON フラグを作成する：
 
