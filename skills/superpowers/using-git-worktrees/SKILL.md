@@ -114,6 +114,8 @@ if [ -f pyproject.toml ]; then poetry install; fi
 if [ -f go.mod ]; then go mod download; fi
 ```
 
+**Skill links:** in a project that keeps `.claude/skills` (or `.codex/skills`, `.cursor/skills`) as links listed in `.gitignore`, a new worktree has no such link, so the distributed skills are not found at their documented paths. Inside the worktree, run `npx -y @crearize/ai-dev-helm@<version> link-skills`, with `<version>` the `version` in `.ai-dev-helm.json` (the installed release, not the latest). This applies to a worktree from a native tool too.
+
 ## Step 3: Verify Clean Baseline
 
 Run tests to ensure workspace starts clean:
@@ -151,6 +153,7 @@ Ready to implement <feature-name>
 | Permission error on create | Sandbox fallback, work in place |
 | Tests fail during baseline | Investigate and record baseline limitations |
 | No package.json/Cargo.toml | Skip dependency install |
+| Skill links are ignored by git (`link-skills`) | Run `link-skills` pinned to `.ai-dev-helm.json`'s version (Step 2) |
 
 ## Common Rationalizations
 

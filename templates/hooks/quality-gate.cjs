@@ -1229,6 +1229,9 @@ const TRUNK_NEVER = 'Deleting main/master or force-fetching into it is never all
 const FETCH_INTO_TRUNK = 'A fetch into main/master from another remote branch cannot be checked here. Fetch the branch, run the quality-check skill on it, then integrate it (`git merge`, a pull request, or `git push . HEAD:main`).';
 const otherRepo = (repo, origin) => `This gh call names another repository (${repo}) than this checkout's origin (${origin || 'none'}), so this checkout's quality-check flag says nothing about it. Run it from that repository's own directory, without -R / --repo, after its quality check.`;
 const PR_HINT = ' - or push the feature branch (`git push -u origin HEAD`) and open a pull request (`gh pr create`) instead of merging here.';
+// #199-6: a flag made on a main checkout names main, not the pull request. The
+// verdict is unchanged; only the reason says where the flag belongs.
+const PR_MERGE_HINT = " Make the flag in the worktree of the pull request's branch: run the quality-check skill there and run gh pr merge from it. Do not make the flag on a main checkout.";
 const PUSH_TARGET = 'This push has no refspec, and its push target (@{push}) is main/master. ';
 // H-49: a harness-only diff that is not exempt only because of the override
 // strings says so, instead of reading like an ordinary code change.
@@ -1484,6 +1487,9 @@ function contextRules(a, ctx, plan = null) {
   if (baseControl.length > 0) noFlag = controlReason(baseControl);
   else if (overrideOnly(base)) noFlag = overrideReason(base.files);
   const verdict = rule3Flag(ctx, noFlag);
+  if (cand.kind === 'gh' && verdict.decision === 'block' && verdict.rule === '3') {
+    return { ...verdict, reason: `${verdict.reason}${PR_MERGE_HINT}` };
+  }
   // A trunk push from a feature branch can go through a pull request instead
   // (`gh pr merge` already has one).
   const offTrunk = cand.kind === 'push' && !isMainBranch(branch);
