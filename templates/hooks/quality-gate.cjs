@@ -1224,15 +1224,49 @@ const ONE_OPERATION = 'Run one gated operation per command: split the merge, pul
 const ONE_SOURCE = 'Merge or rebase one branch at a time on main/master (no --onto): run `git merge <branch>` with a single source.';
 const pullSource = (trunk) => `On ${trunk}, a \`git pull\` from another branch brings in commits the gate cannot check. Run \`git fetch\`, then \`git merge <remote>/<branch>\` once the quality-check skill has passed on that branch - or use one of the sync forms (\`git pull\`, \`git pull origin ${trunk}\`).`;
 const diverged = (trunk, ref) => `${trunk} has commits that ${ref} does not have, so the result would not be the commit the quality check ran on. Merge ${trunk} into the branch (or rebase it onto ${trunk}), re-run the quality-check skill there, then integrate.`;
+// D9 (3.4.3): the remote-less hint follows whether origin - the remote the
+// pull request hints name - has a remote-tracking ref of the trunk
+// (`refs/remotes/origin/<trunk>`), not whether any remote exists: another
+// remote's `<remote>/<trunk>` (a publishing, deploy or backup remote) does not
+// count. Reason text only; no verdict reads it. A ctx without `trunkTracked`
+// (a test stub) falls back to `hasRemote`.
+const untrackedTrunk = (ctx, trunk) => (typeof ctx.trunkTracked === 'function'
+  ? ctx.trunkTracked(String(trunk)) === false
+  : ctx.hasRemote === false);
 const integrateReason = (trunk, ref, noRemote) => `The quality-check flag here does not cover ${ref}: the flag must name the commit that ${trunk} receives. Run the quality-check skill on ${ref} in this checkout, then integrate it.${noRemote ? ` From a separate worktree of the branch, run \`git push . HEAD:${trunk}\` there instead (if git push cannot be used, merge in the worktree that has the flag; see the branch-workflow skill).` : ''}`;
 const TRUNK_NEVER = 'Deleting main/master or force-fetching into it is never allowed here. Integrate a branch with `git merge`, a pull request, or - without a remote - `git push . HEAD:main` from the checked branch.';
 const FETCH_INTO_TRUNK = 'A fetch into main/master from another remote branch cannot be checked here. Fetch the branch, run the quality-check skill on it, then integrate it (`git merge`, a pull request, or `git push . HEAD:main`).';
 const otherRepo = (repo, origin) => `This gh call names another repository (${repo}) than this checkout's origin (${origin || 'none'}), so this checkout's quality-check flag says nothing about it. Run it from that repository's own directory, without -R / --repo, after its quality check.`;
-const PR_HINT = ' - or push the feature branch (`git push -u origin HEAD`) and open a pull request (`gh pr create`) instead of merging here.';
+const PR_HINT = ' - or push the feature branch (`git push -u origin HEAD`) and open a pull request (`gh pr create`) instead of merging here (if origin takes no pull requests - a bare backup, for example - use the remote-less integration of the branch-workflow skill instead).';
 // #199-6: a flag made on a main checkout names main, not the pull request. The
 // verdict is unchanged; only the reason says where the flag belongs.
 const PR_MERGE_HINT = " Make the flag in the worktree of the pull request's branch: run the quality-check skill there and run gh pr merge from it. Do not make the flag on a main checkout.";
 const PUSH_TARGET = 'This push has no refspec, and its push target (@{push}) is main/master. ';
+// 3.4.3: when origin has no remote-tracking trunk there is no pull request
+// route the hint could name, so it names the local integration instead.
+const noPrRoute = (trunk) => ` - origin has no remote-tracking ${trunk} (another remote's <remote>/${trunk} does not count), so integrate locally: re-run the quality-check skill in this worktree, then run \`git push . HEAD:${trunk}\` (if git push cannot be used, the merge in this worktree from the branch-workflow skill).`;
+// No pull request route at all: origin has neither `origin/main` nor
+// `origin/master` (a repository whose trunk is master still has one when
+// origin/master exists, whatever the push names). Reason text only.
+const noPrRouteHere = (ctx) => Boolean(ctx) && untrackedTrunk(ctx, 'main') && untrackedTrunk(ctx, 'master');
+// L4: the trunk-push refusals that recommend a pull request say instead how to
+// integrate locally when there is no pull request route.
+const FORCE_TRUNK_LOCAL = (trunk) => `Force, delete, --all, --branches and --mirror pushes to main/master are always refused, with or without a quality check: they rewrite or delete trunk history. origin has no remote-tracking ${trunk} (another remote's <remote>/${trunk} does not count), so integrate locally: integrate a branch with \`git push . HEAD:${trunk}\` from its own worktree after the quality-check skill (see the branch-workflow skill).`;
+function localizeForceTrunk(verdict, cands, ctx) {
+  if (!verdict || verdict.reason !== FORCE_TRUNK || !noPrRouteHere(ctx)) return verdict;
+  const cand = cands.find((c) => c.kind === 'push' && c.toTrunk) || cands.find((c) => c.kind === 'push');
+  return { ...verdict, reason: FORCE_TRUNK_LOCAL(cand ? pushTrunk(cand, ctx) : 'main') };
+}
+// The trunk a push candidate writes: the first main/master refspec, else the
+// @{push} target, else main.
+function pushTrunk(cand, ctx) {
+  for (const i of cand.mainSpecs || []) {
+    const dst = cand.inv.facts.words[i].dst;
+    if (dst) return dst.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '').toLowerCase();
+  }
+  const target = /^[^/]+\/(main|master)$/i.exec(ctx.pushTarget || '');
+  return target ? target[1].toLowerCase() : 'main';
+}
 // H-49: a harness-only diff that is not exempt only because of the override
 // strings says so, instead of reading like an ordinary code change.
 const overrideReason = (files) => `Quality Gate Overrides / mutation_budget_minutes changed in ${gateConfigFiles(files).join(', ')}: such a change is not harness-exempt. Run the quality-check skill before merging into main.`;
@@ -1303,7 +1337,7 @@ function staticRules(a, commandMover, plan) {
 // Rule 2 item 6: `<x>:main` from something that is not this branch. The
 // candidate carries word indices, so the words themselves are read back from
 // the segment facts here.
-function reverseRefspec(gated, branch) {
+function reverseRefspec(gated, branch, ctx) {
   for (const c of gated) {
     if (!c.mainSpecs) continue;
     const facts = c.inv.facts.words;
@@ -1315,7 +1349,11 @@ function reverseRefspec(gated, branch) {
       // `HEAD` and `@` both name the current branch, in any case spelling.
       if (UPSTREAM_REFS.has(src.toLowerCase())) continue;
       if (src.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '') === branch) continue;
-      return deny('2', `Push from the branch itself: ${src}:${dst} pushes a branch other than the current one; only HEAD or the current branch can be pushed to the trunk here. Check out that branch and push from it, or push this branch with \`git push -u origin HEAD\`.`);
+      const trunk = dst.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '').toLowerCase();
+      const route = noPrRouteHere(ctx)
+        ? `Check out that branch and integrate it from its own worktree with \`git push . HEAD:${trunk}\` after the quality-check skill (origin has no remote-tracking ${trunk}, so integrate locally).`
+        : 'Check out that branch and push from it, or push this branch with `git push -u origin HEAD`.';
+      return deny('2', `Push from the branch itself: ${src}:${dst} pushes a branch other than the current one; only HEAD or the current branch can be pushed to the trunk here. ${route}`);
     }
   }
   return null;
@@ -1426,7 +1464,7 @@ function contextRules(a, ctx, plan = null) {
   if (gated.length === 0) return allow();
   if (gated.length > 1) return deny('2', ONE_OPERATION);
   const cand = gated[0];
-  if (cand.kind === 'push' && cand.hard) return deny('2', FORCE_TRUNK);
+  if (cand.kind === 'push' && cand.hard) return localizeForceTrunk(deny('2', FORCE_TRUNK), [cand], ctx);
   if (cand.kind === 'gh' && cand.repo !== null) {
     // H-19(a): another repository's PR is judged in that repository.
     const origin = ctx.originRepo;
@@ -1451,7 +1489,7 @@ function contextRules(a, ctx, plan = null) {
     }
   }
 
-  const reverse = reverseRefspec(gated, branch); // Rule 2 item 6, ahead of every exemption.
+  const reverse = reverseRefspec(gated, branch, ctx); // Rule 2 item 6, ahead of every exemption.
   if (reverse) return reverse;
 
   if (kind === 'sync') {
@@ -1464,14 +1502,14 @@ function contextRules(a, ctx, plan = null) {
   const resolves = typeof ctx.resolveCommit === 'function';
   if (cand.kind === 'write') {
     if (cand.ref === undefined) return cand.sameName ? allow() : deny('2', FETCH_INTO_TRUNK);
-    const why = integrateReason(cand.trunk, cand.ref, ctx.hasRemote === false);
+    const why = integrateReason(cand.trunk, cand.ref, untrackedTrunk(ctx, cand.trunk));
     return resolves ? judgeTrunkMove(ctx, cand.trunk, cand.ref, { noFlag: why, stale: why }) : rule3Flag(ctx, why);
   }
   if (cand.kind === 'git') {
     const source = integrationSource(cand, branch);
     if (source.deny) return source.deny;
     if (source.ref !== undefined && resolves) {
-      const why = integrateReason(branch, source.ref, ctx.hasRemote === false);
+      const why = integrateReason(branch, source.ref, untrackedTrunk(ctx, branch));
       const noFlag = SYNC_SOURCE_RE.test(source.ref) ? needFlagReason(a, branch) : why;
       return judgeTrunkMove(ctx, branch, source.ref, { noFlag, stale: why });
     }
@@ -1495,7 +1533,9 @@ function contextRules(a, ctx, plan = null) {
   const offTrunk = cand.kind === 'push' && !isMainBranch(branch);
   if (verdict.decision !== 'block' || verdict.rule !== '3' || !offTrunk) return verdict;
   const prefix = cand.kind === 'push' && cand.mainOnly ? PUSH_TARGET : '';
-  return { ...verdict, reason: `${prefix}${verdict.reason.replace(/\.$/, '')}${PR_HINT}` };
+  const trunk = pushTrunk(cand, ctx);
+  const hint = noPrRouteHere(ctx) ? noPrRoute(trunk) : PR_HINT;
+  return { ...verdict, reason: `${prefix}${verdict.reason.replace(/\.$/, '')}${hint}` };
 }
 
 // A command line the classifier will not read (over the byte budget, or a
@@ -1960,7 +2000,11 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 //                 like diffSinceFlag for the range r. A ctx without
 //                 resolveCommit (a test stub) judges merges against HEAD.
 //   pushTarget    `@{push}` (`origin/main`), or null/undefined.
-//   hasRemote     false when the repository has no remote.
+//   hasRemote     false when the repository has no remote (test-stub fallback
+//                 for trunkTracked; no rule reads it).
+//   trunkTracked(trunk) true when `refs/remotes/origin/<trunk>` exists (origin is the remote the PR hints name),
+//                 false when none does, null when git failed. Read only for
+//                 the remote-less hint in a reason (D9).
 //   originRepo    origin's `owner/repo` in lower case, or null.
 //   cwd           the payload cwd (absolute path) - where the location walk
 //                 starts. Missing: every move is UNRESOLVED.
@@ -2021,7 +2065,7 @@ function classifyText(text, ctx) {
   const plan = deferralPlan(judged, lines, analyzed, commandMover);
   for (const a of analyzed) {
     const verdict = staticRules(a, commandMover, plan);
-    if (verdict) return verdict;
+    if (verdict) return localizeForceTrunk(verdict, a.cands, ctx);
   }
   const candLines = analyzed.filter((a) => a.cands.length > 0);
   if (candLines.length === 0) return allow();
@@ -2253,11 +2297,24 @@ function makeCtx(cwd) {
         return r.ok ? r.out.trim() || null : null;
       });
     },
-    // True when the repository has no remote at all.
+    // True when the repository has no remote at all. Not read by any rule here:
+    // the remote-less hint reads `trunkTracked`, and `hasRemote` is only the
+    // fallback for test stubs that do not provide it (D9).
     get hasRemote() {
       return once('remotes', () => {
         const r = git(['remote']);
         return r.ok ? r.out.trim() !== '' : true;
+      });
+    },
+    // D9 / 3.4.3: whether origin - the remote the pull request hints name -
+    // has a remote-tracking ref of the trunk, `refs/remotes/origin/<trunk>`
+    // exactly (`origin/feature/main` is not it; a publishing or push-only
+    // remote's `<remote>/main` does not count). null when git fails.
+    trunkTracked(trunk) {
+      return once(`tracked:${trunk}`, () => {
+        const r = git(['for-each-ref', '--format=%(refname)', `refs/remotes/origin/${trunk}`]);
+        if (!r.ok) return null;
+        return r.out.split(/\r?\n/).some((ref) => ref.trim() === `refs/remotes/origin/${trunk}`);
       });
     },
     // H-19(a): origin's `owner/repo` (lower case), or null.

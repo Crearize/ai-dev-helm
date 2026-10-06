@@ -83,8 +83,17 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 - main から本番ブランチ（`release` 等）へ反映する運用の OK の範囲は §1.0「承認後の進め方」8 による。
 - 導入先が独自に書いた同じ趣旨の規則（「staging は X2 でない」、本番への反映の範囲の聞き方）は、配布元の文と重なるので、配布元への参照に置き換える。
 - `init` の再実行は、`.gitignore` に `.claude/worktrees/`（Claude Code の標準の作業ツリーの置き場所）を足す。
-- `init` を再実行しない導入先は、同じ行を手で足す（無いと main のチェックアウトの `git status --porcelain` が空にならず、リモートの無い統合が進まない）。
-- リモートの無い導入先で `.claude/worktrees/` に作業ツリーがあるときは、更新を統合する前に `"$(git rev-parse --git-common-dir)/info/exclude"` に `.claude/worktrees/` を足す（追跡されず、すべての作業ツリーに効く）。
+- `init` を再実行しない導入先は、同じ行を手で足す（`git status` の表示に作業ツリーが出ないようにするため。3.4.3 からは、無くてもリモートの無い統合は止まらない）。
+- 必要なら（`.gitignore` の更新を統合する前から `git status` の表示を整えたいとき）、`"$(git rev-parse --git-common-dir)/info/exclude"` に `.claude/worktrees/` を足す（追跡されず、すべての作業ツリーに効く）。
+
+## 3.4.3 の更新
+
+- リモートの無い統合の事前確認は、読み取りだけの CLI `ai-dev-helm integrate-check --main <main のチェックアウト>` に変わった（`branch-workflow` の「リモートの無いプロジェクトの取り込み」）。3.4.2 の確認（main のチェックアウトの status が、未追跡ファイルを含めて空であること）は、ユーザーの未追跡ファイル（資料・レポート等）があると毎回止まった。3.4.3 からは、main のチェックアウトが trunk を開いていないこと、その追跡ファイルの未コミットの変更（skip-worktree / assume-unchanged で隠れた変更を含む）、main が feature の祖先でないこと、feature が足すパスにある追跡されていないもの（未追跡・ignore 済みのファイル、それらを含むディレクトリ、ファイルになっている親のパス）だけを、名前つきで出す。祖先でないだけなら止まらず、main を取り込んで quality-check と事前確認をやり直す。関係の無い未追跡ファイルには触れない。リモートの無い導入先は、独自に書いた統合の手順（status を見る・未追跡ファイルを退避する等）を、この CLI を使う配布元の手順への参照に置き換える。
+- 「リモートが無い」は、PR を作る remote（通常は origin）の trunk の remote-tracking ref（例: `origin/main`）が無いことを言う。`<remote>/main` があっても、PR を受けない remote（公開用・デプロイ先・バックアップ。push 専用の remote は一度 push すると `<remote>/main` ができる）しか無い導入先は、リモート無しの手順を使い、その remote に feature ブランチを push しない。hook の案内も origin の trunk の追跡 ref（`origin/main` / `origin/master`）の有無で PR とリモート無しを出し分ける。PR を受ける remote が origin 以外の名前の導入先は、hook の案内ではなく branch-workflow の表で判断する。
+- 既存の package.json や CI に、`@crearize/` を付けない `npx` で `ai-dev-helm lint` を呼ぶ箇所が残っていれば置き換える（package.json の scripts の中なら `ai-dev-helm lint`、外なら `npx --no ai-dev-helm lint`、導入前や版を固定するなら `npx -y @crearize/ai-dev-helm@<version> …`）。スコープ無しの `npx` は、手元に無いと npm の別の名前を取りに行く。
+- `@crearize/ai-dev-helm` を devDependency にしている導入先は、その版を 3.4.3 以上に上げる（古い版の CLI には `integrate-check` が無く、`Unknown argument` になる。出力が `integrate-check:` で始まらなければ判定ではないので、版を固定した `npx -y @crearize/ai-dev-helm@<version> integrate-check …` で実行し直す）。
+- `.gitignore` を確かめる。`init` の再実行で `.claude/worktrees/` が足される（3.4.2 の節）。3.4.3 からは、無くてもリモートの無い統合は止まらない（`git status` の表示のため）。
+- quality-check の共通コンテキスト（`quality-context`）は、未追跡ファイルを変更に含めず、件数と名前を別の節と WARNING に出す（スナップショットにもコピーしない）。変更に含める新規ファイルは、共通コンテキストを作る前に `git add`（`-N` 可）する。最初の push の前（Step 5 のコミットの後）とフラグの作成前に `quality-context --check-untracked` で、レビュー時に未追跡だったファイルが変更に入っていないことを確かめ、最後の行が `untracked-check: OK` のときだけ push・フラグの作成に進む（NG なら、変更に属するものは新しいサイクルでレビューをやり直す。属さないユーザーのファイルは消さずに外す: ステージしただけなら `git rm --cached` だけ、まだ push していない直前のコミットなら `git rm --cached` → `git commit --amend --no-edit`（そのコミットが NG に出たユーザーのファイルだけなら `git reset --soft HEAD~1` → `git rm --cached`）。それより前のコミットや push 済みなら名前を示して止まる。`untracked-check:` で始まらない出力は判定ではないので、`--out` と版を直して実行し直す。quality-check の 4-0 と Step 6）。Step 5 のコミットはパスを指定して行う（`git add -A` を使わない）。
 
 ## 計測の範囲
 

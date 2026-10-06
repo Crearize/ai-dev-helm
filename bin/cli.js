@@ -164,6 +164,11 @@ yargs(hideBin(process.argv))
           type: 'string',
           describe: 'Output directory (<scratchpad>/quality-check), must be outside the repository. Default: OS temp dir. The pack contains the full diff - protect or delete it',
         })
+        .option('check-untracked', {
+          type: 'boolean',
+          describe: 'quality-check Step 6: build nothing; check that no file untracked at cycle <N>\'s review is now part of the change (exit 1 if one is)',
+          default: false,
+        })
         .option('verbose', {
           type: 'boolean',
           describe: 'Show detailed output and stack traces on error',
@@ -171,7 +176,26 @@ yargs(hideBin(process.argv))
         });
     },
     (argv) => {
-      const { buildContextPack } = require('../lib/quality-check-context');
+      const { buildContextPack, checkUntrackedReviewGap } = require('../lib/quality-check-context');
+      if (argv.checkUntracked) {
+        try {
+          const gap = checkUntrackedReviewGap({ dir: process.cwd(), cycle: argv.cycle, baseRef: argv.base, outDir: argv.out });
+          if (gap.ok) {
+            console.log(`untracked-check: OK - none of the ${gap.untrackedAtReview} file(s) untracked at cycle ${argv.cycle}'s review is part of the change`);
+          } else {
+            for (const name of gap.gap) console.log(`  ${name}`);
+            console.log('Create no flag and push nothing. For each name: if it belongs to the change, rebuild the context as a new cycle and redo the review. If it does not (the user\'s file), keep the file and take it out of the change - its content stays in the history and goes up with a push: if it is only staged, git rm --cached -- <names> is enough; if it is in the last commit and not pushed yet, git rm --cached -- <names>, then git commit --amend --no-edit (when that commit holds only the files listed here, git reset --soft HEAD~1, then git rm --cached -- <names>); if it is in an earlier commit or already pushed, stop and name the files (exception X3). Then run this check again. If unsure, stop and ask the owner, naming the files.');
+            console.log(`untracked-check: NG - ${gap.gap.length} file(s) untracked (so not reviewed) at cycle ${argv.cycle} are now part of the change (listed above)`);
+            process.exitCode = 1;
+          }
+        } catch (err) {
+          // Not a verdict: exit 2, never the NG's 1.
+          console.error(`Error: ${err.message}`);
+          console.error('No verdict. If the context has to be rebuilt, rebuild it as a new cycle and redo the review: rebuilding the same cycle loses the untracked list of the review and lets this check pass unseen.');
+          process.exitCode = 2;
+        }
+        return;
+      }
       let result;
       try {
         result = buildContextPack({
@@ -188,7 +212,7 @@ yargs(hideBin(process.argv))
       }
       console.log(`context: ${result.contextPath}`);
       if (result.measurementPath) console.log(`measurements: ${result.measurementPath} (helper timing and on-disk inventory; not runtime token usage)`);
-      console.log(`changed files: ${result.names.length} (+ ${result.untracked.length} untracked), diff ${result.diffLines} lines${result.diffInline ? ' (inline)' : ' -> diff.patch'}`);
+      console.log(`changed files: ${result.names.length} (untracked, not part of the change: ${result.untracked.length}), diff ${result.diffLines} lines${result.diffInline ? ' (inline)' : ' -> diff.patch'}`);
       console.log(`snapshot: ${result.snapshotDir} (${result.snapshotCopied.length} files${result.snapshotSkipped.length ? `, ${result.snapshotSkipped.length} not copied` : ''})${result.replacedSnapshot ? ' - replaced the previous snapshot of this cycle' : ''}`);
       if (result.fixDiff) {
         console.log(`fix diff: ${result.fixDiff.path} (${result.fixDiff.files.length} files)`);
@@ -198,8 +222,13 @@ yargs(hideBin(process.argv))
       if (result.findingsError) {
         console.log(`findings: previous findings.json unreadable - ${result.findingsError}`);
       }
+      if (result.untracked.length > 0) {
+        const shown = result.untracked.slice(0, 20).join(', ');
+        const more = result.untracked.length > 20 ? ` ... and ${result.untracked.length - 20} more` : '';
+        console.log(`WARNING: ${result.untracked.length} untracked file(s) are not part of the reviewed change: ${shown}${more}. If any belongs to the change, git add it (git add -N is enough) and rebuild the context.`);
+      }
       if (result.untrackedOverLimit) {
-        console.log(`warning: ${result.untracked.length} untracked files - only the first ${result.untrackedSnapshotted} untracked files snapshotted; fix .gitignore if these are build outputs`);
+        console.log(`warning: ${result.untracked.length} untracked files (not reviewed, not snapshotted) - fix .gitignore if these are build outputs; commit what belongs to the change`);
       }
       console.log(`integrity: ${result.integrityOk ? 'ok' : 'MISMATCH - name-only list and diff headers differ'}`);
       if (!result.integrityOk) process.exitCode = 1;
@@ -238,6 +267,25 @@ yargs(hideBin(process.argv))
       } catch (error) {
         console.error('Error: ' + error.message);
         process.exitCode = 1;
+      }
+    }
+  )
+  .command(
+    'integrate-check',
+    'Read-only pre-check of the remote-less integration, run in the feature worktree: the main checkout is on the trunk with no tracked change, the trunk is an ancestor, nothing there stands at a path the feature adds, and no skip-worktree / assume-unchanged file there is one the feature changes (exit 0 OK, 1 problems found, 2 error; the last line is the verdict). Changes nothing',
+    (yargs) => yargs
+      .option('main', { type: 'string', demandOption: true, describe: 'The checkout that has the trunk open (a relative path is resolved against the current directory)' })
+      .option('trunk', { type: 'string', default: 'main', describe: 'Trunk branch name' })
+      .option('dir', { type: 'string', describe: 'Feature worktree', default: process.cwd() }),
+    (argv) => {
+      try {
+        const { integrateCheck } = require('../lib/integrate-check');
+        const result = integrateCheck({ dir: argv.dir, main: argv.main, trunk: argv.trunk });
+        console.log(result.lines.join(String.fromCharCode(10)));
+        process.exitCode = result.exitCode;
+      } catch (error) {
+        console.error('Error: ' + error.message);
+        process.exitCode = 2;
       }
     }
   )
@@ -329,7 +377,7 @@ yargs(hideBin(process.argv))
       }
     }
   )
-  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, link-skills, hook-selftest, codex-trust, quality-report, or review-budget')
+  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, link-skills, integrate-check, hook-selftest, codex-trust, quality-report, or review-budget')
   .strict()
   .help()
   .version(require('../package.json').version)
@@ -345,6 +393,10 @@ yargs(hideBin(process.argv))
       console.error(msg);
       console.error('');
       yargs.showHelp();
+      // A usage error (unknown argument, missing option) is exit 2, so that a
+      // command whose exit 1 means 'found a problem' (integrate-check) is never
+      // confused with a mistyped call (3.4.3).
+      process.exit(2);
     }
     process.exit(1);
   })
