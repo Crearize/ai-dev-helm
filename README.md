@@ -483,7 +483,7 @@ Codex には `.codex/agents/helm-*.toml`（designer / doc-reviewer / implementer
 
 ### 会話の記録の引き継ぎ（context-handoff、Claude Code）
 
-`init` は `.claude/hooks/context-handoff.cjs` を配り、`.claude/settings.json` の `PreCompact`・`SessionStart`（compact / clear）・`SessionEnd`（clear）・`Stop` に登録します。コンパクトと `/clear` の直前に、ユーザーの指示の原文・質問への回答・直近のやり取り・変更したファイル・git と PR の操作を会話記録からプログラムで抜き出して `~/.claude/context-handoff/` に保存し、直後にその要点（1 万文字未満）と記録の場所を文脈に戻します。文脈が 30 万トークンを超えると、区切りで `/clear` してよいことを画面に知らせます。長い会話を、やり取りを失わずに整理するための仕組みです（フックから `/clear`・`/compact` は起こせないので、打つのはユーザーです）。Codex には入れていません。詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「会話の記録の引き継ぎ」。
+`init` は `.claude/hooks/context-handoff.cjs` を配り、`.claude/settings.json` の `PreCompact`・`SessionStart`（compact / clear）・`SessionEnd`（clear）・`Stop` に登録します。コンパクトと `/clear` の直前に、ユーザーの指示の原文・質問への回答・直近のやり取り・変更したファイル・git と PR の操作を会話記録からプログラムで抜き出して `~/.claude/context-handoff/` に保存し、直後にその要点（1 万文字未満）と記録の場所を文脈に戻します。秘密情報らしい文字列（URL の中のパスワード、よくあるトークンの形）は `[REDACTED]` に置き換えて保存します。文脈が 30 万トークンを超えると、区切りで `/clear` してよいことを画面に知らせます。環境変数 `AI_DEV_HELM_HANDOFF=off` で止められます。長い会話を、やり取りを失わずに整理するための仕組みです（フックから `/clear`・`/compact` は起こせないので、打つのはユーザーです）。Codex には入れていません。詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「会話の記録の引き継ぎ」。
 
 詳細と起動例は [harness-runtime.md](shared/documents/harness-runtime.md)。レビューの別名への偽装、親自身の思考内レビュー、外部 CLI、無効化したフックや改ざんまで防ぐセキュリティ境界ではありません。フックを信頼・有効化した実行環境で使用してください。
 
