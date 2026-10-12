@@ -58,8 +58,11 @@ const SECRET_PATTERNS = [
   [/\bnpm_[A-Za-z0-9]{30,}/g, '[REDACTED]'],
   [/\bxox[abpr]-[A-Za-z0-9-]{10,}/g, '[REDACTED]'],
   [/\bAIza[0-9A-Za-z_-]{35}/g, '[REDACTED]'],
-  [/\b([Bb]earer[ \t]+)[A-Za-z0-9._~+/-]{20,}=*/g, '$1[REDACTED]'],
+  // Any case; spaces but not a line break between the word and the value.
+  [/\b(bearer[^\S\r\n]+)[A-Za-z0-9._~+/-]{20,}=*/gi, '$1[REDACTED]'],
   [/-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----/g, '[REDACTED]'],
+  // A key pasted without its END line: from a header followed by key data to the end of the text.
+  [/-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----\r?\n[A-Za-z0-9+/=]{16,}[\s\S]*$/, '[REDACTED]'],
 ];
 // A key block whose end was cut off.
 const OPEN_KEY_RE = /-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----[\s\S]*$/;
@@ -69,19 +72,31 @@ function redact(text) {
   return SECRET_PATTERNS.reduce((s, [re, to]) => s.replace(re, to), String(text || ''));
 }
 
-// Cap at max first, then redact: redaction only shortens text, so nothing from beyond the cap can slide in, and long
-// pastes are never scanned in full. A secret cut in half at the cap may survive the patterns, so an unterminated key
-// block and a trailing run of ASCII non-space characters (the half of a token or password) are dropped. The omitted
-// count is taken from the original length (total, when the caller kept only the start of a longer text).
-function cleanText(text, max, total) {
+// Keep { body, length }: body is the redacted start of the text, length the original length (total, when the caller
+// kept only the start of a longer text). Cap at max first, then redact: redaction only shortens text, so nothing from
+// beyond the cap can slide in, and long pastes are never scanned in full. A secret cut in half at the cap may survive
+// the patterns, so an unterminated key block and a trailing run of ASCII non-space characters (the half of a token or
+// password) are dropped.
+function capture(text, max, total) {
   const s = String(text || '');
-  const full = Math.max(Number(total) || 0, s.length);
-  if (full <= max) return redact(s);
+  const length = Math.max(Number(total) || 0, s.length);
+  if (length <= max) return { body: redact(s), length };
   const head = redact(cut(s, max)).replace(OPEN_KEY_RE, '[REDACTED]');
   let end = head.length;
   while (end > 0 && head.length - end < TAIL_DROP_MAX && /[\x21-\x7e]/.test(head[end - 1])) end -= 1;
-  const kept = head.slice(0, end);
-  return `${kept}…（${full - kept.length} 文字省略）`;
+  return { body: head.slice(0, end), length };
+}
+
+// Render a captured text in at most max characters; the omitted count is always taken from the original length.
+function show(captured, max, flat) {
+  const body = flat ? captured.body.replace(/\s+/g, ' ').trim() : captured.body;
+  const shown = cut(body, max);
+  const omitted = captured.length > max || shown.length < body.length;
+  return omitted ? `${shown}…（${Math.max(0, captured.length - shown.length)} 文字省略）` : shown;
+}
+
+function cleanText(text, max, total) {
+  return show(capture(text, max, total), max);
 }
 
 // ---------- store ----------
@@ -209,8 +224,23 @@ function contentText(content) {
   }).filter(Boolean).join('\n');
 }
 
+// Remove <system-reminder> blocks in one pass (a regex would go quadratic on many unclosed tags).
+function stripReminders(text) {
+  const open = '<system-reminder>';
+  const close = '</system-reminder>';
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const start = text.indexOf(open, from);
+    const end = start < 0 ? -1 : text.indexOf(close, start + open.length);
+    if (end < 0) return out + text.slice(from);
+    out += text.slice(from, start);
+    from = end + close.length;
+  }
+}
+
 function promptText(content) {
-  let text = contentText(content).replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
+  let text = stripReminders(contentText(content)).trim();
   // A slash command is recorded as tags at the start; tags quoted inside an instruction stay as they are.
   if (/^<command-(?:name|message)>/.test(text)) {
     const command = text.match(/<command-name>([\s\S]*?)<\/command-name>/);
@@ -236,7 +266,7 @@ function answerText(block) {
 }
 
 async function readTranscript(file) {
-  const record = { messages: [], turns: [], files: new Map(), ops: [], prs: new Map(), compactSummary: '', cwd: '', branch: '' };
+  const record = { messages: [], turns: [], files: new Map(), ops: [], prs: new Map(), compactSummary: null, cwd: '', branch: '' };
   if (typeof file !== 'string' || !file || !fs.existsSync(file)) return record;
   const askIds = new Set();
   let current = null;
@@ -261,7 +291,7 @@ async function readTranscript(file) {
     const content = entry.message && entry.message.content;
     if (entry.type === 'user') {
       if (entry.isCompactSummary) {
-        record.compactSummary = cleanText(contentText(content), MAX_PROMPT_CHARS);
+        record.compactSummary = capture(contentText(content), MAX_PROMPT_CHARS);
         continue;
       }
       if (Array.isArray(content)) {
@@ -269,16 +299,16 @@ async function readTranscript(file) {
           if (block && block.type === 'tool_result' && askIds.has(block.tool_use_id) && !block.is_error) {
             const text = answerText(block);
             // An interrupted call leaves a "[Tool call interrupted ...]" result, which is not an answer.
-            if (text && !text.startsWith('[')) record.messages.push({ at, kind: '質問への回答', text: cleanText(text, MAX_PROMPT_CHARS) });
+            if (text && !text.startsWith('[')) record.messages.push({ at, kind: '質問への回答', text: capture(text, MAX_PROMPT_CHARS) });
           }
         }
       }
       if (!isHumanPrompt(entry)) continue;
       const raw = promptText(content);
       if (!raw) continue;
-      record.messages.push({ at, kind: '指示', text: cleanText(raw, MAX_PROMPT_CHARS) });
-      // Replies keep only their start (and their full length for the omitted count); they are cleaned when rendered.
-      current = { at, prompt: cleanText(raw, MAX_REPLY_CHARS), replyText: '', replyLength: 0 };
+      record.messages.push({ at, kind: '指示', text: capture(raw, MAX_PROMPT_CHARS) });
+      // Replies keep only their start (and their full length for the omitted count); they are captured when rendered.
+      current = { at, prompt: capture(raw, MAX_REPLY_CHARS), replyText: '', replyLength: 0 };
       record.turns.push(current);
       if (record.turns.length > RECENT_TURNS) record.turns.shift();
       continue;
@@ -339,7 +369,7 @@ function renderRecord(record, meta) {
   out.push('# 会話の記録（context-handoff）', '');
   out.push(`- 作った時刻: ${localTime(new Date().toISOString())}`);
   out.push(`- きっかけ: ${reasonLabel(meta.reason)}`);
-  if (meta.instructions) out.push(`- /compact に付けた指示: ${cleanText(meta.instructions, 2000).replace(/\s+/g, ' ')}`);
+  if (meta.instructions && meta.instructions.body) out.push(`- /compact に付けた指示: ${show(meta.instructions, 2000, true)}`);
   out.push(`- 作業ディレクトリ: ${record.cwd || meta.cwd || '-'}`);
   out.push(`- ブランチ: ${record.branch || '-'}`);
   out.push(`- 会話 ID: ${meta.sessionId || '-'}`);
@@ -348,11 +378,11 @@ function renderRecord(record, meta) {
 
   const messages = [...record.messages].reverse();
   out.push(`## ユーザーの指示と質問への回答（原文・新しい順・${messages.length} 件）`, '');
-  messages.forEach((m, i) => out.push(`### ${i + 1}. ${localTime(m.at)}（${m.kind}）`, '', quote(m.text), ''));
+  messages.forEach((m, i) => out.push(`### ${i + 1}. ${localTime(m.at)}（${m.kind}）`, '', quote(show(m.text, MAX_PROMPT_CHARS)), ''));
 
   out.push('## 直近のやり取り（古い順）', '');
   for (const turn of record.turns) {
-    out.push(`### ユーザー（${localTime(turn.at)}）`, '', quote(turn.prompt), '');
+    out.push(`### ユーザー（${localTime(turn.at)}）`, '', quote(show(turn.prompt, MAX_REPLY_CHARS)), '');
     out.push('### Claude', '', quote(turn.replyLength ? cleanText(turn.replyText, MAX_REPLY_CHARS, turn.replyLength) : '（文の応答なし）'), '');
   }
 
@@ -367,7 +397,7 @@ function renderRecord(record, meta) {
   out.push('');
 
   if (record.compactSummary) {
-    out.push('## 直前のコンパクトの要約', '', quote(record.compactSummary), '');
+    out.push('## 直前のコンパクトの要約', '', quote(show(record.compactSummary, MAX_PROMPT_CHARS)), '');
   }
   return `${out.join('\n')}\n`;
 }
@@ -405,14 +435,14 @@ function renderInjection(record, meta, file) {
   // The newest instruction (not an answer) always goes in, shortened to what is left; then newest first while they fit.
   const must = messages.find((m) => m.kind === '指示') || messages[0];
   if (must) {
-    let line = `${prefixOf(must)}${oneLine(must.text, 800)}`;
-    if (line.length + 1 > budget) line = `${prefixOf(must)}${oneLine(must.text, Math.max(200, budget - prefixOf(must).length - 20))}`;
+    let line = `${prefixOf(must)}${show(must.text, 800, true)}`;
+    if (line.length + 1 > budget) line = `${prefixOf(must)}${show(must.text, Math.max(200, budget - prefixOf(must).length - 20), true)}`;
     chosen.set(must, line);
     budget -= line.length + 1;
   }
   for (const m of messages) {
     if (m === must) continue;
-    const line = `${prefixOf(m)}${oneLine(m.text, 800)}`;
+    const line = `${prefixOf(m)}${show(m.text, 800, true)}`;
     if (line.length + 1 > budget) break;
     chosen.set(m, line);
     budget -= line.length + 1;
@@ -555,9 +585,10 @@ async function main() {
       notice(input);
     } else if (event === 'PreCompact') {
       const reason = input.trigger === 'manual' ? 'compact-manual' : 'compact-auto';
-      const instructions = typeof input.custom_instructions === 'string' ? input.custom_instructions : '';
-      // SessionStart (compact) rebuilds the record and reads these back, since its input has no trigger.
-      writePrivate(trigger, JSON.stringify({ reason, instructions: cleanText(instructions, 2000), at: Date.now() }));
+      const instructions = capture(typeof input.custom_instructions === 'string' ? input.custom_instructions : '', 2000);
+      // SessionStart (compact) rebuilds the record and reads these back, since its input has no trigger. The redacted
+      // start and the original length are kept apart, so the omitted count is rendered once.
+      writePrivate(trigger, JSON.stringify({ reason, instructions: instructions.body, instructionsLength: instructions.length, at: Date.now() }));
       await saveRecord({ ...base, reason, instructions });
     } else if (event === 'SessionEnd' && input.reason === 'clear') {
       writeMarker(input);
@@ -571,7 +602,10 @@ async function main() {
         saved = {};
       }
       const fresh = Date.now() - Number(saved.at) <= COMPACT_TRIGGER_MAX_AGE_MS;
-      await restore({ ...base, reason: fresh && saved.reason ? saved.reason : 'compact', instructions: fresh ? saved.instructions || '' : '' });
+      const instructions = fresh && typeof saved.instructions === 'string'
+        ? { body: saved.instructions, length: Number(saved.instructionsLength) || saved.instructions.length }
+        : null;
+      await restore({ ...base, reason: fresh && saved.reason ? saved.reason : 'compact', instructions });
     } else if (event === 'SessionStart' && input.source === 'clear') {
       const marker = await takeMarker(input);
       if (marker) await restore({ sessionId: marker.sessionId, transcriptPath: marker.transcriptPath, cwd: marker.cwd, reason: 'clear' });
