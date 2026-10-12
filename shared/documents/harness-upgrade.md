@@ -95,6 +95,13 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 - `.gitignore` を確かめる。`init` の再実行で `.claude/worktrees/` が足される（3.4.2 の節）。3.4.3 からは、無くてもリモートの無い統合は止まらない（`git status` の表示のため）。
 - quality-check の共通コンテキスト（`quality-context`）は、未追跡ファイルを変更に含めず、件数と名前を別の節と WARNING に出す（スナップショットにもコピーしない）。変更に含める新規ファイルは、共通コンテキストを作る前に `git add`（`-N` 可）する。最初の push の前（Step 5 のコミットの後）とフラグの作成前に `quality-context --check-untracked` で、レビュー時に未追跡だったファイルが変更に入っていないことを確かめ、最後の行が `untracked-check: OK` のときだけ push・フラグの作成に進む（NG なら、変更に属するものは新しいサイクルでレビューをやり直す。属さないユーザーのファイルは消さずに外す: ステージしただけなら `git rm --cached` だけ、まだ push していない直前のコミットなら `git rm --cached` → `git commit --amend --no-edit`（そのコミットが NG に出たユーザーのファイルだけなら `git reset --soft HEAD~1` → `git rm --cached`）。それより前のコミットや push 済みなら名前を示して止まる。`untracked-check:` で始まらない出力は判定ではないので、`--out` と版を直して実行し直す。quality-check の 4-0 と Step 6）。Step 5 のコミットはパスを指定して行う（`git add -A` を使わない）。
 
+## 3.5.0 の更新
+
+- `init` の再実行で、`.claude/hooks/context-handoff.cjs` が入り、`.claude/settings.json` の `PreCompact`・`SessionStart`（matcher `compact|clear`）・`SessionEnd`（matcher `clear`）・`Stop` に登録される（既存のユーザーのフックは残る。再実行で重複しない）。コンパクトと `/clear` の前後で会話の記録を保存して戻す（`harness-runtime.md` の「会話の記録の引き継ぎ」）。Codex だけの導入先には何も入らない。
+- テンプレートの CLAUDE.md に「Compact Instructions」の節が増えた。導入先の CLAUDE.md にも同じ節を足す（独自の節が既にあれば、同じ趣旨を残して一つにまとめる）。
+- 全体設定（`~/.claude/settings.json`）にも同じフックを `--scope=global` で入れている環境では、導入先ではプロジェクトの登録だけが動く。
+- 導入先が独自に、コンパクトの前後で記録を残す仕組み（フック・手順）を持っていれば、この仕組みに寄せて消す。
+
 ## 計測の範囲
 
 `quality-context --cycle N` は `measurements.json` に生成処理の実測時間と取得時点のファイルハッシュを保存します。並列エージェント時間やタスク全体の時間には換算しません。棚卸し失敗は `inventory_error` に記録し、追加の品質ゲートにしません。

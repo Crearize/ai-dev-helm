@@ -244,6 +244,12 @@ When errors occur, investigate and fix them autonomously if a durable fix is cle
 
 ---
 
+## Compact Instructions
+
+When compacting, keep: the user's instructions and answers, verbatim where possible and newest first; decisions and their reasons; unfinished work and the next step; changed files; branches and PRs. After compaction (and after `/clear`), the `context-handoff` hook puts back a record extracted from the transcript by a program, with the path of the full record. Where the summary and that record disagree, follow the record, and read the full record for details and older instructions (`documents/development/harness-runtime.md` "会話の記録の引き継ぎ").
+
+---
+
 ## Project Overview
 
 <!-- Manual edit: Update the sections below to match your project -->

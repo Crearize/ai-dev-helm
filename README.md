@@ -481,6 +481,10 @@ Claude Code / Codex はサブエージェントごとのモデルをテンプレ
 
 Codex には `.codex/agents/helm-*.toml`（designer / doc-reviewer / implementer / visual-producer / explorer / reviewer）と、指定漏れ時の `gpt-6.1-sol` / medium の既定を生成します。旧版が配布したまま変更されていないエージェント定義と、旧既定値 `gpt-5.6-terra` は新しい値へ更新し、独自に変更したものは保持します。モデル指定は実行環境の利用可能一覧を正とし、Astra が利用できない環境で自動的に品質レビューを下位モデルへ落とすことはしません。再初期化は既存の独自指示を残して管理ブロックを更新します。
 
+### 会話の記録の引き継ぎ（context-handoff、Claude Code）
+
+`init` は `.claude/hooks/context-handoff.cjs` を配り、`.claude/settings.json` の `PreCompact`・`SessionStart`（compact / clear）・`SessionEnd`（clear）・`Stop` に登録します。コンパクトと `/clear` の直前に、ユーザーの指示の原文・質問への回答・直近のやり取り・変更したファイル・git と PR の操作を会話記録からプログラムで抜き出して `~/.claude/context-handoff/` に保存し、直後にその要点（1 万文字未満）と記録の場所を文脈に戻します。文脈が 30 万トークンを超えると、区切りで `/clear` してよいことを画面に知らせます。長い会話を、やり取りを失わずに整理するための仕組みです（フックから `/clear`・`/compact` は起こせないので、打つのはユーザーです）。Codex には入れていません。詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「会話の記録の引き継ぎ」。
+
 詳細と起動例は [harness-runtime.md](shared/documents/harness-runtime.md)。レビューの別名への偽装、親自身の思考内レビュー、外部 CLI、無効化したフックや改ざんまで防ぐセキュリティ境界ではありません。フックを信頼・有効化した実行環境で使用してください。
 
 ### 自己改善ハーネス
@@ -647,6 +651,8 @@ ai-dev-helm/
 │   ├── codex-config-global.toml.template
 │   ├── codex-hooks.json.template
 │   ├── hooks/quality-gate.cjs      # 品質ゲートフック本体（Node 製・クロスプラットフォーム）
+│   ├── hooks/review-budget.cjs     # レビューだけの回数制御
+│   ├── hooks/context-handoff.cjs   # コンパクト・/clear の前後の会話の記録の保存と引き継ぎ（Claude Code）
 │   └── PULL_REQUEST_TEMPLATE.md
 │
 ├── configs/                    # AI ツール別ドキュメント
@@ -683,6 +689,8 @@ your-project/
 │   │   ├── frontend/coding.md
 │   │   └── backend/coding.md
 │   ├── hooks/quality-gate.cjs      #   品質ゲートフック（Node 製）
+│   ├── hooks/review-budget.cjs     #   レビューだけの回数制御
+│   ├── hooks/context-handoff.cjs   #   コンパクト・/clear の前後の会話の記録
 │   └── settings.json               #   フック・権限設定
 │
 ├── .cursor/                        # Cursor 用ディレクトリ
@@ -754,7 +762,7 @@ your-project/
 | `.cursorrules` | Cursor が参照するプロジェクト設定ファイル |
 | `AGENTS.md` | Codex CLI が会話開始時に読み込む設定ファイル（プロジェクトルートからチェーンマージ） |
 | `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施のマージ（main への取り込み）をブロックするフックなど |
-| `.claude/hooks/` / `.codex/hooks/` | 品質ゲートフック本体（`quality-gate.cjs`）。Node 製のため Windows / macOS / Linux で同一動作（`jq` 等の外部ツール不要） |
+| `.claude/hooks/` / `.codex/hooks/` | 品質ゲートフック本体（`quality-gate.cjs`）とレビューの回数制御（`review-budget.cjs`）。`.claude/hooks/` には、コンパクト・`/clear` の前後で会話の記録を保存して戻す `context-handoff.cjs` も入る。Node 製のため Windows / macOS / Linux で同一動作（`jq` 等の外部ツール不要） |
 | `.codex/config.toml` | Codex のプロジェクトローカル設定（approval/sandbox） |
 | `.codex/hooks.json` | Codex の PreToolUse フック設定。有効な `.quality-check-passed` がないと main へのマージ・直接 push をブロック |
 | `.claude/rules/` | Claude Code が自動読み込みするコーディングルール |

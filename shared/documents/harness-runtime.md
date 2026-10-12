@@ -94,4 +94,30 @@ node .claude/hooks/review-budget.cjs begin --phase quality --roles integrated-re
 - **状態ファイルの権限（Windows）**: review-budget の状態ディレクトリ・ファイルは `0o700` / `0o600` で作るが、Windows ではこの mode は効かず、親フォルダーの ACL を継承する（同じユーザーの別のプロセスから読める）。review-budget は AI のうっかりを防ぐ仕組みで、security boundary ではない。状態の `receipts` と `agents` は、書き込みのたびに新しい順で 500 件までに剪定する（500 件を超える長寿命ブランチでは、剪定された古いレビュアーへの追加依頼がレビューとして数えられなくなることがある）。
 - **quality-gate と入れ子のシェル**: `powershell -Command "…"`・`pwsh -c`・`cmd /c`・`bash -c` などの中に push / merge 等の語が見える形は、単純な形ではないので拒否される（フラグがあっても。push・merge はそれだけを単独のコマンドで実行する）。エンコードした PowerShell のスクリプトと、標準入力から読ませる PowerShell のスクリプトは、語の有無にかかわらず拒否される。この判定はコマンドの文字列を 1 回だけ読む規則で、小文字にし、引用符と行の継続（`\`・バッククォート・`^` の直後の改行）を除いて語に分け、`powershell` / `pwsh`（パス・`.exe` 付きも同じ）の語の後の同じコマンド（`;`・`&`・`|`・括弧・改行まで）に、エンコードしたコマンドの指定（`-e`・`-ec`・`-en`〜`-encodedcommand`。`--` / `/` で始まる形も同じ）か `-command -` / `-c -` があれば拒否する。検索語やメッセージで、名前の後にこれらの指定を書いたコマンドも拒否される。その場合はその文字列を含めずに実行し直す。ゲートは AI の普段の誤操作を止めるためのもので、意図して組み立てた形（展開・エスケープ・Unicode の類似字で名前や指定を書く、変数やファイルからスクリプトを組み立てる、別のマシンの先で起動する等）は対象外とする（hook のヘッダの一覧）。
 
+## 会話の記録の引き継ぎ（context-handoff）
+
+長い会話は、毎回の呼び出しで文脈全体を読み直すので、文脈が大きいまま続けるほど費用がかさむ（1M コンテキストのモデルは、自動コンパクトが約 97 万トークンまで走らない）。区切りで `/clear` か `/compact` をすれば軽くなるが、やり取りが要約に頼るか消える。`.claude/hooks/context-handoff.cjs`（Claude Code のみ）は、その前後でやり取りをプログラムで保存して戻す。
+
+| イベント | 動き |
+|---|---|
+| `Stop` | 直近の呼び出しの入力（`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`）が 300,000 を超えたら、区切りで `/clear` してよいことを `systemMessage` で知らせる。同じ会話では、超えたときとその後 10 万増えるごとに 1 回。しきい値は環境変数 `AI_DEV_HELM_CONTEXT_NOTICE_TOKENS`（`0` で知らせない） |
+| `PreCompact` | 記録を保存する（手で打った `/compact` も自動コンパクトも。`/compact` に付けた指示も書く） |
+| `SessionStart`（compact） | 記録を作り直して保存し、要点を `additionalContext` で戻す |
+| `SessionEnd`（clear） | 次の会話のための目印を書き、記録を保存する |
+| `SessionStart`（clear） | 同じ作業ディレクトリの 120 秒以内の目印を読み（無ければ最大 5 秒待つ）、前の会話の要点を戻す |
+
+- **記録の中身**: 会話記録（jsonl）の本体の流れから抜き出す（要約しない。コンパクトより前の部分も含む）。ユーザーの指示（人が打った発言。task-notification・`<system-reminder>`・ツールの結果は除く）と `AskUserQuestion` への回答を原文で新しい順に、直近 5 回のやり取り、変更したファイル、PR と git の操作、直前のコンパクトの要約。
+- **戻す要点**: Claude Code の上限（1 万文字。超えるとファイルに置かれ先頭 2,000 文字だけになる）に収まるよう、9,000 文字以内。記録の全文のパスを含み、細部と古い指示はそのファイルを読む。要約と食い違うときは記録を優先する（テンプレートの CLAUDE.md の「Compact Instructions」）。
+- **置き場所**: `~/.claude/context-handoff/<会話記録のフォルダー名>/<会話 ID>.md`。リポジトリの外なので、作業ツリーにもコミットにも入らない。30 日より古いものは書き込みのときに消す。エラーは同じ場所の `errors.log` に書く。
+- **全体設定と重ねるとき**: 同じファイルを `~/.claude/hooks/` に置いて `~/.claude/settings.json` に `node "<パス>" --scope=global` で登録すると、導入先でないプロジェクトにも効く。`--scope=global` の方は、プロジェクトに `.claude/hooks/context-handoff.cjs` と `.claude/settings.json` の登録があれば何もしない（2 回動かない）。
+- **終了コードは常に 0**: PreCompact の exit 2 はコンパクトを取りやめさせ、`Stop` フックの exit 2 は応答を終わらせなくするため。登録のラッパーも、実体が無い・異常終了でも exit 0 にする。実体が無いときは `SessionStart` でだけ知らせる。
+
+効く範囲と限界:
+
+- フックから `/clear`・`/compact` は起こせない。打つのはユーザーで、`Stop` フックの知らせが目安になる。
+- 会話記録は書き込みが遅れることがあるので、PreCompact と SessionEnd の時点では最後の 1 往復を取りこぼすことがある。コンパクトの後は SessionStart で作り直すので拾える。
+- 同じ作業ディレクトリの 2 つの会話でほぼ同時に `/clear` すると、目印を取り違えることがある。
+- サブエージェントには入れない（短命で、本体に返るのは最終の文だけのため）。
+- Codex には入れない（会話記録の形式が別で、`.codex/hooks.json` を変えると全導入先で `/hooks` の信頼のやり直しが要る）。
+
 仕様参照: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)、[Codex hooks](https://learn.chatgpt.com/docs/hooks)、[Claude Code hooks](https://code.claude.com/docs/en/hooks)。
