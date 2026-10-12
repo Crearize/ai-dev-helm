@@ -7,7 +7,9 @@
 | Skills | `.claude/skills/` | Symlink to `skills/` (superpowers + project skills) |
 | Rules | `.claude/rules/` | Stack-specific coding rules |
 | Hook | `.claude/hooks/quality-gate.cjs` | Merge-gate hook (Node, cross-platform); registered as a PreToolUse hook by settings.json |
-| Settings | `.claude/settings.json` | Quality check hook registration, permission deny rules |
+| Hook | `.claude/hooks/review-budget.cjs` | Review-only admission (counts review rounds); registered as PreToolUse / PostToolUse hooks |
+| Hook | `.claude/hooks/context-handoff.cjs` | Saves a record of the conversation before /compact and /clear and puts its key points back after them; registered as PreCompact / SessionStart / SessionEnd / Stop hooks (see `documents/development/harness-runtime.md`) |
+| Settings | `.claude/settings.json` | Hook registration, permission deny rules |
 | CLAUDE.md | `CLAUDE.md` (project root) | AI configuration file |
 
 Shared assets installed alongside (tool-independent): `documents/development/` (policies, coding rules), `.github/review-*.md` (review guides), `.github/PULL_REQUEST_TEMPLATE.md`, `lint/` (pre-built lint assets, wired later by the lint-scaffolding skill), and `.ai-dev-helm.json` (applied-version manifest).
@@ -22,7 +24,9 @@ your-project/
 │   │   ├── frontend/          # Frontend rules (from stack)
 │   │   └── backend/           # Backend rules (from stack)
 │   ├── hooks/
-│   │   └── quality-gate.cjs   # Merge-gate hook (always overwritten by init)
+│   │   ├── quality-gate.cjs   # Merge-gate hook (always overwritten by init)
+│   │   ├── review-budget.cjs  # Review-only admission
+│   │   └── context-handoff.cjs # Record across /compact and /clear
 │   └── settings.json          # Hook registration and permissions
 ├── skills/
 │   ├── superpowers/           # Development process skills
