@@ -61,8 +61,10 @@ const SECRET_PATTERNS = [
   // Any case; spaces but not a line break between the word and the value.
   [/\b(bearer[^\S\r\n]+)[A-Za-z0-9._~+/-]{20,}=*/gi, '$1[REDACTED]'],
   [/-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----/g, '[REDACTED]'],
-  // A key pasted without its END line: from a header followed by key data to the end of the text.
-  [/-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----\r?\n[A-Za-z0-9+/=]{16,}[\s\S]*$/, '[REDACTED]'],
+  // A key pasted without its END line: the header, armor lines such as "Version: …" or "Proc-Type: …", and the run of
+  // key data that follows (lines may be separated by spaces, line breaks or a JSON "\n"). Text after the data stays.
+  // The separators and the data class do not overlap, so the match stays linear.
+  [/-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----(?:\s|\\[rn]){0,8}(?:[A-Za-z][\w-]{0,30}: [^\r\n\\]{0,200}(?:\s|\\[rn]){1,8}){0,6}[A-Za-z0-9+/=]{16,}(?:(?:\s|\\[rn]){1,8}[A-Za-z0-9+/=]+)*/g, '[REDACTED]'],
 ];
 // A key block whose end was cut off.
 const OPEN_KEY_RE = /-----BEGIN [A-Z ]{0,40}PRIVATE KEY(?: BLOCK)?-----[\s\S]*$/;
@@ -73,10 +75,10 @@ function redact(text) {
 }
 
 // Keep { body, length }: body is the redacted start of the text, length the original length (total, when the caller
-// kept only the start of a longer text). Cap at max first, then redact: redaction only shortens text, so nothing from
-// beyond the cap can slide in, and long pastes are never scanned in full. A secret cut in half at the cap may survive
-// the patterns, so an unterminated key block and a trailing run of ASCII non-space characters (the half of a token or
-// password) are dropped.
+// kept only the start of a longer text). Cap at max first, then redact, so nothing from beyond the cap can slide in
+// and long pastes are never scanned in full (redaction may lengthen a URL slightly; show() cuts again). A secret cut
+// in half at the cap may survive the patterns, so an unterminated key block and a trailing run of ASCII non-space
+// characters (the half of a token or password) are dropped.
 function capture(text, max, total) {
   const s = String(text || '');
   const length = Math.max(Number(total) || 0, s.length);
@@ -92,7 +94,7 @@ function show(captured, max, flat) {
   const body = flat ? captured.body.replace(/\s+/g, ' ').trim() : captured.body;
   const shown = cut(body, max);
   const omitted = captured.length > max || shown.length < body.length;
-  return omitted ? `${shown}…（${Math.max(0, captured.length - shown.length)} 文字省略）` : shown;
+  return omitted ? `${shown}…（${Math.max(captured.length - shown.length, body.length - shown.length, 1)} 文字省略）` : shown;
 }
 
 function cleanText(text, max, total) {
@@ -239,13 +241,22 @@ function stripReminders(text) {
   }
 }
 
+// The text of the first <name>…</name>, or null; one indexOf pass (a lazy regex goes quadratic on repeated tags).
+function tagValue(text, name) {
+  const open = `<${name}>`;
+  const start = text.indexOf(open);
+  if (start < 0) return null;
+  const end = text.indexOf(`</${name}>`, start + open.length);
+  return end < 0 ? null : text.slice(start + open.length, end);
+}
+
 function promptText(content) {
   let text = stripReminders(contentText(content)).trim();
   // A slash command is recorded as tags at the start; tags quoted inside an instruction stay as they are.
   if (/^<command-(?:name|message)>/.test(text)) {
-    const command = text.match(/<command-name>([\s\S]*?)<\/command-name>/);
-    const args = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
-    if (command) text = `${command[1].trim()} ${args ? args[1].trim() : ''}`.trim();
+    const command = tagValue(text, 'command-name');
+    const args = tagValue(text, 'command-args');
+    if (command !== null) text = `${command.trim()} ${args ? args.trim() : ''}`.trim();
   }
   return text;
 }
@@ -285,7 +296,7 @@ async function readTranscript(file) {
     const at = entry.timestamp || '';
 
     if (entry.type === 'pr-link' && entry.prUrl) {
-      record.prs.set(entry.prUrl, { at, text: cleanText(`PR #${entry.prNumber || '?'} ${entry.prUrl}`, 300) });
+      record.prs.set(entry.prUrl, { at, text: capture(`PR #${entry.prNumber || '?'} ${entry.prUrl}`, 300) });
       continue;
     }
     const content = entry.message && entry.message.content;
@@ -332,9 +343,9 @@ async function readTranscript(file) {
         }
       }
       if (SHELL_TOOLS.has(block.name) && typeof input.command === 'string' && OP_RE.test(input.command)) {
-        const text = cleanText(input.command.split(/\r?\n/)[0], 300);
+        const text = capture(input.command.split(/\r?\n/)[0], 300);
         const last = record.ops[record.ops.length - 1];
-        if (last && last.text === text) last.at = at;
+        if (last && last.text.body === text.body && last.text.length === text.length) last.at = at;
         else record.ops.push({ at, text });
       }
     }
@@ -369,7 +380,7 @@ function renderRecord(record, meta) {
   out.push('# 会話の記録（context-handoff）', '');
   out.push(`- 作った時刻: ${localTime(new Date().toISOString())}`);
   out.push(`- きっかけ: ${reasonLabel(meta.reason)}`);
-  if (meta.instructions && meta.instructions.body) out.push(`- /compact に付けた指示: ${show(meta.instructions, 2000, true)}`);
+  if (meta.instructions && meta.instructions.length) out.push(`- /compact に付けた指示: ${show(meta.instructions, 2000, true)}`);
   out.push(`- 作業ディレクトリ: ${record.cwd || meta.cwd || '-'}`);
   out.push(`- ブランチ: ${record.branch || '-'}`);
   out.push(`- 会話 ID: ${meta.sessionId || '-'}`);
@@ -393,10 +404,10 @@ function renderRecord(record, meta) {
 
   const ops = newestOps(record).slice(0, MAX_OPS);
   out.push(`## PR と git の操作（新しい順・${ops.length} 件）`, '');
-  ops.forEach((o) => out.push(`- ${localTime(o.at)} \`${o.text}\``));
+  ops.forEach((o) => out.push(`- ${localTime(o.at)} \`${show(o.text, 300)}\``));
   out.push('');
 
-  if (record.compactSummary) {
+  if (record.compactSummary && record.compactSummary.body) {
     out.push('## 直前のコンパクトの要約', '', quote(show(record.compactSummary, MAX_PROMPT_CHARS)), '');
   }
   return `${out.join('\n')}\n`;
@@ -424,7 +435,7 @@ function renderInjection(record, meta, file) {
   const files = [...record.files.keys()].reverse().slice(0, 20);
   if (files.length) tail.push('## 変更したファイル（新しい順）', ...files.map((f) => `- ${oneLine(f, 200)}`), '');
   const ops = newestOps(record).slice(0, 10);
-  if (ops.length) tail.push('## PR と git の操作（新しい順）', ...ops.map((o) => `- ${localTime(o.at)} ${oneLine(o.text, 200)}`), '');
+  if (ops.length) tail.push('## PR と git の操作（新しい順）', ...ops.map((o) => `- ${localTime(o.at)} ${show(o.text, 200, true)}`), '');
   const tailText = tail.join('\n');
 
   const title = '## ユーザーの指示と質問への回答（新しい順・原文。長いものは途中まで）';
@@ -496,6 +507,12 @@ async function takeMarker(input) {
     if (Date.now() >= deadline) return null;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
+}
+
+// A saved length that is not a finite number at least as long as the saved text falls back to the text's length.
+function validLength(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= fallback ? n : fallback;
 }
 
 function noticeThreshold() {
@@ -603,7 +620,7 @@ async function main() {
       }
       const fresh = Date.now() - Number(saved.at) <= COMPACT_TRIGGER_MAX_AGE_MS;
       const instructions = fresh && typeof saved.instructions === 'string'
-        ? { body: saved.instructions, length: Number(saved.instructionsLength) || saved.instructions.length }
+        ? { body: saved.instructions, length: validLength(saved.instructionsLength, saved.instructions.length) }
         : null;
       await restore({ ...base, reason: fresh && saved.reason ? saved.reason : 'compact', instructions });
     } else if (event === 'SessionStart' && input.source === 'clear') {
