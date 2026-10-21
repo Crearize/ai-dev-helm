@@ -64,10 +64,11 @@ jobs:
         env:
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.check.outputs.needed == 'true'
         with:
-          node-version: 22
+          node-version: '26'
+          check-latest: true
           cache: npm
 
       - name: Transform and copy skills
