@@ -43,7 +43,7 @@
     "yargs": "^18.0.0"
   },
   "devDependencies": {
-    "@ast-grep/cli": "^0.45.1",
+    "@ast-grep/cli": "^0.51.0",
     "@eslint/js": "^10.0.1",
     "@types/react": "^19.2.18",
     "eslint": "^10.8.1",
