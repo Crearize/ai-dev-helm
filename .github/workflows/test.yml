@@ -27,7 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: ['20', '24']
+        node: ['20', '24', '26']
     steps:
       # Keep LF in the checkout so fixtures and patch application match on Windows.
       - name: Disable CRLF conversion
@@ -41,6 +41,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
+          check-latest: true
 
       # legacy-peer-deps: same reason as publish.yml (eslint-plugin-react's
       # published peer range caps below the ESLint major the assets target).
@@ -73,7 +74,8 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '24'
+          node-version: '26'
+          check-latest: true
 
       - uses: actions/setup-java@v5
         with:
