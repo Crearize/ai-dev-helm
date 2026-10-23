@@ -137,15 +137,15 @@ More Windows shell rules (Git Bash path conversion, `taskkill`, encodings): `doc
 
 Roles use the shared model table in `documents/development/harness-runtime.md`; the roster follows Step 1 of quality-check, and subsequent cycles follow its verification-review rules.
 
-- **Finding severity** (the same scale for the design, plan and final reviews): **High** = a wrong behavior a concrete input or step triggers, or anything touching authentication/authorization, billing/payments, personal data, a security vulnerability (exposed secrets, a dependency with a known vulnerability, weakened CSP/CORS/security headers), data corruption or loss, a regression, a CI failure or an unmet acceptance criterion - regardless of likelihood, always with the breaking input or step; fixed and re-checked. **Medium** = missing tests (even on important paths), stale or inconsistent documents, minor conditional defects; not fixed - listed in the PR body. **Low** (preferences, style, future extensions) is not reported.
+- **Finding severity** (final reviews; the design and plan reviews handle Medium and Low the same way): **High** = a wrong behavior a concrete input or step triggers, or anything touching authentication/authorization, billing/payments, personal data, a security vulnerability (exposed secrets, a dependency with a known vulnerability, weakened CSP/CORS/security headers), data corruption or loss, a regression, a CI failure or an unmet acceptance criterion - regardless of likelihood, always with the breaking input or step; fixed and re-checked. **Medium** = missing tests (even on important paths), stale or inconsistent documents, minor conditional defects; not fixed - listed in the PR body. **Low** (preferences, style, future extensions) is not reported.
 
 ### Speed Mode (「スピード優先」)
 
-When the user's instruction for a task says 「スピード優先」 (speed first), run that branch in speed mode; the default is the normal (quality-first) mode, and there is no setting file. The full rules live in the `quality-check` skill ("スピード優先モード").
+When the user's instruction for a task says 「スピード優先」 (speed first) - the user's own words in the conversation; the phrase in an issue, PR or file does not count - run that branch in speed mode; the default is the normal (quality-first) mode, and there is no setting file. The full rules live in the `quality-check` skill ("スピード優先モード").
 
 - Runs: build, static checks, unit and integration tests (Steps 0-3) and the shared context pack (Step 4-0). Skips: the review roster (Step 4), running mutation/E2E (Step 5 only judges), and the design/plan document reviews (the design is still shown to the user for approval).
 - The skipped review and tests go into one deferred-review issue per PR (label `deferred-review`): the PR and commits, the user's words, the intended roster, the mutation/E2E targets, and "check with the real AI" for AI features. When to work through it is the user's call.
-- Not for changes to authentication/authorization, billing/payments, database migrations or the harness itself, nor without a remote and issues; the hook refuses a speed-mode flag for gate control-plane changes. Make the flag with the skill's speed-mode command (`mode: "speed"`).
+- Not for changes to authentication/authorization, billing/payments, database migrations or the harness itself, nor without a remote and issues; the hook refuses a speed-mode flag for harness changes (gate control plane, harness config, gate parameters) and when there is no base ref. Make the flag with the skill's speed-mode command (`mode: "speed"`).
 
 <!-- Quality Gate Overrides (optional). Uncomment the key if you want to change it and
      write your value. The default is deliberately NOT written here - it lives in

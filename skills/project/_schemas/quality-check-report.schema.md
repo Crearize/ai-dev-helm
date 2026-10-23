@@ -52,10 +52,10 @@
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
-| `source` | `string` | 必須 | 指摘元。レビュアー名（例: "統合レビュアー"、"セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合の持ち越し不足分）。レビュアー名は `quality-check` SKILL.md Step 4「役割定義」表の名称と完全一致させる（`persona` と同じ）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの追加テスト工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
+| `source` | `string` | 必須 | 指摘元。レビュアー名（例: "統合レビュアー"、"セキュリティエンジニア"）、または前段工程を表す固定値 `"lint"`（Step 2 の残存違反）/ `"test"`（Step 3 の失敗テスト）/ `"test_design"`（照合で上限を超えた不足分。中として PR に記録）。レビュアー名は `quality-check` SKILL.md Step 4「役割定義」表の名称と完全一致させる（`persona` と同じ）。ミューテーション・E2E は Step 5（`test-recommendation` スキル）による非ブロックの追加テスト工程であり、quality-check の統合指摘（`cycles[].findings`）には含めない — 結果は `mutation` / `e2e` オブジェクトに記録する |
 | `severity` | `"高" \| "中" \| "低"` | 必須 | 優先度。基準は `quality-check` SKILL.md Step 4「指摘の優先度（基準）」。3.6.0 以降のレビューは `"低"` を出さない（値は旧レポートを読むために残す） |
 | `preexisting` | `boolean` | 任意 | 差分より前からある問題で高の分類に当たるもの（`true`）。直さずに PR の本文に記録し、完了条件・停滞・構造的停滞の数に入れない。省略は `false` |
-| `severity_adjusted` | `{ from: "高" \| "中" \| "低", reason: string }` | 任意 | コーディネータが統合（4-2）で優先度を上げ下げしたときの元の優先度と理由（壊れる入力・手順の無い高を中へ、基準の高に当たる中を高へ等） |
+| `severity_adjusted` | `{ from: "高" \| "中" \| "低", reason: string }` | 任意 | コーディネータが統合（4-2）で優先度を上げ下げしたときの元の優先度と理由（壊れる入力・手順の無い高を中へ、基準の高に当たる中・低を高へ等。レビュアーは低を出さないが、出てきた低が基準の高に当たれば高に上げるので `from` に `"低"` がありうる） |
 | `sources` | `string[]` | 必須（新規） | この問題を検出した全ての元レビュアー・工程。統合時は配列の和集合を取り、代表の `source` も含める。旧記録は存在する情報だけで補う |
 | `adjudication` | `"confirmed" \| "false_positive" \| "unknown"` | 任意 | 根拠に照らした裁定。未判定・旧記録の欠落は `unknown`。確認した根拠は既存の `detail` に短く記す |
 | `recurrence` | `"new" \| "repeated" \| "unknown"` | 任意 | 新規検出か既出の再掲か。同じ `id` の既出指摘は `repeated`、履歴が不明なら `unknown`。件数だけから推定しない |

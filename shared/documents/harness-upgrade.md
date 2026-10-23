@@ -102,6 +102,15 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 - 全体設定（`~/.claude/settings.json`）にも同じフックを `--scope=global` で入れている環境では、導入先ではプロジェクトの登録だけが動く。
 - 導入先が独自に、コンパクトの前後で記録を残す仕組み（フック・手順）を持っていれば、この仕組みに寄せて消す。
 
+## 3.6.0 の更新
+
+- レビューは最大 2 巡になり、直して確かめるのは高の指摘だけになった（中は PR の本文に残し、低は出させない。優先度の基準は `quality-check` SKILL.md Step 4「指摘の優先度（基準）」）。`review-budget.cjs` は `quality` / `production` の既定の上限を 2 にし、初回の `--limit` に 2 を超える値を拒否する。3.6.0 より前に予約を始めたブランチは上限 3 のまま読む。
+- 「スピード優先」モード（`quality-check`「スピード優先モード」）が入った。quality-gate hook はフラグの `mode` を読み、スピードモードのフラグではハーネスの変更を通さない。
+- 自動テストで製品の AI を呼ばない原則と、E2E で実 AI を通す判定（quality-policy §3、test-recommendation）。
+- `init` は既存の `CLAUDE.md` / `AGENTS.md` / `.cursorrules` を上書きしない。テンプレートの次の部分を導入先に写す: 開発思想の「Automated tests ... never call the product's AI」の行、Quality Check Flow の Step 4、Review Roster の表の Verification Reviewer の行・Completion criteria・「At most 2 review rounds」・Finding severity の行、「Speed Mode (「スピード優先」)」の節、Merge Gate の What passes の括弧書き。導入先に独自のレビューの回数・指摘の対応の規則があれば、ハーネスの規則に寄せて消す。
+- PR テンプレート（`.github/PULL_REQUEST_TEMPLATE.md`）に Mode・Deferred review issue・Unaddressed Review Findings の欄を足す。
+- 導入先が独自にレビュー結果を照合する仕組み（受領書の検証など）を持っていれば、中の `open` を通し、スピードモードの受領書（レビューの記録が無く、後回しの Issue がある）を受け付けるように合わせる。
+
 ## 計測の範囲
 
 `quality-context --cycle N` は `measurements.json` に生成処理の実測時間と取得時点のファイルハッシュを保存します。並列エージェント時間やタスク全体の時間には換算しません。棚卸し失敗は `inventory_error` に記録し、追加の品質ゲートにしません。
