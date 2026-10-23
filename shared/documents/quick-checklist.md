@@ -35,9 +35,10 @@ A quick-reference checklist for AI tools when working on development tasks.
 ### Unit Tests
 - [ ] **Frontend tests passed**
 
-### Review Cycles (minimum 1 cycle; repeat on High/Medium findings)
+### Review Cycles (minimum 1 cycle; at most 2 review rounds; repeat only on High findings)
 - [ ] **Review roster completed** (integrated reviewer always, falsification QA on any code change, at most one specialist - Security joins even a docs-only diff that touches gate control-plane files, harness config, CI workflows or dependency files; sized by change content, see the quality-check skill's Step 1 roster table; mechanical checks must pass before reviewers run)
-- [ ] **High/Medium findings = 0** (full definition: the quality-check skill's 完了条件)
+- [ ] **High findings = 0** (Medium findings and preexisting High findings listed in the PR body, not fixed; full definition: the quality-check skill's 完了条件)
+- [ ] **Speed mode only** (the user said 「スピード優先」): Steps 0-3 and 4-0 done, reviews and mutation/E2E deferred to one `deferred-review` issue per PR, flag made with the speed-mode command
 - [ ] **Report data saved** (`.quality-check-report.json`)
 
 ### Additional Tests (Step 5)

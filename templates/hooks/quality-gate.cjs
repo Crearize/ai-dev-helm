@@ -158,6 +158,10 @@
 //   in the trunk, or a fast-forward whose new commits are harness files only
 //   or are covered by the flag (the flag names it, or an ancestor with a
 //   harness-only diff); a trunk with commits the source lacks is refused. A
+//   flag with `mode: "speed"` (3.6.0: the checks ran, the review is deferred
+//   to an issue) covers nothing that brings gate control-plane files into
+//   the trunk - the gained range of a trunk move, otherwise the base diff -
+//   not even on HEAD itself. A
 //   `git pull` on the trunk from anything but its upstream / `origin <trunk>`
 //   is refused (fetch, then merge). A fetch into the trunk from a remote is
 //   allowed only as `origin <trunk>:<trunk>`; a delete or `+` force never.
@@ -1212,6 +1216,13 @@ function controlReason(files) {
   const more = files.length > MAX_LISTED_FILES ? ` (+${files.length - MAX_LISTED_FILES} more)` : '';
   return `Gate control-plane changed: ${shown}${more}. Run the quality-check skill before merging into main.`;
 }
+// 3.6.0 (#213): a speed-mode flag stands for the checks without the review.
+const SPEED_PREFIX = 'Speed-mode flag cannot take in gate control-plane changes: ';
+function speedReason(files) {
+  const shown = files.slice(0, MAX_LISTED_FILES).join(', ');
+  const more = files.length > MAX_LISTED_FILES ? ` (+${files.length - MAX_LISTED_FILES} more)` : '';
+  return `${SPEED_PREFIX}${shown}${more}. Run the quality-check skill in the normal mode.`;
+}
 
 const NEED_FLAG = 'Quality check not passed. Run the quality-check skill before merging into main.';
 const STALE = 'Code changed after the last quality check. Re-run the quality-check skill before merging into main.';
@@ -1369,10 +1380,14 @@ function rule4Exempt(base, baseControl) {
 // Rule 3: the flag. `noFlag` is the reason to give when there is none. The
 // flag is checked against HEAD, or - with `tip` (a sha) - against the commit
 // a merge, rebase or trunk rewrite brings into the trunk (H-11); `stale` is
-// then the reason for a flag that does not cover it.
-function rule3Flag(ctx, noFlag, tip = null, stale = STALE) {
+// then the reason for a flag that does not cover it. `rangeControl`: the
+// control-plane files in the range the trunk takes in (the gained range of a
+// trunk move, or the base diff); a speed-mode flag never covers them, even on
+// HEAD itself (3.6.0, #213).
+function rule3Flag(ctx, noFlag, tip = null, stale = STALE, rangeControl = []) {
   const flag = ctx.flag;
   if (!flag) return deny('3', noFlag);
+  if (flag.mode === 'speed' && rangeControl.length > 0) return deny('3', speedReason(rangeControl));
   const head = tip || ctx.head;
   if (!head) {
     return deny('5', 'Cannot verify HEAD. Re-run the quality-check skill.');
@@ -1424,7 +1439,7 @@ function judgeTrunkMove(ctx, trunk, ref, reasons) {
   let noFlag = reasons.noFlag;
   if (hits.length > 0) noFlag = controlReason(hits);
   else if (overrideOnly(gained)) noFlag = overrideReason(gained.files);
-  return rule3Flag(ctx, noFlag, target, reasons.stale);
+  return rule3Flag(ctx, noFlag, target, reasons.stale, hits);
 }
 
 // The source a `git merge` / `git rebase` / `git pull` on the trunk brings in
@@ -1524,7 +1539,9 @@ function contextRules(a, ctx, plan = null) {
   let noFlag = needFlagReason(a, branch);
   if (baseControl.length > 0) noFlag = controlReason(baseControl);
   else if (overrideOnly(base)) noFlag = overrideReason(base.files);
-  const verdict = rule3Flag(ctx, noFlag);
+  const verdict = rule3Flag(ctx, noFlag, null, STALE, baseControl);
+  // The pull-request routes below would meet the same refusal: no hint.
+  if (verdict.decision === 'block' && verdict.reason.startsWith(SPEED_PREFIX)) return verdict;
   if (cand.kind === 'gh' && verdict.decision === 'block' && verdict.rule === '3') {
     return { ...verdict, reason: `${verdict.reason}${PR_MERGE_HINT}` };
   }
@@ -1986,7 +2003,7 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 //   branch        current branch name, or null/'' when there is none (detached
 //                 HEAD) or git failed. Either way it is UNRESOLVED -> rule 5.
 //   head          HEAD sha (lower case), or null when it cannot be read.
-//   flag          `{ commit }` from `.quality-check-passed` (commit already
+//   flag          `{ commit, mode }` from `.quality-check-passed` (commit already
 //                 lower-cased), or null. null means NO FLAG - a normal state,
 //                 not a failure.
 //   isAncestor    true/false for `flag.commit..HEAD`, or null when git failed;
@@ -2186,7 +2203,8 @@ function makeCtx(cwd) {
       if (!st.isFile() || st.size > MAX_FLAG_BYTES) return null;
       const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (parsed && typeof parsed.commit === 'string' && /^[0-9a-f]{7,40}$/i.test(parsed.commit)) {
-        return { commit: parsed.commit.toLowerCase() };
+        // `mode`: exactly "speed" is the speed mode (3.6.0); anything else is the normal mode.
+        return { commit: parsed.commit.toLowerCase(), mode: parsed.mode === 'speed' ? 'speed' : 'quality' };
       }
     } catch {
       // Missing, empty or malformed: no flag. `branch` is never read.

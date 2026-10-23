@@ -1,6 +1,6 @@
 ---
 name: test-recommendation
-description: 変更内容からミューテーション/E2Eの推奨度を判定し、強く推奨・範囲が小さい・副作用なしのものは確認なしで実施し、それ以外は最後の報告で確認する。quality-check Step 5から参照実行されるほか、開発中の任意タイミングで単体実行できる。
+description: 変更内容からミューテーション/E2Eの推奨度を判定し、強く推奨・範囲が小さい・副作用なしのもの（AI を使う動線の実 AI の E2E を含む）は確認なしで実施し、それ以外は最後の報告で確認する。スピードモードでは判定だけ行い後回しの Issue に書く。quality-check Step 5から参照実行されるほか、開発中の任意タイミングで単体実行できる。
 ---
 
 # Test Recommendation Skill - 追加テストの判定と実施
@@ -64,9 +64,9 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 
 | 推奨度 | 条件 |
 |---|---|
-| 強推奨（`strong`） | 既存 E2E シナリオの通過経路（画面・ルート・導線）に触れるフロント変更 / High リスク領域を通る新規導線の追加（シナリオ起草 + 実行を提案） |
+| 強推奨（`strong`） | 既存 E2E シナリオの通過経路（画面・ルート・導線）に触れるフロント変更 / High リスク領域を通る新規導線の追加（シナリオ起草 + 実行を提案） / **AI を使う動線**（製品が AI（LLM などの外部の生成 API）を呼ぶ画面・処理。プロンプト・応答の解釈・呼び出しの設定を含む）に触れる変更 — バックエンドのみの変更でも対象にし、その動線を**実 AI で**通すシナリオを実行する（quality-policy §3「AI を組み込んだ機能のテスト」。単体・結合テストは AI をスタブにするため、実 AI との結線はここでしか確かめられない） |
 | 推奨（`recommended`） | 新規導線の追加でシナリオ未整備（シナリオ起草 + 実行を提案） |
-| 提案しない（`none`） | バックエンドのみの変更 / シナリオ経路外のフロント変更 / docs・infra のみ |
+| 提案しない（`none`） | バックエンドのみの変更（AI を使う動線に触れるものを除く） / シナリオ経路外のフロント変更 / docs・infra のみ |
 
 ### 付帯規則
 
@@ -99,6 +99,10 @@ E2E は**フロントメイン・シナリオベース**とする。バックエ
 | **自動実施** | 次の**すべて**を満たす: 推奨度が `strong` ／ 範囲が小さい（quality-policy §2「自動実施の範囲の上限」以内）／ 副作用が無い（下記）／ 同じ対象を**ユーザーが**見送った記録が無い（下記「ユーザーの見送りと AI の持ち越し」） | 確認せずに Step 3・4 で実施する。`decided_by: "auto"` を記録し、結果は PR 本文に書く |
 | **確認** | 上のどれかを満たさない（`recommended`、判定不能で `recommended` に倒したもの、範囲が大きい、副作用がある、過去にユーザーが見送った） | 途中では止まらず、最後の 1 通（`documents/development/development-policy.md` §1.0「承認後の進め方」）の「判断が必要なこと」で、推奨度・根拠・範囲の大きさ・見込みの時間を添えてまとめて聞く。`decided_by: "user"` |
 | 記録のみ | `none` | 提示しない。判定結果だけを記録する |
+
+**AI を使う動線の実 AI の E2E**（3.6.0）: 通常のモードでは、範囲の上限と「有料の外部 API」の条件によらず**自動実施**の区分に入れる（実 AI の費用は受け入れる。見送るのはユーザーが明示したときだけ）。ただし、個人の認証情報・手作業のログインなど AI が自分で用意できないものが要る場合と、共有環境（staging 等）への書き込みが要る場合は**確認**の区分にし、最後の 1 通で、AI を使う動線を実 AI で確かめていないことを明記して聞く。
+
+**スピードモード**（`quality-check` SKILL.md「スピード優先モード」）: 判定と区分は通常どおり行うが、`strong` / `recommended` の対象は自動実施・確認のどちらも**実行せず後回しにする**（`user_decision: "deferred"`・`decided_by: "user"`）。対象（ミューテーションは変更ファイルと行数・変更クラス、E2E は既存シナリオの spec と新しい導線、AI を使う動線は「実 AI での確認」）を後回しの Issue に書く。台帳は、E2E の導線を `pending`・見送り理由 `後回し（Issue #n）`、ミューテーションを見送り履歴に見送り理由 `後回し（Issue #n）` で記録し、どちらも見送り回数は増やさない（ユーザーが対象を見て見送ったものではないため）。`none` は通常どおり記録のみ。
 
 **副作用が無いこと（E2E）**: プロジェクトの固定ポートで、他プロジェクトのプロセスを止めずにサーバーを起動できる（quality-check Step 1 のポート確認の結果を使う）／ 個人の認証情報・手作業のログイン・有料の外部 API など、AI が自分で用意できないものを必要としない ／ E2E スイート・実行手段が導入済み ／ 接続先が server-startup で起動したサーバーとローカル（使い捨て）の DB・モックに閉じ、共有環境（共有の開発 DB・staging 等）や外部サービスへの書き込み・送信をしない（判断できなければ確認の区分）。`server-startup` の停止規則は変えない（自動実施だけ一段厳しい条件にする）。
 
@@ -294,10 +298,11 @@ test-recommendation スキル（quality-check Step 5）が管理する永続台�
 
 | オブジェクト | 内容 |
 |---|---|
-| `mutation` | `recommendation`（`strong` / `recommended` / `none`）/ `recommendation_basis`（該当ヒューリスティクス項目。判定不能の事実・確認の区分にした理由を含む）/ `user_decision`（`executed` / `declined` / `not_proposed`。自動実施を含む）/ `decided_by`（`auto` / `user`）/ `decline_reason`。実行時は `scope` / `base_ref` / `mutants_total` / `score_raw` / `survivors` / `incremental`（最後の実行がキャッシュを再利用したか）等の実行時フィールドを併せて記録する（実行モード・スコア基準等の旧キーは廃止 — 記録しない） |
+| `mutation` | `recommendation`（`strong` / `recommended` / `none`）/ `recommendation_basis`（該当ヒューリスティクス項目。判定不能の事実・確認の区分にした理由を含む）/ `user_decision`（`executed` / `declined` / `not_proposed` / `deferred`。自動実施を含む。`deferred` はスピードモードの後回し）/ `decided_by`（`auto` / `user`）/ `decline_reason`。実行時は `scope` / `base_ref` / `mutants_total` / `score_raw` / `survivors` / `incremental`（最後の実行がキャッシュを再利用したか）等の実行時フィールドを併せて記録する（実行モード・スコア基準等の旧キーは廃止 — 記録しない） |
 | `e2e` | `recommendation` / `recommendation_basis` / `user_decision` / `decided_by` / `result` / `issues` / `new_scenarios`（起草したシナリオと 3 択の判断）。旧トップレベルの `e2e_result` / `e2e_issues` を置き換える |
 
 - 推奨度 `none` の対象も判定結果を記録する（`recommendation` / `recommendation_basis`、`user_decision: "not_proposed"`）
+- スピードモードで後回しにした対象は `user_decision: "deferred"`・`decided_by: "user"`（e2e は `result: "skipped"`、mutation は `executed: false`・`reason: null`）を記録する
 - 新規導線で「シナリオ追加のみ（実行見送り）」を選んだ場合は `e2e.user_decision: "added_only"`・`e2e.result: "skipped"`・`new_scenarios[].decision: "added_only"` を記録する
 
 ### 単体実行時
@@ -311,7 +316,8 @@ test-recommendation スキル（quality-check Step 5）が管理する永続台�
 - [ ] ベース ref を解決し（quality-check Step 1 と同一）、`git diff` で判定対象を取得した
 - [ ] 永続台帳を読み取った（存在しなければ雛形から生成。読めない・フォーマット逸脱時はユーザーに修復を仰いだ — 黙って上書きしない）
 - [ ] ミューテーション / E2E のヒューリスティクスを判定した（複数該当は最高推奨度 / ツール未導入は `not_configured` / E2E スイート不在時は新規導線検出のみ / 判定不能は `recommended` に倒し根拠欄に記録）
-- [ ] `strong` / `recommended` を自動実施 / 確認に区分した（自動実施は strong・範囲が上限以内・副作用なし・ユーザーの見送りなしのすべて。`none` は提示せず記録のみ）
+- [ ] `strong` / `recommended` を自動実施 / 確認に区分した（自動実施は strong・範囲が上限以内・副作用なし・ユーザーの見送りなしのすべて。AI を使う動線の実 AI の E2E は、AI が用意できないものや共有環境への書き込みが要らなければ自動実施。`none` は提示せず記録のみ）
+- [ ] スピードモードでは `strong` / `recommended` を実行せず、後回しの Issue に対象を書き、台帳に `後回し（Issue #n）` で記録した（見送り回数は増やさない）
 - [ ] 自動実施分は確認せずに実行した。確認の区分は最後の 1 通で聞き（ミューテーション・既存シナリオ E2E は 2 択、新規導線 E2E はドラフト提示の上 3 択）、返答を記録した（quality-check 経由はレポートの `mutation` / `e2e` と `decided_by`、単体実行は台帳 + セッション出力。見送りは `decline_reason` 付き）
 - [ ] 実施と決まったミューテーションを実行した（テスト緑前提 / 差分スコープ / 実行回数は最大 3 回、超過はせず持ち越し / 通過判定なし — 生存の対処は既定の規則で AI が決める / トリアージ規律と red-green 検証（1 実行あたり最大 5 件・当該テストファイルのみ）/ `tool_false_negative` の機械判定 / バジェット超過は縮退再試行 → `unmeasurable_within_budget` で先へ / 検証対象が残れば QAエンジニア（ファルシフィケーション型）で分類妥当性を検証）
 - [ ] 実施と決まった E2E を実行した（server-startup で起動 → シナリオ実行 → 必ず停止 — 反復を打ち切った場合も停止は必須。失敗は実バグとして修正 + 影響範囲のみ再検証 — 反復は最大 2 回、超過は方針変更か中断の 2 択（失敗受容の選択肢はない）。新規シナリオのテストコードはコミット）
