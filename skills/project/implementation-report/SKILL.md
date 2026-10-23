@@ -17,6 +17,7 @@ PR作成時に実装レポートを生成するスキル。`quality-check` ス�
 
 - `quality-check` スキルが完了し `.quality-check-report.json` が存在すること
 - `.quality-check-report.json` が見つからない場合はエラーとし、先に `quality-check` スキルを実行する（AI が実行する。ユーザーに促さない）。例外: 差分がハーネスのみの免除（quality-check「ハーネスのみ変更の免除」）に当たる場合はエラーにしない（Step 1 を参照）
+- **スピードモードの場合**（quality-check「スピード優先モード」）: レビューは行っていないので、「レビューの中の指摘」は「レビュー未実施（後回し: Issue #n）」と書く。PR を作った後に後回しの Issue を作り、PR 本文にリンクを書き足す（`gh pr edit <n> --body-file <file>`）
 - **Step 5 の確認待ちで PR を作る場合**（`documents/development/development-policy.md` §1.0「承認後の進め方」 7 の順序 B）: quality-check はフラグ作成の前だが、`.quality-check-report.json` があれば通常の PR を作ってよい（draft にはしない）。確認の対象は「確認待ち（判断は最後の 1 通）」と書く。返答を受けて実行・記録し、追加するテストなどを同じ PR にコミットした後、レポートを再生成して PR 本文を更新する（`gh pr edit <n> --body-file <file>`）
 
 ---
@@ -80,6 +81,9 @@ git diff origin/main...HEAD
 ```markdown
 ## 実装レポート
 
+- モード: 品質優先 / スピード優先（ユーザーの指示の原文: 「…」）（`mode` / `deferred_review.user_instruction`）
+- 後回しのレビュー: なし / Issue #n（`deferred_review.issue`。スピードモードのとき）
+
 ### 設計・計画との対応
 | Phase | 計画内容 | 状態 | 備考 |
 |-------|---------|------|------|
@@ -92,9 +96,9 @@ git diff origin/main...HEAD
 - リスクレベル: high / medium / low（`risk_level`）
 - 静的チェック AI 修正パス: N回（打ち切り事由: なし / oscillation）（`lint_cycles` / `lint_abort_reason`）
 - テスト設計メモ: verified / retroactive / out_of_scope / not_required（メモ: [パス] または なし）（`test_design.status` / `test_design.memo_path`）
-- ミューテーションテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / not_proposed と判断者 auto / user（`mutation.recommendation` / `mutation.user_decision` / `mutation.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`mutation.decline_reason`）を明記する。実施した場合はスコア N%（生スコア、参考情報。最後の実行がキャッシュを再利用した計測なら「incremental」と付記 — `mutation.incremental`）、実行 N回、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n / tool_false_negative n）（`mutation.score_raw` / `mutation.runs` / `mutation.survivors`）。判定・実行そのものが不能だった場合は理由（`mutation.reason`: not_configured / out_of_scope / empty_scope / scope_error / tool_error）
-- 品質チェックサイクル数: N回（N回目で高/中指摘ゼロ達成 / 打ち切り事由: なし / cycle_limit / stagnation / 追加サイクル: N回）（`total_cycles` / `cycle_abort_reason` / `cycle_extensions`）
-- E2Eテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / added_only / not_proposed と判断者 auto / user（`e2e.recommendation` / `e2e.user_decision` / `e2e.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`e2e.decline_reason`）を明記する。結果: pass / fail / skipped、検出した問題（`e2e.result` / `e2e.issues`）。新規シナリオがある場合は `e2e.new_scenarios` の各件（シナリオ名と判断: added_and_run / added_only / declined）を明記する
+- ミューテーションテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / not_proposed / deferred と判断者 auto / user（`mutation.recommendation` / `mutation.user_decision` / `mutation.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`mutation.decline_reason`）を明記する。実施した場合はスコア N%（生スコア、参考情報。最後の実行がキャッシュを再利用した計測なら「incremental」と付記 — `mutation.incremental`）、実行 N回、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n / tool_false_negative n）（`mutation.score_raw` / `mutation.runs` / `mutation.survivors`）。判定・実行そのものが不能だった場合は理由（`mutation.reason`: not_configured / out_of_scope / empty_scope / scope_error / tool_error）
+- 品質チェックサイクル数: N回（N回目で高指摘ゼロ達成 / 打ち切り事由: なし / cycle_limit / stagnation / 追加サイクル: N回）（`total_cycles` / `cycle_abort_reason` / `cycle_extensions`）
+- E2Eテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / added_only / not_proposed / deferred と判断者 auto / user（`e2e.recommendation` / `e2e.user_decision` / `e2e.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`e2e.decline_reason`）を明記する。結果: pass / fail / skipped、検出した問題（`e2e.result` / `e2e.issues`）。新規シナリオがある場合は `e2e.new_scenarios` の各件（シナリオ名と判断: added_and_run / added_only / declined）を明記する
 - ドキュメント更新: updated / not_required（`documentation.status`、updated の場合は対象ファイル）
 - Flag commit (`.quality-check-passed` `commit`): `<sha>`（本番への反映で、反映元の PR が quality-check を通った commit を PR 本文から探せるようにする。フラグの作成前に PR を作るとき（順序 B・設計との差異の確認待ち）は「未作成」と書き、フラグの作成後に PR 本文を更新する）
 - self-improvement: 実施した場合のみ `self_improvement.status` を記載。未実施なら省略（通常の完了条件ではない）
@@ -111,7 +115,12 @@ git diff origin/main...HEAD
 
 ### 対応不要と判断したもの
 - **[指摘内容]**（[レビュアー名]指摘）: [判断理由]
+
+### レビューの中の指摘（直していないもの）
+- なし / **[場所]** [指摘内容]（[レビュアー名]。中 / 既存（差分外）の高）（`action: "PR に記録"` の指摘。スピードモードでは「レビュー未実施（後回し: Issue #n）」）
 ```
+
+「レビュー指摘への対応」に書くのは高の指摘（直したもの）と対応不要と判断したもの。中と既存（差分外）の高は直していないので「レビューの中の指摘（直していないもの）」に一覧で書く（quality-check Step 4「指摘の優先度（基準）」）。
 
 ---
 

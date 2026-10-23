@@ -11,6 +11,9 @@ const PHASES = ['requirements', 'design', 'plan', 'quality', 'production', 'muta
 // Phases whose limit waits for the owner: the final quality reviews, and the reviews before the design approval.
 const OWNER_STOP_PHASES = ['quality', 'production', 'design', 'requirements'];
 const BRANCH_PHASES = ['requirements', 'design', 'plan', 'production']; // reservations are per branch, so not on the trunk
+// The final quality review and the production review: the full review and one check of the high fixes (3.6.0, #213).
+// A first --limit cannot raise them; only extend, after the owner approved, goes past it.
+const REVIEW_LIMIT = { quality: 2, production: 2 };
 const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-engineer'];
 const STALE_LOCK_MS = 10 * 60 * 1000;
 const KEEP_ENTRIES = 500; // receipts / agents kept per branch state
@@ -173,12 +176,15 @@ function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
   if (!PHASES.includes(phase)) throw new Error('Unknown review phase');
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 3)) throw new Error('Review limit must be an integer from 1 to 3');
   if (phase === 'mutation' && limit !== undefined && limit !== 1) throw new Error('The mutation review limit is fixed at 1');
+  if (own(REVIEW_LIMIT, phase) && limit !== undefined && limit > REVIEW_LIMIT[phase]) {
+    throw new Error(`The ${phase} review limit cannot exceed ${REVIEW_LIMIT[phase]}; go past it only with extend, after the owner approves`);
+  }
   return transact(cwd, true, (state, loc) => {
     if (BRANCH_PHASES.includes(phase) && /^refs\/heads\/(main|master)$/.test(loc.branch)) {
       throw new Error(`Create a task branch before reserving a ${phase} review (reservations are per branch)`);
     }
     const extensions = state.extensions || [];
-    const group = state.phases[phase] || { limit: limit ?? (phase === 'quality' || phase === 'production' ? 3 : 1), rounds: [] };
+    const group = state.phases[phase] || { limit: limit ?? (own(REVIEW_LIMIT, phase) ? REVIEW_LIMIT[phase] : 1), rounds: [] };
     if (limit !== undefined && limit > group.limit) throw new Error('Review limit cannot be raised automatically');
     const effectiveLimit = Math.min(group.limit, limit ?? group.limit);
     const allowed = ceiling({ limit: effectiveLimit }, extensions, phase);
