@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const NOTICE_EN = 'Reinstall it with npx @crearize/ai-dev-helm init.';
+const PACKAGE_ROOT = path.resolve(__dirname, '..', '..', '..');
 const NOTICE_JA = '導入し直してください（npx @crearize/ai-dev-helm init）。';
 
 const move = (dir, from, to) => {
@@ -31,10 +32,10 @@ function copySkills(dir, targets) {
 }
 
 /** Add a statusMessage to the Claude gate registration (MovieMarketer, platform, MasterPlan). */
-function statusMessage(dir) {
+function statusMessage(dir, calls = /quality-gate\.cjs/) {
   const settings = readJson(dir, '.claude/settings.json');
   for (const group of settings.hooks.PreToolUse) {
-    for (const hook of group.hooks) if (/quality-gate\.cjs/.test(hook.command)) hook.statusMessage = '品質ゲートを確認中';
+    for (const hook of group.hooks) if (calls.test(hook.command)) hook.statusMessage = '品質ゲートを確認中';
   }
   writeJson(dir, '.claude/settings.json', settings);
 }
@@ -86,6 +87,36 @@ const SHAPES = {
     manifest: { apps: { frontend: 'apps/web' } },
     crlf: true,
     shape() {},
+  },
+
+  // platform: three flat copies without superpowers, its own gate and review-budget under scripts/ registered by
+  // hand (Claude and Codex), release protected too, its own deny list.
+  gate: {
+    tools: 'claude-code,codex,cursor',
+    stacks: 'java-springboot,nextjs-react',
+    models: 'platform',
+    manifest: {
+      skillTargets: { project: ['.claude/skills', '.codex/skills', '.cursor/skills'] },
+      exclude: [{ part: 'superpowers', reason: 'platform uses the external superpowers plugin' }],
+      gate: { script: 'scripts/gate.cjs' },
+      reviewBudgetScript: 'scripts/review-budget.cjs',
+      workflow: { protectedBranches: ['main', 'release'] },
+      settings: { mergeDeny: false },
+    },
+    shape(dir) {
+      copySkills(dir, { project: this.manifest.skillTargets.project });
+      for (const rel of ['.claude/hooks/quality-gate.cjs', '.claude/hooks/review-budget.cjs', '.codex/hooks/quality-gate.cjs', '.codex/hooks/review-budget.cjs']) unlink(dir, rel);
+      fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+      fs.copyFileSync(path.join(PACKAGE_ROOT, 'templates/hooks/quality-gate.cjs'), path.join(dir, 'scripts/gate.cjs'));
+      fs.copyFileSync(path.join(PACKAGE_ROOT, 'templates/hooks/review-budget.cjs'), path.join(dir, 'scripts/review-budget.cjs'));
+      const own = (command) => (command.includes('quality-gate.cjs') ? 'node scripts/gate.cjs' : command.includes('review-budget.cjs') ? 'node scripts/review-budget.cjs' : command);
+      for (const rel of ['.claude/settings.json', '.codex/hooks.json']) {
+        const settings = readJson(dir, rel);
+        for (const groups of Object.values(settings.hooks)) for (const group of groups) for (const hook of group.hooks) hook.command = own(hook.command);
+        writeJson(dir, rel, settings);
+      }
+      statusMessage(dir, /scripts\/gate\.cjs/);
+    },
   },
 
   // auFinancialPromotions: the "not found" notice of the gate wrapper rewritten by hand, the external superpowers
