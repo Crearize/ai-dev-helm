@@ -1179,6 +1179,7 @@ const GATE_CONTROL_PATTERNS = [
   /^\.claude\/settings(\.local)?\.json$/i,
   /^\.codex\/config\.toml$/i,
   /^\.(claude|codex|cursor)\/mcp\.json$/i,
+  /^\.mcp\.json$/i, // 3.7.0: the repository-root MCP registration (Claude Code)
 ];
 
 // Diffs made up entirely of these skip the gate (rule 4): the three config
@@ -1202,6 +1203,45 @@ const OVERRIDE_STRINGS = [/quality[-_\s]*gate[-_\s]*overrides/i, /mutation[-_\s]
 const isHarness = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f))
   || (HARNESS_DOC_RE.test(f) && HARNESS_DOC_DIRS.some((re) => re.test(f)));
 const controlHits = (files) => files.filter((f) => GATE_CONTROL_PATTERNS.some((re) => re.test(f)));
+
+// 3.7.0 (#217): a release-please release diff - the four release files only,
+// and in package.json / package-lock.json only the version lines (no
+// dependency, range, resolved or integrity change). extra-files of
+// release-please-config.json are never exempt: a pom.xml carries dependencies.
+const RELEASE_FILES = ['CHANGELOG.md', 'package.json', 'package-lock.json', '.release-please-manifest.json'];
+const VERSION_LINE = /^[+-]\s*"version"\s*:\s*"[0-9A-Za-z.+-]+",?\s*$/;
+const MANIFEST_LINE = /^[+-]\s*"[^"]*"\s*:\s*"[0-9A-Za-z.+-]+",?\s*$/;
+// The changed lines of each release file in a `git diff -U0`: { file: { minus, plus, starts } }.
+function releaseHunks(diffText) {
+  const out = {};
+  let file = null;
+  for (const line of diffText.split(/\r?\n/)) {
+    const head = /^diff --git a\/(\S+) b\//.exec(line);
+    if (head) { file = head[1]; out[file] = { minus: [], plus: [], starts: [] }; continue; }
+    if (!file || /^(\+\+\+|---) /.test(line)) continue;
+    const hunk = /^@@ -(\d+)/.exec(line);
+    if (hunk) { out[file].starts.push(Number(hunk[1])); continue; }
+    if (line.startsWith('-')) out[file].minus.push(line);
+    else if (line.startsWith('+')) out[file].plus.push(line);
+  }
+  return out;
+}
+// `files`: the changed paths; `diffText`: `git diff -U0` of the JSON release files.
+function isReleaseOnly(files, diffText) {
+  if (files.length === 0 || !files.every((f) => RELEASE_FILES.includes(f))) return false;
+  const hunks = releaseHunks(diffText);
+  const versionOnly = (h, count) => h.minus.length === count && h.plus.length === count
+    && [...h.minus, ...h.plus].every((l) => VERSION_LINE.test(l));
+  const pkg = hunks['package.json'];
+  if (files.includes('package.json') && !(pkg && versionOnly(pkg, 1))) return false;
+  // lockfile v2/v3: the top-level version and packages[""].version, both near the top.
+  const lock = hunks['package-lock.json'];
+  if (files.includes('package-lock.json') && !(lock && versionOnly(lock, 2) && lock.starts.every((n) => n <= 15))) return false;
+  const manifest = hunks['.release-please-manifest.json'];
+  if (files.includes('.release-please-manifest.json') && !(manifest && manifest.minus.length === manifest.plus.length
+    && [...manifest.minus, ...manifest.plus].every((l) => MANIFEST_LINE.test(l)))) return false;
+  return true;
+}
 const gateConfigFiles = (files) => files.filter((f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f)));
 
 // --------------------------------------------------------------------------
@@ -1448,6 +1488,7 @@ function judgeTrunkMove(ctx, trunk, ref, reasons) {
   if (gained === null) return cannot(`what \`${ref}\` adds to ${t}`);
   const hits = controlHits(gained.files);
   if (hits.length === 0 && !gained.overrideChanged && gained.files.every(isHarness)) return allow(); // Rule 4.
+  if (gained.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
   let noFlag = reasons.noFlag;
   if (hits.length > 0) noFlag = controlReason(hits);
   else if (overrideOnly(gained)) noFlag = overrideReason(gained.files);
@@ -1548,6 +1589,7 @@ function contextRules(a, ctx, plan = null) {
   }
   const baseControl = controlHits(base.files);
   if (rule4Exempt(base, baseControl)) return allow();
+  if (base.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
   let noFlag = needFlagReason(a, branch);
   if (baseControl.length > 0) noFlag = controlReason(baseControl);
   else if (overrideOnly(base)) noFlag = overrideReason(base.files);
@@ -2202,7 +2244,14 @@ function makeCtx(cwd) {
         (l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l) && OVERRIDE_STRINGS.some((re) => re.test(l))
       );
     }
-    return { files, overrideChanged };
+    let releaseOnly = false;
+    if (files.length > 0 && files.every((f) => RELEASE_FILES.includes(f))) {
+      const json = files.filter((f) => f !== 'CHANGELOG.md');
+      const d = json.length > 0 ? git(['diff', ...SAFE_DIFF, '-U0', '--no-renames', range, '--', ...json]) : { ok: true, out: '' };
+      if (!d.ok) return fail('git-error');
+      releaseOnly = isReleaseOnly(files, d.out);
+    }
+    return { files, overrideChanged, releaseOnly };
   };
 
   const flag = () => once('flag', () => {
@@ -2448,6 +2497,6 @@ function main() {
   });
 }
 
-module.exports = { classify, parseSimple, shellOf };
+module.exports = { classify, parseSimple, shellOf, isReleaseOnly };
 
 if (require.main === module) main();

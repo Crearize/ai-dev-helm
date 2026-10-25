@@ -93,8 +93,23 @@ function capture(text, max, total) {
 function show(captured, max, flat) {
   const body = flat ? captured.body.replace(/\s+/g, ' ').trim() : captured.body;
   const shown = cut(body, max);
-  const omitted = captured.length > max || shown.length < body.length;
-  return omitted ? `${shown}…（${Math.max(captured.length - shown.length, body.length - shown.length, 1)} 文字省略）` : shown;
+  // 3.7.0: count the ORIGINAL characters the shown text does not stand for - collapsed whitespace is not omitted text.
+  const consumed = flat ? rawPrefixFor(captured.body, shown.length) : shown.length;
+  const restIsSpace = captured.length === captured.body.length && captured.body.slice(consumed).trim() === '';
+  if (shown.length >= body.length && restIsSpace) return shown;
+  return `${shown}…（${Math.max(captured.length - consumed, 1)} 文字省略）`;
+}
+
+// The shortest prefix of raw whose whitespace-collapsed form is at least n characters long (binary search).
+function rawPrefixFor(raw, n) {
+  const flatLength = (p) => raw.slice(0, p).replace(/\s+/g, ' ').replace(/^ /, '').length;
+  let lo = 0;
+  let hi = raw.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (flatLength(mid) >= n) hi = mid; else lo = mid + 1;
+  }
+  return lo;
 }
 
 function cleanText(text, max, total) {
