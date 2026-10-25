@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0](https://github.com/Crearize/ai-dev-helm/compare/v3.6.0...v3.7.0) (2026-10-25)
+
+
+### Added
+
+* **harness:** 3.7.0 PR 1 - release exemption, superpowers v7.0.1, Node 20.19, small items ([#220](https://github.com/Crearize/ai-dev-helm/issues/220)) ([#221](https://github.com/Crearize/ai-dev-helm/issues/221)) ([e0fd4c6](https://github.com/Crearize/ai-dev-helm/commit/e0fd4c690190a35219e60e3cc64f225133bc435d))
+* **harness:** 3.7.0 PR 2 - one place for each rule, split skills ([#220](https://github.com/Crearize/ai-dev-helm/issues/220)) ([#223](https://github.com/Crearize/ai-dev-helm/issues/223)) ([647bd5f](https://github.com/Crearize/ai-dev-helm/commit/647bd5f1f8c78118515cefe4bd58eb569df1a2f2))
+* **harness:** 3.7.0 PR 3 - upgrade: render, three-way merge, verify, registrations by the hook they run ([#220](https://github.com/Crearize/ai-dev-helm/issues/220)) ([#224](https://github.com/Crearize/ai-dev-helm/issues/224)) ([adf8ce8](https://github.com/Crearize/ai-dev-helm/commit/adf8ce804d37559c427b1296be73ea350d77f4d8))
+* **harness:** 3.7.0 PR 4 - hook extension points, adopter patches, skill targets, workflow, local blocks, merge-only re-check ([#220](https://github.com/Crearize/ai-dev-helm/issues/220)) ([#226](https://github.com/Crearize/ai-dev-helm/issues/226)) ([0760583](https://github.com/Crearize/ai-dev-helm/commit/076058372dd7c59e37227f31f5aa97fd37431e0a))
+
 ## [3.6.0](https://github.com/Crearize/ai-dev-helm/compare/v3.5.0...v3.6.0) (2026-10-23)
 
 
