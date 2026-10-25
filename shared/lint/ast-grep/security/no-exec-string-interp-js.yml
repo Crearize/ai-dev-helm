@@ -13,7 +13,7 @@
 # Narrowed / NOT covered (documented): the `spawn('sh', ['-c', <interp>])`
 # shape (interpolation sits in an args-array ELEMENT, not the command arg) and
 # the `{ shell: true }` option correlation cannot be matched reliably by a
-# pure-AST rule in ast-grep 0.45.1, so they stay assigned to AI review. The
+# pure-AST rule in ast-grep 0.45.1 and 0.51.0, so they stay assigned to AI review. The
 # common `spawn(\`cmd ${x}\`, { shell: true })` case IS caught because the
 # interpolated command line is the first argument.
 # Variant: JavaScript build of no-exec-string-interp-ts - identical rule body; see no-exec-string-interp-ts.yml for the full rationale and language notes.

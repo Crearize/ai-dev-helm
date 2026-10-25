@@ -3,7 +3,7 @@
 # for-in / while / do-while statement or a `.map(...)` callback. The receiver
 # is matched literally as `db` - the conventional Drizzle client binding -
 # because a metavariable receiver also matches unrelated member calls;
-# narrowing to `db` keeps the rule reliable in ast-grep 0.45.1. Chained
+# narrowing to `db` keeps the rule reliable in ast-grep 0.45.1 and 0.51.0. Chained
 # builders (db.select().from(t).where(...)) still match on the inner
 # db.select() call. Note `Promise.all(rows.map(r => db...))` IS flagged: per
 # catalog D1 the AST rule stays a coarse heuristic and is paired with the

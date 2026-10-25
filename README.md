@@ -38,7 +38,7 @@ AI コーディングツール（Claude Code, Cursor, Codex）のための汎用
 
 ### 前提条件
 
-- Node.js 18 以上がインストールされていること
+- Node.js 20.19 以上がインストールされていること
 - Claude Code または Cursor がインストールされていること
 
 ### 1. プロジェクトに導入（npx で即実行）

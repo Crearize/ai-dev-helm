@@ -3,7 +3,7 @@
 # do-while statement or a `.map(...)` callback. The receiver is matched
 # literally as `prisma` - the overwhelmingly common binding name - because a
 # metavariable receiver ($DB.$M.$FN) also matches unrelated 3-level chains;
-# narrowing to `prisma` keeps the rule reliable in ast-grep 0.45.1. Query
+# narrowing to `prisma` keeps the rule reliable in ast-grep 0.45.1 and 0.51.0. Query
 # functions are limited to the row-returning/mutating set via a constraints
 # regex. Note `Promise.all(ids.map(id => prisma...))` IS flagged: per catalog
 # D1 the AST rule stays a coarse heuristic and is paired with the runtime
