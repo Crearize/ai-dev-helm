@@ -35,9 +35,9 @@ This project uses the [superpowers](https://github.com/obra/superpowers) skill s
 3. **Create a Pull Request** — PRs require at least **1 reviewer approval** before merging
 4. **Stale reviews are automatically dismissed** — If you push new commits after receiving approval, the review resets
 
-## Keeping the README in sync with the quality-check contract
+## One place for each rule
 
-`README.md` restates, for users, the merge-gate contract defined in `skills/project/quality-check/SKILL.md` (the SKILL is the single source). When you change the "最重要ルール" section of the SKILL, update the matching part of the README in the same PR. This rule is for this repository only and is not shipped in the SKILL.
+The review and quality-check rules (severity scale, rounds, verification round, speed mode, deferred review, completion criteria, the hook's complete contract) are written only in the `quality-check` skill (`skills/project/quality-check/SKILL.md` and its `references/`); the numbers live in `shared/documents/quality-policy.md`. The README, the templates and the other documents only name a rule and point at it - do not copy a rule into them. `lib/rule-canon.test.js` checks the canonical markers, the old copies, the links and the skill sizes (a `SKILL.md` under `skills/project/` stays within 15,000 bytes and 500 lines; move details into `references/`). This rule is for this repository only.
 
 ## Versioning Policy
 
@@ -48,6 +48,8 @@ This project follows [Semantic Versioning](https://semver.org/):
 | **patch** (1.0.x) | Bug fixes, hotfixes, documentation corrections |
 | **minor** (1.x.0) | New features, new tech stacks, new skills |
 | **major** (x.0.0) | Breaking changes, major restructuring |
+
+Releases are cut by release-please. Its release PR changes only `CHANGELOG.md`, the `version` line of `package.json`, the `version` fields of `package-lock.json` and `.release-please-manifest.json`, so the quality gate exempts it (the `quality-check` skill, "リリースの差分の免除"). The hook judges the diff of the branch that is checked out, so check out the release PR's branch and run `gh pr merge` from there; from a `main` checkout the exemption does not apply.
 
 ## Adding a Tech Stack
 
