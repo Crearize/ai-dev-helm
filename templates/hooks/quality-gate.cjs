@@ -2513,9 +2513,20 @@ function makeCtx(cwd) {
         if (top === null) return NO_GATE_CONFIG;
         const config = readGateConfig(top);
         if (config.error) return config;
-        const status = git(['status', '--porcelain', '--untracked-files=all', '--ignored=matching', '--', MANIFEST_FILE]);
-        if (!status.ok) return { error: `git status of ${MANIFEST_FILE} failed` };
-        if (status.out.trim() !== '') return { error: `${MANIFEST_FILE} has changes that are not committed (commit or revert them first)` };
+        // The file as read against HEAD's blob, not `git status` (cycle 2): a differently cased name on a
+        // case-insensitive file system, or a change hidden by --skip-worktree / --assume-unchanged, is not committed.
+        let working = null;
+        try {
+          working = fs.readFileSync(path.join(top, MANIFEST_FILE), 'utf8');
+        } catch (e) {
+          if (!(e && (e.code === 'ENOENT' || e.code === 'ENOTDIR'))) return { error: `${MANIFEST_FILE} could not be read (${(e && e.code) || 'error'})` };
+        }
+        const committed = git(['cat-file', '-p', `HEAD:${MANIFEST_FILE}`]);
+        if (working === null && !committed.ok) return config; // in neither: no addition
+        const same = (a, b) => a.replace(/^﻿/, '').replace(/\r\n/g, '\n') === b.replace(/^﻿/, '').replace(/\r\n/g, '\n');
+        if (working === null || !committed.ok || !same(working, committed.out)) {
+          return { error: `${MANIFEST_FILE} has changes that are not committed (commit or revert them first)` };
+        }
         return config;
       });
     },
