@@ -22,6 +22,6 @@ README や `documents/` 配下の利用者向けドキュメントはハーネ�
 release-please が作るリリースの PR は、次の条件を**すべて**満たすときだけ、ハーネスのみ変更の免除と同じ扱いで quality-check が不要になる（hook もフラグ無しで通す）。判定は差分の中身だけで行い、ブランチ名では判定しない。
 
 - 取り込む差分のファイルが、固定の 4 つ `CHANGELOG.md`・`package.json`・`package-lock.json`・`.release-please-manifest.json` だけ。`release-please-config.json` の `extra-files`（`pom.xml` など）は免除に含めない（依存の変更がうっかり通るのを防ぐため）
-- `package.json` の変化が `version` の 1 行だけ。`package-lock.json` の変化が最上位と `packages[""]` の `version` だけ（`resolved`・`integrity`・依存の追加・削除・範囲の変化があれば免除しない）。`.release-please-manifest.json` の変化が版の値だけ
+- `package.json` の変化が最上位の `version` だけ。`package-lock.json` の変化が最上位と `packages[""]` の `version` だけ（`resolved`・`integrity`・依存の追加・削除・範囲の変化があれば免除しない）。`.release-please-manifest.json` の変化が版の値だけ（キーは同じ）。hook は変更前後のファイルを JSON として読んで比べる（行の形では判定しない。入れ子の `"version"` キー — `version` という名前の依存、`version` スクリプト、`node_modules/<pkg>` の版 — の変化は免除しない）
 
-hook はチェックアウトしているブランチの基準 ref からの差分を見るので、リリースの PR のブランチをチェックアウトし、そこから `gh pr merge` する（main のチェックアウトからは免除されない）。
+免除が効くのは、基準 ref からの差分（リリースの PR のブランチをチェックアウトして `gh pr merge` / push する）と、トランクへの `git merge` / 早送りで取り込む範囲。main のチェックアウトでは基準 ref からの差分が空なので、`gh pr merge` には効かない（リリースの PR のブランチから実行する）。フラグの後の差分には効かない（品質チェックの後に足したコミットは、リリースのファイルだけでも品質チェックをやり直す）。
