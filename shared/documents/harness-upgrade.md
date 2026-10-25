@@ -11,7 +11,7 @@ AI が行います。オーナーの作業はありません。
 1. 更新用のブランチを作る（`chore/harness-<新版>` など）。
 2. `npx -y @crearize/ai-dev-helm@<新版> upgrade --plan` で、何が起きるかを確かめる（何も書かない）。扱いの一覧（置換・三者マージ・衝突・新規・削除・削除を保持・seed・宣言で外す・登録の変更）、推した構成（3.7.0 より前のマニフェスト）、「二重登録のおそれ」が出る。
 3. `npx -y @crearize/ai-dev-helm@<新版> upgrade --record <導入先の外のファイル>` で更新する。最後に照合が自動で走る。
-4. 保留（`pending`）があれば解消する。各 `<file>.ai-dev-helm-new` を対応するファイルと比べ、導入先の独自の内容を残して新版の変更を取り込み、`.ai-dev-helm-new` を消してから `upgrade --resolve <path>` で保留から外す。ルート規則のブロックの保留（`CLAUDE.md#harness` など）は、下の「初回の移行」の 3 に従って囲んでから `--resolve CLAUDE.md#harness`。
+4. 保留（`pending`）があれば解消する。各 `<file>.ai-dev-helm-new` を対応するファイルと比べ、導入先の独自の内容を残して新版の変更を取り込み、`.ai-dev-helm-new` を消してから `upgrade --resolve <path>` で保留から外す。ルート規則のブロックの衝突（`CLAUDE.md#harness` など）は、`CLAUDE.md.ai-dev-helm-new`（新版のファイル全体）の同じブロックの中身を取り込んで `--resolve CLAUDE.md#harness`。目印が無くて囲めなかったブロックは、下の「初回の移行」の 3 に従って囲んでから `--resolve`。保留を解消したら（hook 本体の衝突を直したときは必ず）、`upgrade` をもう一度実行する（保留のファイルは衝突したときの版を比較元にして比べ直すので、新版の変更が抜けていれば保留のまま残る。hook の登録もここで今の形になり、マニフェストの `complete` が更新される）。
 5. `npx -y @crearize/ai-dev-helm@<新版> upgrade --verify` が終了コード 0 になることを確かめる（未導入 0・保留 0）。
 6. `npx -y @crearize/ai-dev-helm@<新版> hook-selftest` が全件通ることを確かめる（hook の判定表に加えて、登録が各 1 回・Codex の登録が呼ぶ実体がある・hook の写しが配布物と一致・スキルの写しが互いに一致）。
 7. Codex を使う導入先で `.codex/hooks.json` が変わったら、`/hooks` で信頼し直す（下の「Codex の信頼」）。
@@ -29,7 +29,9 @@ AI が行います。オーナーの作業はありません。
 
 比べるときは BOM を除いて改行を LF にそろえ、書き戻すときは導入先のそのファイルの改行（CRLF / LF）と BOM に合わせます。git で管理しているファイルには `.backup.<時刻>` を作りません（git の履歴で戻せるため）。
 
-旧版の配布物は `npm pack` で OS の一時フォルダーに取ります（3 回まで取り直し、取れなければ何も書かずに終了する）。オフラインのときは、展開した旧版のパッケージを `--base-dir <dir>` で渡します。旧版の描画は、版と構成ごとに OS の一時フォルダー（`ai-dev-helm/render-cache/`）に残し、同じ版の `--plan`・`upgrade`・`--verify` では作り直しません。
+旧版の配布物は `npm pack` で取ります（3 回まで取り直し、取れなければ何も書かずに終了する）。オフラインのときは、展開した旧版のパッケージを `--base-dir <dir>` で渡します。旧版のパッケージと描画は、版と構成ごとに利用者のキャッシュ（Windows は `%LOCALAPPDATA%ai-dev-helmender-cache`、ほかは `$XDG_CACHE_HOME` か `~/.cache` の下の `ai-dev-helm/render-cache`）に残し、同じ版の `--plan`・`upgrade`・`--verify` では作り直しません。キャッシュは実行するコードを含むので、共有の一時フォルダーには置かず、持ち主が自分でない・ほかの利用者が書ける場所なら使いません。
+
+`upgrade` は、マニフェストより古い版では実行しません（新しい版の導入先を古い版で戻さない）。`--plan`・`--verify` と `--resolve` は一緒に使えません。
 
 ### ハーネスの更新の PR の quality-check
 
@@ -52,7 +54,7 @@ AI が行います。オーナーの作業はありません。
 | `skillTargets` | スキルの木ごとの置き先（例 `{ "project": [".claude/skills"] }`） |
 | `settings.mergeDeny` | `false` で `permissions.deny` をマージしない |
 
-宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。
+宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。ルート規則（`CLAUDE.md`・`AGENTS.md`・`.cursorrules`）と専用のマージのファイル（`.claude/settings.json`・`.codex/hooks.json`・`.codex/config.toml`・`.gitignore`）は、`exclude` にもできません（ルート規則は管理ブロックの中だけを扱い、外の製品の節には触れないため。専用のマージは導入先のキーを残すため）。`skillTargets` と `pending` のパスは導入先の中の相対パスに限ります（`..`・絶対パス・`.git` は拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。
 
 ## 初回の移行（3.6.0 以前から）
 
