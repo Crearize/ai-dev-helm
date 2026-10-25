@@ -5,14 +5,14 @@
 ## 入り方（Step 0 の削除より前）
 
 1. 前回の `.quality-check-passed` が残っていて、前回のフラグに `gate_override`（打ち切りの承認）が付いていない（`.quality-check-report.json` の `gate_override` が null）ことを確かめる。付いていれば、この道は使わない（通常の quality-check）。
-2. 次を実行する（`--since` は前回のフラグの `commit`。基準 ref は 4-0 と同じ規則。`--base` で指定できる）:
+2. 次を実行する（比べるのは前回のフラグ `.quality-check-passed` の `commit`。`--since` で書くときもその commit と同じでなければ判定しない。基準 ref は 4-0 と同じ規則。`--base` で指定できる）:
 
 ```bash
-npx @crearize/ai-dev-helm quality-context --merge-only --since <前回のフラグの commit>
+npx @crearize/ai-dev-helm quality-context --merge-only
 ```
 
 - 最後の行が `merge-only: YES`（終了コード 0）のときだけ、この道に入る。前回のフラグとレポートは消さない（Step 0 の削除をしない）。
-- `merge-only: NO`（1）または判定でない（2。git が 2.38 より古い・基準 ref が無い・commit が無い）ときは、通常の quality-check を Step 0 から行う。
+- `merge-only: NO`（1）または判定でない（2。git が 2.38 より古い・基準 ref が無い・commit が無い・前回のフラグが無い・`--since` が前回のフラグの commit と違う）ときは、通常の quality-check を Step 0 から行う。
 
 判定の中身: 前回のフラグの commit と、今の HEAD が含む基準のコミット（`git merge-base HEAD <基準 ref>`）を `git merge-tree --write-tree` で自動でマージした結果が、衝突なしで、今の HEAD の tree と完全に一致すること。衝突を手で解いた取り込み（PR の行の位置・順序を変えたものを含む）、取り込みの後に足したコミット、バイナリを含むどのファイルの変更も、一致しないので NO になる。
 
@@ -22,7 +22,7 @@ npx @crearize/ai-dev-helm quality-context --merge-only --since <前回のフラ�
 2. Step 2〜3 が落ちたら、直す変更で tree が変わるので、この道をやめて通常の quality-check を Step 0 から行う。
 3. 通ったら、新しい HEAD でフラグを作り直す。前回のフラグに `mode: "speed"` があれば、同じ `mode` と `deferredReviewIssue` を付け、後回しの Issue の基準のコミットと PR の HEAD を書き直す（[speed-mode.md](speed-mode.md)「後回しの Issue」）。フラグに `carriedFrom: { "commit": "<前回のフラグの commit>", "base": "<基準のコミット>" }` を足す（記録のため。hook は読まない）。
 4. レポートに `review_mode: "carried"` のサイクルを足す（`personas: []`。前のサイクルの記録は残す。スキーマ参照）。
-5. PR 本文の Flag commit を更新する。この道では、push の前の未追跡の確認（Step 6）は上の CLI の `YES` で代える（tree の一致は、前回のレビューの後に追跡に入ったファイルが無いことも示すため）。
+5. PR 本文の Flag commit を更新する。PR テンプレートの Quality check cycles は、レビューのサイクル数のまま書き、「取り込みの再確認 N 回」（carried re-checks: N）を添える。この道では、push の前の未追跡の確認（Step 6）は上の CLI の `YES` で代える（tree の一致は、前回のレビューの後に追跡に入ったファイルが無いことも示すため）。
 
 ## 残る限界
 

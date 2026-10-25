@@ -164,8 +164,8 @@ yargs(hideBin(process.argv))
           default: false,
           describe: 'quality-check re-check after taking in the base: build nothing; check that HEAD is exactly the flag commit (--since) merged with the base it now holds (exit 0 YES, 1 NO, 2 no verdict)',
         })
-        .option('since', { type: 'string', describe: 'With --merge-only: the commit of the previous flag' })
-        .check((argv) => (argv.mergeOnly ? (argv.since ? true : 'Missing --since <the previous flag commit>') : (argv.cycle !== undefined ? true : 'Missing required argument: cycle')))
+        .option('since', { type: 'string', describe: 'With --merge-only: the commit of the previous flag (default and check: .quality-check-passed)' })
+        .check((argv) => (argv.mergeOnly || argv.cycle !== undefined ? true : 'Missing required argument: cycle'))
         .option('base', {
           type: 'string',
           describe: 'Base ref the diff is taken against. Default: origin/main (or origin/master); without a remote-tracking trunk, the local main (or master)',

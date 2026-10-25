@@ -820,9 +820,11 @@ function trunkWrite(inv) {
 // Returns the rule-1 candidate, or null when there is none.
 // 3.7.0 (from MovieMarketer's MM-PATCH 3): `--dry-run` / `-n` publishes nothing, so such a push is no candidate -
 // exact spellings only (a bundle such as `-nv` is not read as a dry run), before `--` only, and a `--no-dry-run`
-// anywhere in the options cancels it. Decided per push invocation: a dry run never exempts another push.
+// anywhere in the options cancels it - abbreviated as git reads it too (`--no-dry`, `--no-dr`; 3.7.0 cycle 1): any
+// option starting `--no-d` counts, so a word git would reject as ambiguous also keeps the push a candidate.
+// Decided per push invocation: a dry run never exempts another push.
 const PUSH_DRY_RUN_FLAGS = new Set(['--dry-run', '-n']);
-const PUSH_NO_DRY_RUN_FLAG = '--no-dry-run';
+const isNoDryRun = (word) => word.startsWith('--no-d');
 function pushCandidate(inv) {
   const facts = inv.facts.words;
   const { words, expand } = inv.seg;
@@ -876,7 +878,7 @@ function pushCandidate(inv) {
         continue;
       }
       if (PUSH_DRY_RUN_FLAGS.has(words[i])) dryRun = true;
-      if (words[i] === PUSH_NO_DRY_RUN_FLAG) noDryRun = true;
+      if (isNoDryRun(words[i])) noDryRun = true;
       if (f.colon) {
         // Read both ways: a refspec, and an option that leaves the push
         // refspec-less (which lands on whatever the branch tracks).
@@ -975,6 +977,9 @@ function moverName(inv, scope) {
   if (inv.gated) return null;
   const s = inv.sub;
   if (HEAD_MOVERS.includes(s)) return s;
+  // `git merge --continue` is no gated candidate (it resumes a merge), but it commits the merge and so moves HEAD
+  // before a later push or merge (3.7.0 cycle 1; `rebase --continue` already counts as `rebase`).
+  if (s === 'merge' && inv.seg.words.slice(inv.start).includes('--continue')) return 'merge --continue';
   if (s === 'stash') {
     const first = inv.seg.words[inv.start];
     if (first === 'pop' || first === 'apply') return `stash ${first}`;
@@ -1251,7 +1256,8 @@ const HARNESS_DOC_RE = /\.(md|mdc)$/i;
 const OVERRIDE_STRINGS = [/quality[-_\s]*gate[-_\s]*overrides/i, /mutation[-_\s]*budget[-_\s]*minutes/i];
 
 // 3.7.0 (C3h): a product's additions to these sets, from `.ai-dev-helm.json` at the root of the repository the call
-// is judged in (where a `cd` / `-C` moved it, if one did) - its working-tree file:
+// is judged in (where a `cd` / `-C` moved it, if one did) - its working-tree file, which must match the commit (an
+// untracked, modified or deleted manifest blocks the gated calls - makeCtx `gateConfig`):
 //   gate.controlPlane  more gate control-plane paths. The files `gate.script` and `reviewBudgetScript` name (the
 //                      product's own gate and review-budget) are in it without being listed.
 //   gate.exemptDocs    more documents for the harness-only exemption - `.md` / `.mdc` only, as under
@@ -1267,15 +1273,19 @@ const MAX_MANIFEST_BYTES = 1024 * 1024;
 const NO_GATE_CONFIG = Object.freeze({ controlPlane: [], exemptDocs: [], harness: [] });
 const GATE_LISTS = { controlPlane: 'i', exemptDocs: '', harness: 'i' };
 const PATTERN_RE = /^[^\\\0/][^\\\0]{0,1023}$/;
+// A leading `./` is allowed (as lib/runtime-hooks.js declaredPathError); a `.` or `..` segment after it is not, so
+// the path is the one the diff lists and the control-plane match cannot miss it (3.7.0 cycle 1).
 const SCRIPT_PATH_RE = /^(?:\.\/)?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:cjs|mjs|js)$/;
+const scriptPathOk = (value) => SCRIPT_PATH_RE.test(value) && value.replace(/^\.\//, '').split('/').every((s) => s !== '.' && s !== '..');
 function globRe(pattern, flags) {
   let re = '';
   for (let i = 0; i < pattern.length; i += 1) {
     const c = pattern[i];
     if (c === '*' && pattern[i + 1] === '*') {
-      re += '.*';
       i += 1;
-      if (pattern[i + 1] === '/') i += 1;
+      // `**/` is zero or more whole directories (3.7.0 cycle 1: it was any text, so `**/README.md` took in
+      // `src/NOT_README.md`); a `**` elsewhere is anything.
+      if (pattern[i + 1] === '/') { i += 1; re += '(?:.*/)?'; } else re += '.*';
     } else if (c === '*') re += '[^/]*';
     else if (c === '?') re += '[^/]';
     else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
@@ -1308,7 +1318,7 @@ function parseGateConfig(text) {
   }
   for (const [label, value] of [['gate.script', gate.script], ['reviewBudgetScript', doc.reviewBudgetScript]]) {
     if (value === undefined) continue;
-    if (typeof value !== 'string' || !SCRIPT_PATH_RE.test(value) || value.split('/').some((s) => s === '..')) {
+    if (typeof value !== 'string' || !scriptPathOk(value)) {
       return { error: `${label} ${JSON.stringify(value)} is not a relative path to a .cjs, .mjs or .js file` };
     }
     config.controlPlane.push(literalRe(value));
@@ -2495,10 +2505,18 @@ function makeCtx(cwd) {
       return flag();
     },
     // 3.7.0 (C3h): this work tree's `.ai-dev-helm.json` gate configuration, or { error } (readGateConfig).
+    // Only a committed manifest counts (3.7.0 cycle 1): an untracked, modified or deleted `.ai-dev-helm.json` is in no
+    // diff range the control-plane check reads, so unreviewed settings would widen the exemptions - it blocks instead.
     get gateConfig() {
       return once('gateConfig', () => {
         const top = root();
-        return top === null ? NO_GATE_CONFIG : readGateConfig(top);
+        if (top === null) return NO_GATE_CONFIG;
+        const config = readGateConfig(top);
+        if (config.error) return config;
+        const status = git(['status', '--porcelain', '--untracked-files=all', '--ignored=matching', '--', MANIFEST_FILE]);
+        if (!status.ok) return { error: `git status of ${MANIFEST_FILE} failed` };
+        if (status.out.trim() !== '') return { error: `${MANIFEST_FILE} has changes that are not committed (commit or revert them first)` };
+        return config;
       });
     },
     get isAncestor() {

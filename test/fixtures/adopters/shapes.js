@@ -8,6 +8,8 @@ const path = require('node:path');
 
 const NOTICE_EN = 'Reinstall it with npx @crearize/ai-dev-helm init.';
 const PACKAGE_ROOT = path.resolve(__dirname, '..', '..', '..');
+const LOCAL_ANCHOR = '- The "Create GitHub Issue" and "Issue number required" rules in the three entry files apply only to projects that use Issues.';
+const LOCAL_BLOCK = '<!-- ai-dev-helm:local:start -->\n##### Our Issue rules\n\nWe track work in the client portal, not GitHub Issues.\n<!-- ai-dev-helm:local:end -->';
 const NOTICE_JA = '導入し直してください（npx @crearize/ai-dev-helm init）。';
 
 const move = (dir, from, to) => {
@@ -42,7 +44,19 @@ function statusMessage(dir, calls = /quality-gate\.cjs/) {
 
 const SHAPES = {
   // eLPi, client-massmedian-ai-data-checker, OlbaDataMatching, auFinancialPromotions: skills/ with links.
-  standard: { tools: 'claude-code,codex', stacks: '', models: 'eLPi / massmedian', shape() {} },
+  // eLPi, client-massmedian-ai-data-checker: skills/ with links; a product section kept in a distributed document
+  // (ai-dev-helm:local) right where the release adds a paragraph.
+  standard: {
+    tools: 'claude-code,codex',
+    stacks: '',
+    models: 'eLPi / massmedian',
+    shape(dir) {
+      const file = path.join(dir, 'documents/development/development-policy.md');
+      const text = fs.readFileSync(file, 'utf8');
+      if (!text.includes(`${LOCAL_ANCHOR}\n\n`)) throw new Error('the 3.6.0 development-policy anchor line was not found');
+      fs.writeFileSync(file, text.replace(`${LOCAL_ANCHOR}\n\n`, `${LOCAL_ANCHOR}\n\n${LOCAL_BLOCK}\n\n`));
+    },
+  },
 
   // MovieMarketer: .claude/skills holds the project skills flat and superpowers/ under it; the product's own skill
   // next to them; a statusMessage on the gate.
@@ -140,4 +154,4 @@ const SHAPES = {
   },
 };
 
-module.exports = { SHAPES, NOTICE_JA };
+module.exports = { SHAPES, NOTICE_JA, LOCAL_ANCHOR, LOCAL_BLOCK };

@@ -108,8 +108,8 @@ function acquireLock(lock) {
         Atomics.wait(signal, 0, 0, Math.min(25, remaining));
         continue;
       }
-      throw new Error('Review budget lock is held by another process; do not delete or edit it and do not work around it. ' +
-        'Locks are not reclaimed by age. If it persists, report it to the owner and wait. ' + error.code);
+      throw new Error(`Review budget lock ${lock} is held by another process; do not delete or edit it and do not work around it. ` +
+        'Locks are not reclaimed by age. If it persists, report the lock path and whether the pid it records still runs to the owner, and wait (harness-runtime: only after the owner approves it in the conversation is that .lock removed). ' + error.code);
     }
     try {
       fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));

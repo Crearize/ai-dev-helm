@@ -52,7 +52,7 @@ Closes #
 - Static check cycles (abort reason):
 - Test design memo (status, path):
 - Mutation testing (recommendation / decision and who decided: auto or user, "deferred" in speed mode, or "awaiting confirmation"; raw score, survivors killed / equivalent / accepted / unresolved / untriaged / tool_false_negative, or skip reason):
-- Quality check cycles:
+- Quality check cycles (review cycles; add "carried re-checks: N" when the flag was made again after only taking in main):
 - E2E tests (recommendation / decision and who decided: auto or user, "deferred" in speed mode, or "awaiting confirmation"; result):
 - Flag commit (`.quality-check-passed` `commit`): `<sha>` (before the flag exists, "not created yet"; update it after the flag is created)
 
