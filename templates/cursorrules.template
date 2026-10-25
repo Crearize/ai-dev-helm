@@ -2,6 +2,7 @@
 
 This file defines project-specific rules for Cursor.
 
+<!-- ai-dev-helm:harness:start -->
 ## Critical Rules
 
 ### Issue / Branch Creation (Auto-Execute Required)
@@ -117,7 +118,9 @@ More Windows shell rules (Git Bash path conversion, `taskkill`, encodings): `doc
 ### Phase 6: PR Creation
 - Commit message: `feat: [feature] (closes #[issue-number])`
 - PR body: implementation details, review results, test results
+<!-- ai-dev-helm:harness:end -->
 
+<!-- ai-dev-helm:skills:start -->
 ## Skills (Read on demand)
 
 Skills are installed under `.cursor/skills/` (symlink to `skills/`). If the link is missing (a new worktree, for example), run `link-skills` (the `using-git-worktrees` skill) or read `skills/<same relative path>/SKILL.md` directly. Cursor does not auto-discover them - read the relevant `SKILL.md` when the scenario applies:
@@ -137,7 +140,9 @@ Skills are installed under `.cursor/skills/` (symlink to `skills/`). If the link
 | Parallel worktree development | `.cursor/skills/project/worktree-parallel/SKILL.md` |
 
 Other project skills (server-startup, branch-workflow, backend/frontend-development, database-migration, `lint-scaffolding` (wire deterministic checks (lint/static analysis) and maintain the coverage map), browser-agent, feature-documentation, log-design, generate-docs, implementation-report) live under `.cursor/skills/project/`.
+<!-- ai-dev-helm:skills:end -->
 
+<!-- ai-dev-helm:refs:start -->
 ## Reference Documents
 
 ### Required (check before work)
@@ -150,6 +155,7 @@ Other project skills (server-startup, branch-workflow, backend/frontend-developm
 - Naming conventions: `documents/development/naming-conventions.md`
 - Static check standard: `documents/development/static-check-standard.md` (static check standard catalog)
 - Quick checklist: `documents/development/quick-checklist.md`
+<!-- ai-dev-helm:refs:end -->
 
 ## Development Server Ports
 

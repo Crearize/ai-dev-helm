@@ -84,9 +84,9 @@ Step 4: 登録と除外（CLAUDE.md 登録 / レビューガイド反映 / カ�
 
 ## 再実行（冪等性）
 
-本スキルは**再実行可能**である。スタック変更（FW・DB アクセス層の追加/変更）、init 再実行による資産更新、カテゴリ採否の見直し時に再実行する。
+本スキルは**再実行可能**である。スタック変更（FW・DB アクセス層の追加/変更）、`upgrade`（ハーネスの更新）による資産更新、カテゴリ採否の見直し時に再実行する。
 
 - **既存の `documents/development/lint-coverage-map.md` が過去の採否決定の正である。** 再実行時はまず既存マップを読み、決定済みの行はユーザーに再確認せず引き継ぐ（変更があった技術要素に関わる行のみ再確認する）
 - 配線済みの資産は再配線しない。差分（新規採用・不採用への変更・資産の更新）のみを適用する
 - 再実行後も Step 3-4 の実行確認と Step 4 の反映（レビューガイド・カバレッジマップの更新）を必ず行う
-- **`ai-dev-helm init` の再実行は、`.github/review-*.md`（`review-prompt.md` 以外）を、編集済み・記録なしなら上書きしない（隣に `<file>.ai-dev-helm-new` を置く。`init` が書いた内容の sha256 を `.ai-dev-helm.json` に記録し、未編集のものだけ更新する）。** Step 4-2 が書いた「## Lint 担保済み項目（AI レビュー対象外）」節と `（Catalog: <番号>）` 付記は、`.ai-dev-helm-new` を取り込む際に必ず残す（`harness-upgrade.md` の手順）。取り込みで失われた場合は、カバレッジマップ（`documents/development/lint-coverage-map.md` — init は**上書きしない**）を正として再生成する。**「配線済みは再配線しない」ルールはこの節には適用しない**
+- **`ai-dev-helm upgrade` は、`.github/review-*.md` を、導入先が変えていれば三者マージする（Step 4-2 が足した節は残る）。衝突したときだけ書き換えず、隣に `<file>.ai-dev-helm-new` を置く（`init --force` の再実行は、編集済み・記録なしなら上書きせず `.ai-dev-helm-new` を置く）。** Step 4-2 が書いた「## Lint 担保済み項目（AI レビュー対象外）」節と `（Catalog: <番号>）` 付記は、`.ai-dev-helm-new` を取り込む際に必ず残す（`harness-upgrade.md` の手順）。取り込みで失われた場合は、カバレッジマップ（`documents/development/lint-coverage-map.md` — init は**上書きしない**）を正として再生成する。**「配線済みは再配線しない」ルールはこの節には適用しない**

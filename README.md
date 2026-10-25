@@ -51,6 +51,16 @@ cd /path/to/your-project
 npx @crearize/ai-dev-helm init
 ```
 
+導入済みのプロジェクトを新しい版にするときは `upgrade` を使います（`init` の再実行ではありません）。配布物を旧版と新版の描画で比べて、置き換え・三者マージ・保留を決め、最後に配布物のすべてのファイルと hook の登録が入っているかを照合します（入っていないものがあれば終了コード 1）。
+
+```bash
+npx -y @crearize/ai-dev-helm@<新版> upgrade --plan     # 何が起きるかを見る（書き込まない）
+npx -y @crearize/ai-dev-helm@<新版> upgrade            # 更新し、照合する
+npx -y @crearize/ai-dev-helm@<新版> upgrade --verify   # 照合だけ（終了コード 0 で完了）
+```
+
+手順・宣言（`exclude`・`owned`・`seed`）・保留の解消は、導入先の `documents/development/harness-upgrade.md` にあります。
+
 ### 2. 個人環境のセットアップ（任意）
 
 破壊的なコマンドの実行を防止するグローバル設定を追加します。
@@ -232,7 +242,7 @@ Next steps:
 
 #### 適用バージョンの記録（`.ai-dev-helm.json`）
 
-init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成されます。取り込んだ ai-dev-helm のバージョン・ツール・スタック・適用日時が記録されるため、「今このプロジェクトは何バージョンを取り込んでいるか」をいつでも確認でき、次回の同期時に差分確認の起点として使えます。init を再実行すると最新の内容で上書きされます（このファイルのみ。下記の「再実行時の扱い」参照）。
+init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成されます。取り込んだ ai-dev-helm のバージョン・ツール・スタック・適用日時が記録されるため、「今このプロジェクトは何バージョンを取り込んでいるか」をいつでも確認でき、次回の同期時に差分確認の起点として使えます。`upgrade` は、ここに記録した構成（3.7.0 から `projectName`・スキルの一覧・宣言も）で旧版と新版を描画して比べ、版・直前の版（`upgradedFrom`）・保留（`pending`）・完了（`complete`）を書き換えます。導入先が足した独自のキーは残します。
 
 ```json
 {
@@ -254,7 +264,7 @@ npx @crearize/ai-dev-helm init --project-name my-app --tools claude-code,codex -
 ```
 
 - `--skills` は `all` / `superpowers` / `project` / プロジェクトスキル名のカンマ区切り。`--stacks` は未指定なら、選べるスタックが 1 つのときだけそれを使う（`--yes` で複数あるときは「選ばなかった」と表示）
-- 再実行時の扱いは 2 種類です。ハーネス所有のファイル（`skills/`、`documents/development/`、`.github/review-prompt.md`、フック、Codex エージェント、PR テンプレート）は常に最新版で上書きします。利用者が編集する前提のファイル（`.claude/rules/`・`.codex/rules/`、`.github/review-*.md`（`review-prompt.md` 以外）、`lint/`）は、`init` が書いた内容の sha256 を `.ai-dev-helm.json` の `files` に記録し、編集されていなければ更新、編集済み・記録なし（3.2.x からの更新など）なら上書きせず `<file>.ai-dev-helm-new` に新しい版を置いて、最後に `ACTION REQUIRED` で一覧を出します。取り込みは AI が `harness-upgrade.md` の手順で行い、オーナーの作業はありません。`*.ai-dev-helm-new` は `.gitignore` に追加されます
+- 導入済みのプロジェクト（`.ai-dev-helm.json` がある）で `init` を実行すると、`upgrade` を案内して何もせずに終わります。`--force` を付けたときだけ、3.7.0 より前と同じ再実行になります。その扱いは 2 種類です。ハーネス所有のファイル（`skills/`、`documents/development/`（既定の seed — `error-codes.md`・`naming-conventions.md`・`coding-rules/`・`test-recommendation-ledger.md` — は無いときだけ作る）、フック、Codex エージェント）は常に最新版で上書きします。利用者が編集する前提のファイル（`.claude/rules/`・`.codex/rules/`、`.github/review-*.md`、`.github/PULL_REQUEST_TEMPLATE.md`、`lint/`）は、`init` が書いた内容の sha256 を `.ai-dev-helm.json` の `files` に記録し、編集されていなければ更新、編集済み・記録なし（3.2.x からの更新など）なら上書きせず `<file>.ai-dev-helm-new` に新しい版を置いて、最後に `ACTION REQUIRED` で一覧を出します。取り込みは AI が `harness-upgrade.md` の手順で行い、オーナーの作業はありません。`*.ai-dev-helm-new` は `.gitignore` に追加されます
 - `.gitignore` では、`/.worktrees/` のようなルート固定の行を同じものとして扱い、旧 `reports/mutation/` は `**/reports/mutation/` に置き換えます
 
 ### 1.12.x からの移行

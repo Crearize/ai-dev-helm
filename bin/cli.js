@@ -41,6 +41,7 @@ yargs(hideBin(process.argv))
         .option('tools', { type: 'string', describe: 'Comma-separated: claude-code,codex,cursor' })
         .option('stacks', { type: 'string', describe: 'Comma-separated tech stacks' })
         .option('skills', { type: 'string', describe: 'all | superpowers | project | comma-separated project skill names' })
+        .option('force', { type: 'boolean', default: false, describe: 'Run init over an installed product (normally: use upgrade)' })
         .option('verbose', {
           type: 'boolean',
           describe: 'Show detailed output and stack traces on error',
@@ -59,6 +60,7 @@ yargs(hideBin(process.argv))
         tools: argv.tools,
         stacks: argv.stacks,
         skills: argv.skills,
+        force: argv.force,
       });
     }
   )
@@ -290,6 +292,58 @@ yargs(hideBin(process.argv))
     }
   )
   .command(
+    'upgrade',
+    'Update an installed product to this release: replace, three-way merge or leave each harness file, then verify nothing was left out (exit 0 complete, 1 not installed / pending, 2 error)',
+    (yargs) => yargs
+      .option('dir', { type: 'string', describe: 'Product directory', default: process.cwd() })
+      .option('plan', { type: 'boolean', default: false, describe: 'Show what would happen; write nothing' })
+      .option('verify', { type: 'boolean', default: false, describe: 'Only classify the install (up to date / merged / pending / declared out / not installed)' })
+      .option('record', { type: 'string', describe: 'Also write the record (Markdown) to this file' })
+      .option('base-dir', { type: 'string', describe: 'An unpacked package of the release the manifest records (offline)' })
+      .option('resolve', { type: 'string', describe: 'Mark a pending path (or CLAUDE.md#harness) resolved after merging its .ai-dev-helm-new' })
+      .option('project-name', { type: 'string', describe: 'Override the recorded project name' })
+      .option('tools', { type: 'string', describe: 'Override the recorded tools (comma-separated)' })
+      .option('stacks', { type: 'string', describe: 'Override the recorded stacks (comma-separated)' })
+      .option('skills', { type: 'string', describe: 'Override the recorded custom skill list (comma-separated)' }),
+    (argv) => {
+      try {
+        const { runUpgrade } = require('../lib/upgrade');
+        const list = (v) => (v === undefined ? undefined : String(v).split(',').map((s) => s.trim()).filter(Boolean));
+        const result = runUpgrade({
+          dir: argv.dir,
+          mode: argv.plan ? 'plan' : argv.verify ? 'verify' : 'apply',
+          recordPath: argv.record,
+          baseDir: argv.baseDir,
+          resolve: argv.resolve,
+          overrides: { projectName: argv.projectName, tools: list(argv.tools), stacks: list(argv.stacks), skills: list(argv.skills) },
+        });
+        console.log(result.lines.join(String.fromCharCode(10)));
+        process.exitCode = result.exitCode;
+      } catch (error) {
+        console.error('Error: ' + error.message);
+        process.exitCode = 2;
+      }
+    }
+  )
+  .command(
+    'render',
+    'Write the files init would install for a configuration into an empty directory (used by later releases\' upgrade)',
+    (yargs) => yargs
+      .option('config', { type: 'string', demandOption: true, describe: 'JSON file: { projectName, tools, stacks, skillScope, skills }' })
+      .option('out', { type: 'string', demandOption: true, describe: 'Empty output directory' }),
+    (argv) => {
+      try {
+        const fs = require('node:fs');
+        const { renderToDirectory } = require('../lib/render');
+        const files = renderToDirectory(JSON.parse(fs.readFileSync(argv.config, 'utf8')), argv.out);
+        console.log(`rendered ${files.size} file(s) to ${argv.out}`);
+      } catch (error) {
+        console.error('Error: ' + error.message);
+        process.exitCode = 2;
+      }
+    }
+  )
+  .command(
     'hook-selftest',
     'Run the bundled decision table against the hooks installed in the project (exit 0 all pass, 1 any mismatch)',
     (yargs) => yargs.option('dir', { type: 'string', describe: 'Project directory', default: process.cwd() }),
@@ -377,7 +431,7 @@ yargs(hideBin(process.argv))
       }
     }
   )
-  .demandCommand(1, 'Please specify a command: init, personal, lint, quality-context, harness-inventory, link-skills, integrate-check, hook-selftest, codex-trust, quality-report, or review-budget')
+  .demandCommand(1, 'Please specify a command: init, upgrade, render, personal, lint, quality-context, harness-inventory, link-skills, integrate-check, hook-selftest, codex-trust, quality-report, or review-budget')
   .strict()
   .help()
   .version(require('../package.json').version)

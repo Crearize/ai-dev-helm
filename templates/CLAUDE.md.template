@@ -2,6 +2,7 @@
 
 This file is loaded by Claude Code at the start of each session.
 
+<!-- ai-dev-helm:harness:start -->
 ## Language Setting
 
 > **IMPORTANT**: Always respond in **Japanese** for this project.
@@ -174,6 +175,7 @@ Do not ask questions that can be answered by reading code, docs, command output,
 When compacting, keep: the user's instructions and answers, verbatim where possible and newest first; decisions and their reasons; unfinished work and the next step; changed files; branches and PRs. After compaction (and after `/clear`), the `context-handoff` hook puts back a record extracted from the transcript by a program, with the path of the full record. Where the summary and that record disagree, follow the record, and read the full record for details and older instructions (`documents/development/harness-runtime.md` "会話の記録の引き継ぎ").
 
 ---
+<!-- ai-dev-helm:harness:end -->
 
 ## Project Overview
 
@@ -199,6 +201,7 @@ When compacting, keep: the user's instructions and answers, verbatim where possi
 
 ---
 
+<!-- ai-dev-helm:skills:start -->
 ## Skills
 
 | Skill | Usage |
@@ -219,6 +222,7 @@ When compacting, keep: the user's instructions and answers, verbatim where possi
 | `feature-documentation` | Feature/knowledge documentation |
 | `log-design` | Log design check (legal compliance) |
 | `generate-docs` | CHANGELOG / release notes generation |
+<!-- ai-dev-helm:skills:end -->
 
 ## Common Commands
 
@@ -236,6 +240,7 @@ After running the `lint-scaffolding` skill, register the generated `lint:all` co
 # Add your frontend commands here
 ```
 
+<!-- ai-dev-helm:refs:start -->
 ## Reference Documents
 
 ### Required (check before work)
@@ -247,3 +252,4 @@ After running the `lint-scaffolding` skill, register the generated `lint:all` co
 - **Error codes**: `documents/development/error-codes.md`
 - **Naming conventions**: `documents/development/naming-conventions.md`
 - **Static check standard**: `documents/development/static-check-standard.md` (static check standard catalog)
+<!-- ai-dev-helm:refs:end -->
