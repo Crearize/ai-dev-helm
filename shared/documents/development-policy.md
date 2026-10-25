@@ -167,6 +167,8 @@ A project that does not use GitHub Issues keeps the rest of this policy unchange
 - The default `branch-naming` lint pattern does not require an Issue number. A project that wants one overrides `pattern` (see `lint-scaffolding`).
 - The "Create GitHub Issue" and "Issue number required" rules in the three entry files apply only to projects that use Issues.
 
+A project records its shape in `.ai-dev-helm.json` `workflow`: `"issues": "none"` applies the list above, and `"remote": "none"` applies the no-remote path of the final report (no push or PR; `branch-workflow`'s local integration). Either one also rules out the speed-first mode. `workflow.protectedBranches` lists the branches beyond main / master that must not be force-pushed (platform: `["main", "release"]`); `init` and `upgrade` turn it into the `.claude/settings.json` denials and the Codex safety rules.
+
 ### PR Creation and Review
 1. Meaningful commit units
 2. Follow PR template

@@ -52,7 +52,10 @@ AI が行います。オーナーの作業はありません。
 | `seed` | 無いときだけ作るパス。既定で `documents/development/error-codes.md`・`naming-conventions.md`・`coding-rules/**`・`test-recommendation-ledger.md` |
 | `pending` | 衝突が残ったファイル（`{ path, baseVersion }`、ルート規則のブロックは `block` 付き） |
 | `skillTargets` | スキルの木ごとの置き先（例 `{ "project": [".claude/skills"] }`） |
-| `settings.mergeDeny` | `false` で `permissions.deny` をマージしない |
+| `settings.mergeDeny` | `false` で `permissions.deny` をマージしない（下の保護ブランチの拒否も足さない） |
+| `settings.enabledPlugins` | `.claude/settings.json` の `enabledPlugins` に書くプラグインの有効・無効（例 `{ "superpowers@claude-plugins-official": false }`。書いたキーだけを入れ、ほかは残す） |
+| `workflow` | 運用の形。`remote: "none"`・`issues: "none"`（リモートなし・Issue なし。development-policy の当てはめが変わる）、`protectedBranches`（main・master のほかに force push を禁じるブランチ。deny と Codex の rules に入る） |
+| `apps` | アプリの置き場所（`{ "frontend": "apps/web", "backend": "api" }`）。Cursor の `.mdc` の globs をここから作る（既定は `frontend`・`backend`） |
 
 宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。ルート規則（`CLAUDE.md`・`AGENTS.md`・`.cursorrules`）と専用のマージのファイル（`.claude/settings.json`・`.codex/hooks.json`・`.codex/config.toml`・`.codex/agents/`・`.gitignore`）は、`exclude` にもできません（ルート規則は管理ブロックの中だけを扱い、外の製品の節には触れないため。専用のマージは導入先のキーを残すため）。`skillTargets` と `pending` のパスは導入先の中の相対パスに限ります（`..`・絶対パス・`.git` は拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。
 

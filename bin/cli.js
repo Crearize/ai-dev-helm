@@ -42,6 +42,7 @@ yargs(hideBin(process.argv))
         .option('stacks', { type: 'string', describe: 'Comma-separated tech stacks' })
         .option('skills', { type: 'string', describe: 'all | superpowers | project | comma-separated project skill names' })
         .option('force', { type: 'boolean', default: false, describe: 'Run init over an installed product (normally: use upgrade)' })
+        .option('config', { type: 'string', describe: 'JSON file of the manifest keys workflow / apps / settings (recorded in .ai-dev-helm.json)' })
         .option('verbose', {
           type: 'boolean',
           describe: 'Show detailed output and stack traces on error',
@@ -61,6 +62,7 @@ yargs(hideBin(process.argv))
         stacks: argv.stacks,
         skills: argv.skills,
         force: argv.force,
+        config: argv.config,
       });
     }
   )
