@@ -3,6 +3,7 @@
 This file is loaded by OpenAI Codex CLI at the start of each session (project-scope AGENTS.md).
 See: https://developers.openai.com/codex/guides/agents-md
 
+<!-- ai-dev-helm:harness:start -->
 ## Language Setting
 
 > **IMPORTANT**: Always respond in **Japanese** for this project.
@@ -167,6 +168,7 @@ After the design is approved, do not ask again: decide within the approved desig
 Do not ask questions that can be answered by reading code, docs, command output, or existing project configuration. When errors occur, fix them durably; never use temporary workarounds such as disabling tests, swallowing errors, weakening types, or bypassing quality gates. If a durable fix is unclear, stop and ask (exception X6).
 
 ---
+<!-- ai-dev-helm:harness:end -->
 
 ## Project Overview
 
@@ -192,6 +194,7 @@ Do not ask questions that can be answered by reading code, docs, command output,
 
 ---
 
+<!-- ai-dev-helm:skills:start -->
 ## Skills (Read on demand)
 
 Located under `.codex/skills/`. Confirm discovery in the session's skill catalog; if absent, read the explicit paths below on demand.
@@ -214,6 +217,7 @@ Located under `.codex/skills/`. Confirm discovery in the session's skill catalog
 | Feature/knowledge documentation | `.codex/skills/project/feature-documentation/SKILL.md` |
 | Log design review | `.codex/skills/project/log-design/SKILL.md` |
 | CHANGELOG / release notes generation | `.codex/skills/project/generate-docs/SKILL.md` |
+<!-- ai-dev-helm:skills:end -->
 
 ## Common Commands
 
@@ -231,6 +235,7 @@ After running the `lint-scaffolding` skill, register the generated `lint:all` co
 # Add your frontend commands here
 ```
 
+<!-- ai-dev-helm:refs:start -->
 ## Reference Documents
 
 ### Required (check before work)
@@ -242,3 +247,4 @@ After running the `lint-scaffolding` skill, register the generated `lint:all` co
 - **Error codes**: `documents/development/error-codes.md`
 - **Naming conventions**: `documents/development/naming-conventions.md`
 - **Static check standard**: `documents/development/static-check-standard.md` (static check standard catalog)
+<!-- ai-dev-helm:refs:end -->

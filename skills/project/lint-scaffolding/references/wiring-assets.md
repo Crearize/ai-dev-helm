@@ -18,7 +18,7 @@
 
 branch-naming の既定 `pattern` は Issue 番号を要求しない。番号を必須にしたい導入先は `.ai-dev-helm-lint.json` の `branch-naming.pattern` を上書きする（例: `^(feat|fix|chore|docs|refactor|test|ci|perf)/[a-z0-9._-]+-[0-9]+$`。`feat/foo-bar` は違反、`feat/foo-bar-123` は通る）。
 
-配線対象の資産は package 管理されている（init 再実行で上書きされる）。**プロダクト固有の調整は資産ファイルの編集ではなく、自プロダクトの設定側（ESLint の上書き・sgconfig の選択等）で行う。**
+配線対象の資産は package 管理されている（`upgrade` で配布元の版と三者マージされる。配布元と同じ行を変えると衝突になる）。**プロダクト固有の調整は資産ファイルの編集ではなく、自プロダクトの設定側（ESLint の上書き・sgconfig の選択等）で行う。**
 
 **抑制機構を配線するときのチェックリスト（#118）**
 
@@ -38,7 +38,7 @@ Checkstyle の `SuppressWarningsFilter`、ESLint の `eslint-disable`、ast-grep
 
 事前ビルド資産がないスタック固有の必要分（例: React + Hono のような未カバー組み合わせ）は、**カタログの「チェック内容の例」を基準に ast-grep ルール等を生成**して補完する。
 
-**生成ルールの配置（MUST）**: 生成したルールは、**package 管理された `lint/ast-grep/` の外にあるプロダクト所有ディレクトリ（例: `lint/product/ast-grep/`）に置き、`sgconfig.yml` の `ruleDirs` に追加する。** `lint/ast-grep/` 配下（`ast-grep/<category>/` や `ast-grep/<stack>/`）には決して置かない — このツリーは init 再実行でリリース版の内容に上書きされるため、生成ルールが失われうる。`lint/product/` は init が触れないため再実行後も残る（`lint/README.md`「Generated rules」の規定）。
+**生成ルールの配置（MUST）**: 生成したルールは、**package 管理された `lint/ast-grep/` の外にあるプロダクト所有ディレクトリ（例: `lint/product/ast-grep/`）に置き、`sgconfig.yml` の `ruleDirs` に追加する。** `lint/ast-grep/` 配下（`ast-grep/<category>/` や `ast-grep/<stack>/`）には決して置かない — このツリーは `upgrade` で配布元の版と三者マージされ、配布物から消えたファイルは消えるため、生成ルールが失われうる。`lint/product/` は 配布物ではないので `upgrade` も `init` も触れず、残る（`lint/README.md`「Generated rules」の規定）。
 
 **生成ルールの検証（MUST）**: 生成したルールは、**違反サンプルと適合サンプルの両方に対して実際に実行し、違反サンプルで検出・適合サンプルで無検出となることを確認するまで「担保」として数えない。** ハーネスの事前ビルド資産が実実行で検証されて出荷されているのと同じ規律を、その場で生成したルールにも適用する。生成ルールには対応するカタログ番号を付記する（どのカテゴリの具体化かを辿れるようにする — カタログ §1）。
 
