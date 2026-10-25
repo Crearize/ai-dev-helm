@@ -5,6 +5,8 @@ description: UI実装後の検証時に使用。agent-browser CLIでブラウザ
 
 # Browser Agent Skill - agent-browser CLIによるUI検証
 
+導入先の補足ファイル `documents/development/project/browser-agent.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 ## 前提条件
 
 - `agent-browser` がインストール済み（`npm install -g agent-browser && agent-browser install`）

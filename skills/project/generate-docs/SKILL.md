@@ -5,6 +5,8 @@ description: git logからCHANGELOGとリリースノートを自動生成する
 
 # Document Generation - ドキュメント自動生成
 
+導入先の補足ファイル `documents/development/project/generate-docs.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 git logから CHANGELOG とリリースノートを自動生成する。リリース時に手動呼び出しして使用する。
 
 ## 実行フロー
