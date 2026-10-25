@@ -38,7 +38,7 @@
 node -e "const c=require('child_process'),f=require('fs');const g=a=>c.execSync('git '+a).toString().trim();f.writeFileSync('.quality-check-passed',JSON.stringify({branch:g('branch --show-current'),commit:g('rev-parse HEAD'),mode:'speed',deferredReviewIssue:Number(process.argv[1])})+'\n')" <番号>
 ```
 
-hook は、`mode: "speed"` のフラグでは、取り込む差分にハーネスの変更（ゲート制御面・ハーネス設定ファイル・ゲートパラメータ）があれば、フラグの `commit` が `HEAD` と一致しても通さない。基準 ref が無いときも通さない（「hook の完全な契約」の「通す条件」）。
+hook は、`mode: "speed"` のフラグでは、取り込む差分にハーネスの変更（ゲート制御面・ハーネス設定ファイル・ゲートパラメータ・導入先が `.ai-dev-helm.json` の `gate.harness` で足したパス）があれば、フラグの `commit` が `HEAD` と一致しても通さない。基準 ref が無いときも通さない（「hook の完全な契約」の「通す条件」）。
 
 差分全体がハーネスのみの変更（[harness-exemption.md](harness-exemption.md)「ハーネスのみ変更の免除」に当たり、ゲートパラメータ・ゲート制御面に触れないもの）なら、hook はフラグを見ずに通す（hook の規則 4）ので、この拒否には当たらない（フラグも要らない）。この拒否が効くのは、ハーネスの変更をほかの変更と一緒にスピードモードのフラグで取り込もうとしたときである。
 

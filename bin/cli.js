@@ -42,6 +42,7 @@ yargs(hideBin(process.argv))
         .option('stacks', { type: 'string', describe: 'Comma-separated tech stacks' })
         .option('skills', { type: 'string', describe: 'all | superpowers | project | comma-separated project skill names' })
         .option('force', { type: 'boolean', default: false, describe: 'Run init over an installed product (normally: use upgrade)' })
+        .option('config', { type: 'string', describe: 'JSON file of the manifest keys workflow / apps / settings (recorded in .ai-dev-helm.json)' })
         .option('verbose', {
           type: 'boolean',
           describe: 'Show detailed output and stack traces on error',
@@ -61,6 +62,7 @@ yargs(hideBin(process.argv))
         stacks: argv.stacks,
         skills: argv.skills,
         force: argv.force,
+        config: argv.config,
       });
     }
   )
@@ -155,9 +157,15 @@ yargs(hideBin(process.argv))
       return yargs
         .option('cycle', {
           type: 'number',
-          describe: 'Cycle number (1-based)',
-          demandOption: true,
+          describe: 'Cycle number (1-based; not used with --merge-only)',
         })
+        .option('merge-only', {
+          type: 'boolean',
+          default: false,
+          describe: 'quality-check re-check after taking in the base: build nothing; check that HEAD is exactly the flag commit (--since) merged with the base it now holds (exit 0 YES, 1 NO, 2 no verdict)',
+        })
+        .option('since', { type: 'string', describe: 'With --merge-only: the commit of the previous flag (default and check: .quality-check-passed)' })
+        .check((argv) => (argv.mergeOnly || argv.cycle !== undefined ? true : 'Missing required argument: cycle'))
         .option('base', {
           type: 'string',
           describe: 'Base ref the diff is taken against. Default: origin/main (or origin/master); without a remote-tracking trunk, the local main (or master)',
@@ -178,7 +186,24 @@ yargs(hideBin(process.argv))
         });
     },
     (argv) => {
-      const { buildContextPack, checkUntrackedReviewGap } = require('../lib/quality-check-context');
+      const { buildContextPack, checkUntrackedReviewGap, checkMergeOnly } = require('../lib/quality-check-context');
+      if (argv.mergeOnly) {
+        try {
+          const r = checkMergeOnly({ dir: process.cwd(), since: argv.since, baseRef: argv.base });
+          if (r.same) {
+            console.log(`merge-only: YES - HEAD is ${r.since.slice(0, 12)} merged with ${r.base} (${r.baseCommit.slice(0, 12)}); re-run Steps 2-3 only and make the flag again (quality-check "取り込みの再確認")`);
+          } else {
+            for (const name of r.paths) console.log(`  ${name}`);
+            console.log(`merge-only: NO - ${r.conflict ? 'merging the flag commit with the base conflicts' : 'HEAD differs from the flag commit merged with the base'} (${r.paths.length} path(s) above); run the quality-check as usual`);
+            process.exitCode = 1;
+          }
+        } catch (err) {
+          console.error(`Error: ${err.message}`);
+          console.error('No verdict: run the quality-check as usual.');
+          process.exitCode = 2;
+        }
+        return;
+      }
       if (argv.checkUntracked) {
         try {
           const gap = checkUntrackedReviewGap({ dir: process.cwd(), cycle: argv.cycle, baseRef: argv.base, outDir: argv.out });

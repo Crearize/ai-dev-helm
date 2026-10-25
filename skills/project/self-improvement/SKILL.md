@@ -5,6 +5,8 @@ description: Use when recurring process failures, obsolete rules, or an explicit
 
 # Self Improvement
 
+導入先の補足ファイル `documents/development/project/self-improvement.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 繰り返す運用上の問題や古いルールを、確認できる根拠に基づいて改善する。通常タスクの完了・PR・`.quality-check-passed` 発行の条件にはしない。候補がないときは実行も「候補なし」の手書き記録も不要。
 
 ## 適用条件

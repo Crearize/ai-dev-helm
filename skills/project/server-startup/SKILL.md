@@ -5,6 +5,8 @@ description: 開発サーバー・E2E・ブラウザ検証時に使用。既存�
 
 # Server Startup Skill - 開発サーバー起動
 
+導入先の補足ファイル `documents/development/project/server-startup.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 ## 禁止事項（最重要）
 
 > **以下は絶対に禁止。違反は許容されない。**
@@ -113,6 +115,8 @@ lsof -i :[PORT] -t | xargs kill -9
 ### 停止確認（必須）
 
 停止後、ポートがLISTENしていないことを確認する。
+
+> **バックグラウンドで起動したラッパーを終わらせたとき**: `gradle bootRun`（`./gradlew bootRun`）・`npm run dev` などをバックグラウンドのタスクとして起動し、そのタスクを終わらせた（TaskStop・`kill` 等）だけでは、ラッパー（gradle・npm）だけが終わり、実際にポートを持つ子のプロセス（Spring Boot の JVM・Node）が残ることがある。タスクを終わらせた後も必ず下の確認でポートの LISTEN が消えたことを確かめ、残っていればその PID を上の停止手順で明示的に終了させる（Windows は `//T` 付きでプロセスの木ごと）。
 
 **Windows（PowerShell）:**
 ```powershell

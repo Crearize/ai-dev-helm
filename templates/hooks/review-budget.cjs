@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+const { performance } = require('node:perf_hooks');
 const PHASES = ['requirements', 'design', 'plan', 'quality', 'production', 'mutation'];
 // Phases whose limit waits for the owner: the final quality reviews, and the reviews before the design approval.
 const OWNER_STOP_PHASES = ['quality', 'production', 'design', 'requirements'];
@@ -15,7 +16,9 @@ const BRANCH_PHASES = ['requirements', 'design', 'plan', 'production']; // reser
 // A first --limit cannot raise them; only extend, after the owner approved, goes past it.
 const REVIEW_LIMIT = { quality: 2, production: 2 };
 const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-engineer'];
-const STALE_LOCK_MS = 10 * 60 * 1000;
+// 3.7.0 (from MovieMarketer's MM-REVIEW-PATCH 1): parallel PreToolUse / PostToolUse calls share the lock, so a caller
+// waits up to 2 s for its owner instead of failing at once. Only EEXIST is waited on; a lock is never deleted.
+const LOCK_WAIT_MS = 2000;
 const KEEP_ENTRIES = 500; // receipts / agents kept per branch state
 const TOKEN = /^HELM_REVIEW:([a-f0-9]{32}):([a-z-]+)[ \t]*(?:\r?\n|$)/; // first line of the prompt/message only
 const DISPATCH = /^(Agent|Task|spawn_agent)$/;
@@ -28,7 +31,11 @@ const REVIEW_ARTIFACT = /^(?:review(?:[-_]|(?=[A-Z]))(?:budget|feature|hook|tool
 const FIX_LEAD = /^(?:fix(?:es|ed)?|address(?:ed|ing)?|apply|resolve[sd]?|handle|incorporate)\b/i; // acting on review output, not dispatching a reviewer
 const REVIEW_START = /^(?:(?:code|design|plan|requirements|verification|visual|integrated)[ -])?(?:review(?:er|ing)?\b|レビュ[ーア])|^(?:コード|設計|計画|要件|検証|デザイン|統合)レビュー/i;
 const REVIEW_END = /(?:\breview(?:er|ing)?|レビュー|レビュア)[\s.。]*$/i;
-const isReviewName = (name) => REVIEW_ROLE_NAME.test(name) || REVIEW_WORD.test(name);
+// 3.7.0 (from MM-REVIEW-PATCH 3): Codex names agents with underscores (integrated_reviewer); read them like hyphens.
+const isReviewName = (name) => {
+  const separated = name.replace(/_/g, '-');
+  return REVIEW_ROLE_NAME.test(separated) || REVIEW_WORD.test(separated);
+};
 function isReviewDescription(text) {
   const d = String(text || '').trim();
   if (!d) return false;
@@ -85,30 +92,31 @@ function validState(state, branch) {
   return true;
 }
 
-// A lock older than 10 minutes is removed whatever its content (the hook holds it for seconds). The stale lock is first
-// renamed to a unique name, and only the process whose rename succeeded proceeds, so a fresh lock is never removed.
+// 3.7.0 (from MM-REVIEW-PATCH 5, MovieMarketer #2027): a lock is never reclaimed by its age. A timestamp cannot prove
+// that a lock is abandoned, and stat -> rename can remove a successor's fresh lock. A held lock is waited on for up to
+// LOCK_WAIT_MS (MM-REVIEW-PATCH 1), then the call fails closed.
 function acquireLock(lock) {
-  for (let attempt = 0; ; attempt++) {
+  const deadline = performance.now() + LOCK_WAIT_MS;
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    let fd;
     try {
-      const fd = fs.openSync(lock, 'wx', 0o600);
+      fd = fs.openSync(lock, 'wx', 0o600);
+    } catch (error) {
+      const remaining = deadline - performance.now();
+      if (error.code === 'EEXIST' && remaining > 0) {
+        Atomics.wait(signal, 0, 0, Math.min(25, remaining));
+        continue;
+      }
+      throw new Error(`Review budget lock ${lock} is held by another process; do not delete or edit it and do not work around it. ` +
+        'Locks are not reclaimed by age. If it persists, report the lock path and whether the pid it records still runs to the owner, and wait (harness-runtime: only after the owner approves it in the conversation is that .lock removed). ' + error.code);
+    }
+    try {
       fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
       return fd;
     } catch (error) {
-      if (error.code === 'EEXIST' && attempt === 0) {
-        let old = false;
-        try { old = Date.now() - fs.statSync(lock).mtimeMs > STALE_LOCK_MS; } catch { continue; } // gone already: retry
-        if (old) {
-          const moved = `${lock}.stale-${process.pid}-${crypto.randomBytes(6).toString('hex')}`;
-          try {
-            fs.renameSync(lock, moved);
-            process.stderr.write('review-budget: removed a stale lock (older than 10 minutes)\n');
-            try { fs.unlinkSync(moved); } catch { /* best effort */ }
-          } catch { /* another process won the race */ }
-          continue;
-        }
-      }
-      throw new Error('Review budget lock is held by another process; do not delete or edit it and do not work around it. ' +
-        'A lock older than 10 minutes is removed automatically. If it persists, report it to the owner and wait. ' + error.code);
+      fs.closeSync(fd); // the public name stays: a failed acquisition is no ground to unlink it
+      throw error;
     }
   }
 }
@@ -146,9 +154,19 @@ function transact(cwd, mutate, fn) {
     }
     return result;
   } finally {
-    if (temp) fs.unlinkSync(temp);
-    fs.closeSync(fd);
-    fs.unlinkSync(lock);
+    // 3.7.0 (MM-REVIEW-PATCH 5): the owned lock is renamed to a private name before its file is deleted, so a
+    // delete-pending name on Windows cannot deny the next owner, and the deletion never reaches the next owner's lock.
+    try {
+      if (temp) fs.unlinkSync(temp);
+    } finally {
+      const retired = `${lock}.released-${process.pid}-${crypto.randomBytes(6).toString('hex')}`;
+      try {
+        fs.renameSync(lock, retired);
+      } finally {
+        fs.closeSync(fd);
+      }
+      fs.unlinkSync(retired);
+    }
   }
 }
 
@@ -224,12 +242,27 @@ function extendLimit({ cwd = process.cwd(), phase, rounds, reason }) {
   });
 }
 
+// 3.7.0 (from MovieMarketer's MM-REVIEW-PATCH 3): Codex builds read `agent_name` as well as `task_name`, and the
+// code-mode bridge names its tools `collaboration<tool>` (collaborationspawn_agent ...) and may hide `message` from
+// hooks; there the reserved token / role ride in task_name as helm_review_<token>_<role_with_underscores> - the same
+// marker, no new grant. When both forms are visible they must agree. The distributed Codex matcher does not reach the
+// collaboration* names (it is not changed, to keep Codex's hook trust); a product registers its own matcher for them
+// (harness-runtime.md).
+const BRIDGED_TOOL = /^collaboration(?:spawn_agent|followup_task|send_message|send_input|resume_agent)$/;
+const BRIDGE_TICKET = /^helm_review_([a-f0-9]{32})_([a-z]+(?:_[a-z]+)*)$/;
 function request(payload) {
-  const tool = String(payload.tool_name || '').replace(/^.*\./, '');
+  const rawTool = String(payload.tool_name || '').replace(/^.*\./, '');
+  const bridged = BRIDGED_TOOL.test(rawTool);
+  const tool = bridged ? rawTool.slice('collaboration'.length) : rawTool;
   const input = payload.tool_input || {};
   const fields = [input.prompt, input.message].filter((x) => typeof x === 'string');
-  const marker = fields.map((x) => x.match(TOKEN)).find(Boolean) || null;
-  const names = [input.task_name, input.subagent_type, input.agent_type, input.name, input.to].filter((x) => typeof x === 'string');
+  const textMarker = fields.map((x) => x.match(TOKEN)).find(Boolean) || null;
+  const ticket = bridged && typeof input.task_name === 'string' ? BRIDGE_TICKET.exec(input.task_name) : null;
+  const bridgeMarker = ticket ? [ticket[0], ticket[1], ticket[2].replace(/_/g, '-')] : null;
+  const conflicting = textMarker && bridgeMarker && (textMarker[1] !== bridgeMarker[1] || textMarker[2] !== bridgeMarker[2]);
+  const misplacedText = !textMarker && fields.some((value) => value.includes('HELM_REVIEW:'));
+  const marker = conflicting || misplacedText ? null : textMarker || bridgeMarker;
+  const names = [input.task_name, input.agent_name, input.subagent_type, input.agent_type, input.name, input.to].filter((x) => typeof x === 'string');
   const target = input.target || input.id || input.agent_id || input.resume || input.to;
   return { tool, input, marker, names, target, candidate: DISPATCH.test(tool) || FOLLOWUP.test(tool),
     named: names.some(isReviewName) || isReviewDescription(input.description) || (typeof target === 'string' && isReviewName(target)),
@@ -268,7 +301,7 @@ function checkReview(payload) {
       if (own(round.used, role)) throw new Error('Review seat already used; another pass requires a new round');
       round.used[role] = { admittedAt: new Date().toISOString(), receiptId };
       if (receiptId) state.receipts[receiptId] = { fingerprint, token, role };
-      for (const alias of [req.input.task_name, req.input.name, req.target]) {
+      for (const alias of [req.input.task_name, req.input.agent_name, req.input.name, req.target]) {
         if (typeof alias === 'string' && alias && alias !== '__proto__') state.agents[alias] = true;
       }
       return { review: true, allowed: true };
@@ -293,7 +326,7 @@ function recordAgent(payload) {
       try { collect(JSON.parse(value), depth + 1); } catch { /* Non-JSON tool text isn't a stable identifier. */ }
     } else if (typeof value === 'object') {
       for (const [key, item] of Object.entries(value)) {
-        if (['agent_id', 'agentId', 'task_name'].includes(key) && typeof item === 'string') aliases.push(item);
+        if (['agent_id', 'agentId', 'task_name', 'agent_name'].includes(key) && typeof item === 'string') aliases.push(item);
         else if (['content', 'text', 'result', 'structuredContent'].includes(key) || Array.isArray(value)) collect(item, depth + 1);
       }
     }

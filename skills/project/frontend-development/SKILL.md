@@ -5,6 +5,8 @@ description: フロントエンド実装時に使用。コーディング規約�
 
 # Frontend Development Skill - フロントエンド開発
 
+導入先の補足ファイル `documents/development/project/frontend-development.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 ## 禁止事項（最重要）
 
 > **以下は絶対に禁止。違反は許容されない。**

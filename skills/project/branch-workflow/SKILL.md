@@ -5,6 +5,8 @@ description: 作業開始時に使用。mainブランチでの作業禁止。Iss
 
 # Branch Workflow Skill - ブランチ・Issue作業フロー
 
+導入先の補足ファイル `documents/development/project/branch-workflow.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 ## 禁止事項（最重要）
 
 > **以下は絶対に禁止。違反は許容されない。**
@@ -54,6 +56,9 @@ main への取り込みは quality-check を完走してから行う。quality-g
 | リモートがある（PR を作る remote（通常は origin）の trunk の remote-tracking ref、例: `origin/main` がある） | feature ブランチを push して PR を作る（`git push -u origin HEAD` → `gh pr create`）。merge は PR で行う |
 | リモートが無く、1 つのチェックアウトで作業している | feature 上で quality-check を完走する → `git switch main` → `git merge <feature>`（`--no-ff` 可。main が feature に無いコミットを持っていれば拒否されるので、main を feature に取り込んで quality-check をやり直す）→ `.quality-check-passed` を削除する（公開用・デプロイ先・バックアップへの送り出しは、下の「公開用・デプロイ先・バックアップの remote への main の送り出し」） |
 | リモートが無く、main を別の worktree で開いている | 下の「リモートの無いプロジェクトの取り込み」 |
+| リモートが無く、main がどの作業ツリーでも開かれていない（`git worktree list` に `[main]` が無い。ユーザーのチェックアウトが別のブランチで作業中など） | feature の worktree で quality-check を完走してフラグを作る → 同じ worktree で `git push . HEAD:main` だけを実行する（ユーザーのチェックアウトには触れない — detach・switch をせず、`integrate-check --main` にも渡さない。上書きされる作業ツリーが無いので、integrate-check が守るものは無い）→ `.quality-check-passed` を削除する。push が `non-fast-forward` で拒否されたら、main を feature に取り込んで quality-check をやり直す。`branch is currently checked out` で拒否されたら、main を開いた作業ツリーができているので、`git worktree list` を見直して上の行に切り替える。`git push` が使えなければ、下の「`git push` が使えない場合」の 2 と 4（main を開いたチェックアウトが無いので 1 と 3 は要らない） |
+
+**PR をセッションの中でマージするとき（PR の head の照合）**: hook は、PR の head が quality-check の見た commit かを確かめない。feature ブランチ上で `git fetch origin <branch>` を実行し、`git rev-parse HEAD origin/<branch>` が同じ commit を 2 回出すことを確かめてから、`gh pr merge` を PR 番号を付けずに実行する（gh が今のブランチの PR を選ぶ）。番号を付けるときは、`gh pr view <n> --json headRefName,headRefOid` が今のブランチ名と今の HEAD を出すことも確かめる。fetch・rev-parse・`gh pr merge` は別々のコマンドで実行する（`git fetch` を `gh pr merge` と同じコマンドに置くと hook が拒否する）。
 
 ここで「リモートが無い」は、PR を作る remote（通常は origin）の trunk の remote-tracking ref（例: `origin/main`）が無いことを言う。`<remote>/main` があっても、PR を受けない remote（公開用・デプロイ先・バックアップ。push 専用の remote は一度 push すると `<remote>/main` ができる）しか無ければ、リモートの無い取り込みを使う。そのような remote に feature ブランチを push しない（PR の道は無い）。hook の案内は origin の trunk の追跡 ref（`origin/main` / `origin/master`）だけを見る。PR を受ける remote が origin 以外の名前なら、hook の案内ではなく、この表で判断する。
 

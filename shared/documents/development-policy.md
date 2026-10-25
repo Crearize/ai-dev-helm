@@ -80,6 +80,13 @@ Development policies, standards, and processes for this project.
 - **Human role**: Requirements definition, design decisions (one approval per design), reading the final report of deviations from the design, and confirming a merge when there are deviations
 - **Prompt-based**: Development instructions communicated via clear prompts
 
+#### 事実・識別子・実測の書き方（実装・修正・文書のすべてで）
+
+- **識別子はコマンドの出力から取る**: コミットの SHA・イメージのタグ・リソースの ID などは、コマンドの出力（`git rev-parse`・`terraform output` 等）の値をそのまま使う。先頭の数桁から残りを推して補わない（推した SHA をタグに書くと、タグがどのコミットも指さない）。並べて実行するコマンドに識別子を埋め込むときは、先にその値だけを単独で取得してから埋め込む。
+- **修正で新しい事実を主張しない**: 指摘への対応では、主張を観測が支える範囲まで弱める・未確認を未確認と書く・参照を足す方向に限り、新しい事実・測定の主張を足さない。過去の測定に触れるときは、その時の一次記録（`git show <旧コミット> -- <ファイル>` 等）を自分で確かめてから書く。複数の仕組みが同時に効く構成で「どれが効いているか」、複数の仮説が同じ観測を生む測定からの結論は、片方を外した実測か仕様の排他の定めが無ければ断定しない。レビュアーの訂正も、受け入れる前に一次資料で裏を取る（訂正が過剰なこともある）。保存物・残置物の棚卸しは、訂正文や台帳の転記ではなく、保存する経路の実装と実行の一次データから導く。
+- **削除・置換の参照の走査はリポジトリ全体で**: ファイル・ルート・画面の要素を消す・置き換えるときは、実行コードだけでなく文書（`docs/`・`README.md`・`CLAUDE.md` 等）・`Dockerfile` を含むリポジトリ全体で参照を探し、追従するものを設計に列挙する。履歴として残す文書には、置き換え先と日付の行を足す。
+- **実測は、数値の前に集計の粒度と測定点を決めて書く**: 集計したメトリクス（例: 60 秒集計の `Maximum`）は「その粒度の中の最大」であって瞬間のピークではないので、粒度を添えずに「ピーク」「飽和なし」と書かない。所要時間は、何から何までを含み何を含まないかを実装で確かめてから書き、手順書の定義と実装が食い違えば逸脱として記録して手順書も同じ変更で直す。文書・コードのコメントに書く実測値は、書き手が一次データ（レポート・ログ）を開いて確かめ、ファイル名と測定点を添える。その挙動を決めるコードを後で直したら、同じ変更で測り直すか「旧実装での値」と書く。
+
 ### 1.2 Development Flow
 
 #### Branch Verification Before Work
@@ -166,6 +173,8 @@ A project that does not use GitHub Issues keeps the rest of this policy unchange
 - `implementation-report` finds the plan by branch name only when there is no Issue.
 - The default `branch-naming` lint pattern does not require an Issue number. A project that wants one overrides `pattern` (see `lint-scaffolding`).
 - The "Create GitHub Issue" and "Issue number required" rules in the three entry files apply only to projects that use Issues.
+
+A project records its shape in `.ai-dev-helm.json` `workflow`: `"issues": "none"` applies the list above, and `"remote": "none"` applies the no-remote path of the final report (no push or PR; `branch-workflow`'s local integration). Either one also rules out the speed-first mode. `workflow.protectedBranches` lists the branches beyond main / master that must not be force-pushed (platform: `["main", "release"]`); `init` and `upgrade` turn it into the `.claude/settings.json` denials and the Codex safety rules.
 
 ### PR Creation and Review
 1. Meaningful commit units

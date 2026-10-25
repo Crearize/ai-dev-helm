@@ -5,6 +5,8 @@ description: PR作成時に使用。実装レポート（計画との対応、�
 
 # Implementation Report Skill - 実装レポート生成
 
+導入先の補足ファイル `documents/development/project/implementation-report.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 ## 概要
 
 PR作成時に実装レポートを生成するスキル。`quality-check` スキル通過後、push → PR作成時に実行する（**feature ブランチへの push はゲートされない**。品質ゲートはマージ時および main への直接 push 時に `.quality-check-passed` を検証する）。
@@ -34,6 +36,8 @@ Step 3: 計画とGit変更差分を比較し判定
 Step 4: レポートを生成
   ↓
 Step 5: PR descriptionに実装レポートを含めてPR作成
+  ↓
+Step 6: マージの前に CI の成功を確かめる（PR をマージするとき）
 ```
 
 ---
@@ -132,3 +136,15 @@ git diff origin/main...HEAD
 ```bash
 gh pr create --title "[PRタイトル]" --body "[テンプレート + 実装レポート]"
 ```
+
+## Step 6: マージの前に CI の成功を確かめる（PR をマージするとき）
+
+PR をマージするときは、PR の CI（必須のチェック）の結論がすべて success になったことを確かめてからマージする。CI が終わる前のマージは、失敗する CI を main に入れる（導入先で、CI が終わる 22 秒前のマージで赤い CI が main に入った）。
+
+```bash
+gh pr checks [PR番号] --watch
+```
+
+- すべてのチェックが success になるまでマージしない（実行中・失敗中はマージしない）
+- CI が失敗したら原因を直し、push した後に、もう一度 CI の成功を確かめる
+- CI の無いリポジトリ・PR を使わない取り込みでは、この Step は無い（品質は quality-check とマージゲートで確かめる）
