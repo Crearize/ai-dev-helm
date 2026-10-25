@@ -17,7 +17,7 @@ description: マージ前に必ず実行。静的チェック・テスト・体�
 
 - **feature ブランチへの `git push` にフラグは不要**（ゲート対象外。refspec に `%` を含む語・`~` で始まる語がある場合を除く（「hook の完全な契約」の「対象」参照）。ゲート語を含むコマンドは「判定する形」に従う）。レビュー前の push・バックアップ push は自由に行える
 - CIはビルド確認のみ。静的チェック・テスト・レビューは全てローカルで実施する
-- 実行開始時（Step 0 冒頭）に既存の `.quality-check-passed` と `.quality-check-report.json` を削除する（古い許可証・レポートの残留防止）
+- 実行開始時（Step 0 冒頭）に既存の `.quality-check-passed` と `.quality-check-report.json` を削除する（古い許可証・レポートの残留防止）。前回のフラグの後に main を取り込んだだけなら、その前に「取り込みの再確認」を判定する（YES なら消さず、Step 2〜3 だけ — [references/carried-recheck.md](references/carried-recheck.md)）
 
 ---
 
@@ -66,6 +66,7 @@ Step 6: レポートデータ保存 + フラグファイル作成（設計との
 | Step 4-4 | [references/report-example.md](references/report-example.md) | `.quality-check-report.json` の例（定義はスキーマ） |
 | Step 5・6 | [references/step5-step6.md](references/step5-step6.md) | 追加テスト、フラグ作成の前の確認（未追跡の確認を含む）、フラグの性質 |
 | push / merge の前、hook に止められたとき | [references/hook-contract.md](references/hook-contract.md) | hook の完全な契約（対象・判定する形・無条件ブロック・通す条件・fail-open・worktree） |
+| フラグの後に main を取り込んだだけのとき | [references/carried-recheck.md](references/carried-recheck.md) | 取り込みの再確認（`--merge-only`） |
 | 指示に「スピード優先」があるとき | [references/speed-mode.md](references/speed-mode.md) | スピード優先モード |
 | 後回しの Issue のレビューを頼まれたとき | [references/deferred-review.md](references/deferred-review.md) | 後回しのレビューの実行 |
 | 終える前 | [references/checklist.md](references/checklist.md) | チェックリスト |

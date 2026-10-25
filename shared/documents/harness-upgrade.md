@@ -145,6 +145,7 @@ JSON を導入先の外へ保存します。Windows PowerShell 5.1 では `> fil
 
 ### 3.7.0 の更新
 
+- quality-check に「取り込みの再確認」が入った。フラグの後に main を取り込んだ（merge・rebase）だけなら、`quality-context --merge-only --since <前回のフラグの commit>` が YES のとき、レビューと追加テストをやり直さず、Step 2〜3 だけでフラグを作り直す（`references/carried-recheck.md`）。導入先が独自に「main の取り込みのたびに品質チェックをやり直す」規則を書いていれば消す。
 - 更新は `upgrade` で行う（この文書の前半）。初回の移行（3.6.0 以前から）で、マニフェストに構成と宣言を足し、ルート規則のハーネスの節を管理ブロックにする。`init` の再実行は `--force` が要る。PR テンプレートと `.github/review-prompt.md` は常に上書きから、編集を残す扱い（`init` はハッシュで守り、`upgrade` は三者マージ）になった。
 - hook の登録は、コマンドの文字列ではなく呼ぶ実体（`.claude/hooks/<名前>.cjs`）で見分けるようになった。手で書き換えた登録・旧い版の登録は、`upgrade` で今の形の 1 件に置き換わる（導入先が足した `statusMessage` などのキーは残る）。導入先の独自の照合（登録が 1 回か、hook の写しが配布物と同じか）は、`hook-selftest` の照合に置き換えて消す。
 - レビュー・品質チェックの規則（優先度の基準、巡の数、検証の巡、スピード優先モード、後回しのレビュー、完了条件、hook の完全な契約）の本文は `quality-check` スキル（本体と `references/`）だけに置くようになった。テンプレート（CLAUDE.md・AGENTS.md・.cursorrules）の「Quality Check Rules」「Design Confirmation Rules」「Autonomy Principles」は、規則の名前・1〜2 行の要約・正本への参照だけになった。導入先のルート規則の同じ節も、テンプレートの新しい節に置き換える（導入先の独自の節は残す）。
