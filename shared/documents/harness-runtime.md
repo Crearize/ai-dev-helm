@@ -111,7 +111,7 @@ node .claude/hooks/review-budget.cjs begin --phase quality --roles integrated-re
 - **戻す要点**: Claude Code の上限（1 万文字。超えるとファイルに置かれ先頭 2,000 文字だけになる）に収まるよう、9,000 文字以内（サロゲートペアの途中では切らない）。最新の指示（質問への回答ではなく、ユーザーが打った発言）は、ほかの節で予算が埋まっても縮めて必ず入れる。記録の全文のパスを含み、細部と古い指示はそのファイルを読む。要約と食い違うときは記録を優先する（テンプレートの CLAUDE.md の「Compact Instructions」）。
 - **置き場所**: `~/.claude/context-handoff/<会話記録のフォルダー名>/` に `<会話 ID>.md`（記録）・`.notice.json`（Stop の知らせの状態）・`.compact.json`（コンパクトのきっかけ）、`clear-markers/` に目印。リポジトリの外なので、作業ツリーにもコミットにも入らない。フォルダーは 0700、ファイルは 0600 で作る（Windows では効かず、親フォルダーの ACL による）。1 日 1 回、このフックが作った名前のファイル（会話 ID か `unknown` の `.md`・`.notice.json`・`.compact.json`）だけを、置き場所の直下のすべてのフォルダーから、30 日（`~/.claude/settings.json` の `cleanupPeriodDays` がそれより短ければその日数）より古ければ消す（目印は 1 日）。エラーは `errors.log`（1 MB を超えたら空にする）に書く。
 - **止め方**: 環境変数 `AI_DEV_HELM_HANDOFF=off` で、保存も戻しも知らせもしない。
-- **全体設定と重ねるとき**: 同じファイルを `~/.claude/hooks/` に置いて `~/.claude/settings.json` に `node "<パス>" --scope=global` で登録すると、導入先でないプロジェクトにも効く。`--scope=global` の方は、プロジェクトに `.claude/hooks/context-handoff.cjs` があり、`.claude/settings.json` か `.claude/settings.local.json` に登録があれば何もしない（2 回動かない）。
+- **全体設定と重ねるとき**: 同じファイルを `~/.claude/hooks/` に置いて `~/.claude/settings.json` に `node "<パス>" --scope=global` で登録すると、導入先でないプロジェクトにも効く（`npx @crearize/ai-dev-helm personal` の選択肢 4 がこの写しと登録を行う。再実行しても登録は各イベント 1 回）。`--scope=global` の方は、プロジェクトに `.claude/hooks/context-handoff.cjs` があり、`.claude/settings.json` か `.claude/settings.local.json` に登録があれば何もしない（2 回動かない）。
 - **終了コードは常に 0**: PreCompact の exit 2 はコンパクトを取りやめさせ、`Stop` フックの exit 2 は応答を終わらせなくするため。登録のラッパーも、実体が無い・異常終了でも exit 0 にする。実体が無いときは `SessionStart` でだけ知らせる。
 
 効く範囲と限界:

@@ -286,7 +286,10 @@ Available options:
   3) Codex global settings
      Merge ~/.codex/config.toml with safe defaults + rules
 
-Select options (space-separated): 1 2 3
+  4) Claude Code: keep a conversation record across /compact and /clear (context-handoff)
+     Copy the hook to ~/.claude/hooks and register it with --scope=global (quiet in projects that register their own)
+
+Select options (space-separated): 1 2 3 4
 ```
 
 | 選択肢 | 何が起きるか |
@@ -294,6 +297,7 @@ Select options (space-separated): 1 2 3
 | 1) Claude Code | `~/.claude/settings.json` に破壊的コマンドのブロックルールを追加（既存設定は自動バックアップ） |
 | 2) Cursor | 推奨ルールをクリップボードにコピー（Cursor の設定画面に手動で貼り付け） |
 | 3) Codex | `~/.codex/config.toml` に安全デフォルト（approval_policy / sandbox_mode / model）と破壊的コマンド拒否 `[[rules]]` をマージ（既存設定は自動バックアップ） |
+| 4) context-handoff | `~/.claude/hooks/context-handoff.cjs` に写し、`~/.claude/settings.json` に `--scope=global` で登録（各イベント 1 回。再実行で重ならない）。導入先でないプロジェクトでも、コンパクトと `/clear` の前後で会話の記録を残す。プロジェクト側に登録があるプロジェクトでは何もしない |
 
 **ブロックされるコマンドの例:**
 - `rm -rf /`, `rm -rf ~`, `rm -rf .`
