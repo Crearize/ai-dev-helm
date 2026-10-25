@@ -5,6 +5,8 @@ description: 機能・サービス・要件・前提条件などプロジェク�
 
 # Feature Documentation Skill - 機能・サービス・知識ドキュメント化
 
+導入先の補足ファイル `documents/development/project/feature-documentation.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 ## 目的
 
 プロジェクトに関する **「あとから読めば分かる」資産** を蓄積するためのスキル。

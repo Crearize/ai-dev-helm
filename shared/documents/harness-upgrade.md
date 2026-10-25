@@ -57,7 +57,7 @@ AI が行います。オーナーの作業はありません。
 | `workflow` | 運用の形。`remote: "none"`・`issues: "none"`（リモートなし・Issue なし。development-policy の当てはめが変わる）、`protectedBranches`（main・master のほかに force push を禁じるブランチ。deny と Codex の rules に入る） |
 | `apps` | アプリの置き場所（`{ "frontend": "apps/web", "backend": "api" }`）。Cursor の `.mdc` の globs をここから作る（既定は `frontend`・`backend`） |
 
-宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。ルート規則（`CLAUDE.md`・`AGENTS.md`・`.cursorrules`）と専用のマージのファイル（`.claude/settings.json`・`.codex/hooks.json`・`.codex/config.toml`・`.codex/agents/`・`.gitignore`）は、`exclude` にもできません（ルート規則は管理ブロックの中だけを扱い、外の製品の節には触れないため。専用のマージは導入先のキーを残すため）。`skillTargets` と `pending` のパスは導入先の中の相対パスに限ります（`..`・絶対パス・`.git` は拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。
+宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。ルート規則（`CLAUDE.md`・`AGENTS.md`・`.cursorrules`）と専用のマージのファイル（`.claude/settings.json`・`.codex/hooks.json`・`.codex/config.toml`・`.codex/agents/`・`.gitignore`）は、`exclude` にもできません（ルート規則は管理ブロックの中だけを扱い、外の製品の節には触れないため。専用のマージは導入先のキーを残すため）。`skillTargets` と `pending` のパスは導入先の中の相対パスに限ります（`..`・絶対パス・`.git` は拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。配布文書（`documents/development/*.md`）の中に導入先の節を残すときは、`<!-- ai-dev-helm:local:start -->` 〜 `<!-- ai-dev-helm:local:end -->` で囲みます。`upgrade` は区切りの中を三者マージの前に取り出し、マージの後に同じ場所（直前の行の後。その行が消えていれば同じ見出しの節の末尾、見出しも消えていればファイルの末尾で、記録に出る）へ戻します。照合（`--verify`）は区切りの中を除いて比べます。
 
 ## 初回の移行（3.6.0 以前から）
 

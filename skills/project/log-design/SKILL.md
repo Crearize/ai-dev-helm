@@ -5,6 +5,8 @@ description: ログ設計の妥当性チェック。一般的なログ基準と�
 
 # Log Design Check - ログ設計チェック
 
+導入先の補足ファイル `documents/development/project/log-design.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 プロジェクトのログ設計が一般的な基準と法的要件を満たしているか体系的にチェックし、不足があれば実装パターンを提示する。
 
 > **参照**: セキュリティ関連のログルールは `documents/development/coding-rules/common-rules.md` Section 4 も併せて確認すること。

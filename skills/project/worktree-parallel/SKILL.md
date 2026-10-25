@@ -5,6 +5,8 @@ description: Git worktree を使った並列開発時に使用。配置・ポー
 
 # Worktree Parallel Skill - Git Worktree 並列開発支援
 
+導入先の補足ファイル `documents/development/project/worktree-parallel.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 ## 目的
 
 同一リポジトリ内で複数の独立タスクを並列に進める際、worktree の配置、ブランチ、ポート、環境ファイル、終了処理を統一する。

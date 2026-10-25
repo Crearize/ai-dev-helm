@@ -5,6 +5,8 @@ description: PR作成時に使用。実装レポート（計画との対応、�
 
 # Implementation Report Skill - 実装レポート生成
 
+導入先の補足ファイル `documents/development/project/implementation-report.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則を緩めない。食い違えば本スキルが優先する。
+
 ## 概要
 
 PR作成時に実装レポートを生成するスキル。`quality-check` スキル通過後、push → PR作成時に実行する（**feature ブランチへの push はゲートされない**。品質ゲートはマージ時および main への直接 push 時に `.quality-check-passed` を検証する）。
