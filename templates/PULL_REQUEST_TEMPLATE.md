@@ -71,4 +71,4 @@ Closes #
 <!-- "None" if all items addressed -->
 
 ### Unaddressed Review Findings
-<!-- Medium findings and preexisting High findings, not fixed (action "PR に記録"): location, finding, reviewer. "None" if there are none; in speed mode "Review not run (deferred: #n)" -->
+<!-- The findings the quality-check skill leaves unfixed (action "PR に記録"; which ones: its Step 4 「指摘の優先度（基準）」): location, finding, reviewer. "None" if there are none; in speed mode "Review not run (deferred: #n)" -->

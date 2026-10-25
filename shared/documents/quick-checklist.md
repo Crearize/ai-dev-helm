@@ -25,8 +25,8 @@ A quick-reference checklist for AI tools when working on development tasks.
 
 ## Before Merge (Required - via /quality-check)
 
-> Feature-branch pushes are not gated (though a line containing a candidate word - merge/pull/rebase/refspec-omitted push - can still trip an unconditional block; see the quality-check skill). Run /quality-check before `gh pr merge`, `git merge` on main, or a direct push to main. Harness-only diffs skip the check entirely — except a harness config file (CLAUDE.md / AGENTS.md / `.cursorrules`) diff that changes Quality Gate Overrides parameters, which is never exempt. Sync of the current trunk from its own remote (`git pull`, `git pull origin <trunk>`, `git merge origin/<trunk>`, optionally with `--ff-only`, as the whole command; the merge form only while `origin/<trunk>` is the remote-tracking branch) needs no flag.
-> 適用されるゲートの**強度**（要否）はリスクレベルで決まる（`documents/development/quality-policy.md` §2）。ゲートの列挙と実行条件は quality-check SKILL.md を正とし、本チェックリストは要点の抜粋である。
+> Run /quality-check before `gh pr merge`, `git merge` on main, or a direct push to main; feature-branch pushes are not gated. The rules themselves (flow, harness-only exemption, review roster, severity, round limit, speed mode, completion criteria, the hook's complete contract) live in the quality-check skill, and the numbers in `documents/development/quality-policy.md`; the items below only name them.
+> 適用されるゲートの**強度**（要否）はリスクレベルで決まる（`documents/development/quality-policy.md` §2）。ゲートの列挙と実行条件は quality-check スキルを正とし、本チェックリストは項目名の一覧である。
 
 ### Static Checks
 - [ ] **Backend quality check passed** (linting + static analysis + tests + coverage + build)
@@ -35,15 +35,14 @@ A quick-reference checklist for AI tools when working on development tasks.
 ### Unit Tests
 - [ ] **Frontend tests passed**
 
-### Review Cycles (minimum 1 cycle; at most 2 review rounds; repeat only on High findings)
-- [ ] **Review roster completed** (integrated reviewer always, falsification QA on any code change, at most one specialist - Security joins even a docs-only diff that touches gate control-plane files, harness config, CI workflows or dependency files; sized by change content, see the quality-check skill's Step 1 roster table; mechanical checks must pass before reviewers run)
-- [ ] **High findings = 0** (Medium findings and preexisting High findings listed in the PR body, not fixed; full definition: the quality-check skill's 完了条件)
-- [ ] **Speed mode only** (the user said 「スピード優先」): Steps 0-3 and 4-0 done, reviews and mutation/E2E deferred to one `deferred-review` issue per PR, flag made with the speed-mode command
+### Review Cycles (the quality-check skill's Step 1 "レビュー体制の決定" and Step 4)
+- [ ] **Review roster completed** (chosen by the change content; mechanical checks pass before reviewers run)
+- [ ] **Completion criteria met** (the quality-check skill's "完了条件")
+- [ ] **Speed mode only** (the user said 「スピード優先」): the quality-check skill's "スピード優先モード" followed
 - [ ] **Report data saved** (`.quality-check-report.json`)
 
 ### Additional Tests (Step 5)
-- [ ] **test-recommendation heuristics run**; strong + small scope + no side effects ran without asking, the rest asked once in the final report
-- [ ] **Decision recorded with `decided_by`** (auto / user; declines are non-blocking; an executed E2E that fails must be fixed)
+- [ ] **Additional tests judged and recorded** (the test-recommendation skill: what runs without asking, what is asked in the final report, and the ledger)
 - [ ] **Ledger and Step 5 artifacts committed before the flag** (`documents/development/test-recommendation-ledger.md`)
 
 ### Final Confirmation
