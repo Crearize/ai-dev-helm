@@ -1,18 +1,18 @@
 {
-  "upstreamVersion": "6.4.2",
+  "upstreamVersion": "7.0.1",
   "files": {
-    "brainstorming/SKILL.md": "a32d2255354775aa124855aa7100cf276bea096fff4ebb3a0edf57be216e6c72",
-    "brainstorming/spec-document-reviewer-prompt.md": "95a0a195de9d984be2fffa95bab16fc8c563bc296a9cfc5e9c29cb3ece0d7457",
+    "brainstorming/SKILL.md": "61a7ef918652108c76a3fd01e02dd92d39996c6b46d4cb2819cbd03f6c45e46a",
+    "brainstorming/spec-document-reviewer-prompt.md": null,
     "dispatching-parallel-agents/SKILL.md": "1968923066f3b707eb01d1992cdf4c42284c3855f70253b9cd5000ff45fca13c",
-    "executing-plans/SKILL.md": "f38e8f2ddcf079f65493adc713c1fed78421dfaf5f4dbf6b3a6b2b1d95466e71",
+    "executing-plans/SKILL.md": "e4649e59880ef2643d1da128e3d607e87e3f969410d72095a5bf65811b6036dc",
     "finishing-a-development-branch/SKILL.md": "8db5a922b242dd4e1bf824cb91c13b3e8d8e8a86d6ceaf7f0774eb9cce909d65",
     "receiving-code-review/SKILL.md": "091df1629510af1b92fc4abd6f96732ebedb4cb2c0f3457e8f2740b0504a2438",
-    "requesting-code-review/SKILL.md": "cfcee1b06774e7c0517f1e09be1a11f2d5680257072723e709ddbcf7e08b795a",
-    "subagent-driven-development/SKILL.md": "8dde5589ee083fb4999106d116f01c8fdaf3116a8a9813fdedeb80329de49046",
+    "requesting-code-review/SKILL.md": "2180e14a448e9410bec88e6646a2d1f0ce7fdd58de27388c1e052e929679d2bc",
+    "subagent-driven-development/SKILL.md": "ba41f697136cba88a7962d60c8e2f97488ba04a8688b1d0fbeb27f6953808e75",
     "subagent-driven-development/implementer-prompt.md": "81dd9d5a3fb0b09b96b5829f03b9796842f3199ef7591d1ba1c2db2a515f64d0",
     "subagent-driven-development/re-review-prompt.md": "0828a5e9cbb12ba49f14621dd8c3953c48c0fc383e75bb5494f055ed0d6d824f",
     "subagent-driven-development/task-reviewer-prompt.md": "bfed55c8f19d0ff6ed57b0fe09127c92890e9311c6c73917129598826bf9ebe8",
-    "systematic-debugging/SKILL.md": "808fc5717aa88ad65efff312b11c186294d3e6ee301afb584e2f86599b137787",
+    "systematic-debugging/SKILL.md": "51c6435d98c83c42c96ba7c35725a0b2c376cd487fb1a4e6bd0ddbe7e33ef202",
     "test-driven-development/SKILL.md": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d",
     "using-git-worktrees/SKILL.md": "8cfb86f121269e8f7f12361e6795c4f6738828340e28964c9229d365666c9edd",
     "using-superpowers/SKILL.md": "82c5c8866ad7f5dd4440ce66bd7806ba48a2f13771beae5cf112e53f08fe36ba",
@@ -20,7 +20,86 @@
     "using-superpowers/references/codex-tools.md": "1a38ad9b188c393052f58d95657a1c35ea6aafc8b5a27f198f3922912f70bbe7",
     "writing-plans/SKILL.md": "a6c67c1900064347c2a329990dd3c555657c51c3ec53b259a08aa01a2c26139a",
     "writing-plans/plan-document-reviewer-prompt.md": null,
-    "writing-skills/anthropic-best-practices.md": "217629b356c09c9bd11017c9788e8fc654ca1b32c92d4a51cd490e16dd65e59a",
-    "writing-skills/package.json": null
+    "writing-skills/package.json": null,
+    "writing-skills/references/anthropic-best-practices.md": "217629b356c09c9bd11017c9788e8fc654ca1b32c92d4a51cd490e16dd65e59a"
+  },
+  "inventory": {
+    "brainstorming": [
+      "SKILL.md",
+      "builder-check-prompt.md",
+      "scripts/frame-template.html",
+      "scripts/helper.js",
+      "scripts/server.cjs",
+      "scripts/start-server.sh",
+      "scripts/stop-server.sh",
+      "visual-companion.md"
+    ],
+    "dispatching-parallel-agents": [
+      "SKILL.md"
+    ],
+    "executing-plans": [
+      "SKILL.md",
+      "scripts/task-done",
+      "scripts/task-start"
+    ],
+    "finishing-a-development-branch": [
+      "SKILL.md"
+    ],
+    "receiving-code-review": [
+      "SKILL.md"
+    ],
+    "requesting-code-review": [
+      "SKILL.md",
+      "code-reviewer.md"
+    ],
+    "subagent-driven-development": [
+      "SKILL.md",
+      "implementer-prompt.md",
+      "re-review-prompt.md",
+      "references/batching.md",
+      "references/cannot-verify.md",
+      "references/final-review.md",
+      "references/fix-loop.md",
+      "references/handling-reports.md",
+      "references/preflight.md",
+      "references/resuming.md",
+      "scripts/review-package",
+      "scripts/sdd-workspace",
+      "scripts/task-brief",
+      "task-reviewer-prompt.md"
+    ],
+    "systematic-debugging": [
+      "CREATION-LOG.md",
+      "SKILL.md",
+      "condition-based-waiting-example.ts",
+      "condition-based-waiting.md",
+      "defense-in-depth.md",
+      "find-polluter.sh",
+      "root-cause-tracing.md",
+      "test-academic.md",
+      "test-pressure-1.md",
+      "test-pressure-2.md",
+      "test-pressure-3.md"
+    ],
+    "test-driven-development": [
+      "SKILL.md",
+      "writing-good-tests.md"
+    ],
+    "using-git-worktrees": [
+      "SKILL.md"
+    ],
+    "using-superpowers": [
+      "SKILL.md",
+      "references/antigravity-tools.md",
+      "references/claude-code-tools.md",
+      "references/codex-tools.md",
+      "references/gemini-tools.md",
+      "references/hermes-tools.md",
+      "references/muse-tools.md",
+      "references/pi-tools.md"
+    ],
+    "writing-plans": [
+      "SKILL.md"
+    ]
   }
 }

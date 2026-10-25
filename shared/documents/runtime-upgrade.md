@@ -5,7 +5,7 @@ Node.js のメジャー版を上げるとき（例: 22 → 26）に確かめる�
 ## パッケージマネージャー
 
 - **Node 25 以降は corepack が同梱されない。** `corepack enable` を使う Dockerfile・ホスティングのビルドコマンド（Render の Build Command など）・CI は、先に `npm install -g corepack@<版>` を実行する（`node:26` の公式イメージにも corepack は無い）。PC の `~/bin/pnpm` などの corepack のシムも動かなくなるので、入れ直す。
-- **`engines` だけでは止まらない。** pnpm も npm も、`engines` に合わない Node では警告を出すだけで続ける。止めたいときは、npm は `.npmrc` に `engine-strict=true`、pnpm は `pnpm-workspace.yaml` に `engineStrict: true` を書く。
+- **`engines` だけでは止まらない。** pnpm も npm も、`engines` に合わない Node では警告を出すだけで続ける。インストールを失敗させたいときは、npm は `.npmrc` に `engine-strict=true`、pnpm は `pnpm-workspace.yaml` に `engineStrict: true` を書く。
 - **pnpm のストアはハードリンクで共有される。** worktree の `node_modules` のファイルを直接書き換えると、同じストアを使う別のチェックアウトにも変更が及ぶ。依存に手を入れるときは `pnpm patch` を使う。
 
 ## テストと実行時の挙動
