@@ -53,6 +53,8 @@ AI が行います。オーナーの作業はありません。
 | `pending` | 衝突が残ったファイル（`{ path, baseVersion }`、ルート規則のブロックは `block` 付き） |
 | `skillTargets` | スキルの木ごとの置き先（例 `{ "project": [".claude/skills"] }`） |
 | `settings.mergeDeny` | `false` で `permissions.deny` をマージしない |
+| `gate.script` / `reviewBudgetScript` | 配布の `quality-gate.cjs` / `review-budget.cjs` の代わりに登録する導入先のゲート・review-budget の実体（リポジトリ直下からの相対パス。`.cjs` / `.mjs` / `.js`）。登録は配布と同じ形のラッパーで宣言のパスを呼び、配布の本体は写さない。`hook-selftest` は配布の判定表をこの実体に当てる |
+| `gate.controlPlane` / `gate.exemptDocs` / `gate.harness` | ゲート制御面・ハーネスのみの免除（文書だけ）・スピードモードのハーネスの分類に足すパスの glob の配列。hook が判定するリポジトリの `.ai-dev-helm.json` から読み、読めなければゲート対象のコマンドを block する（`quality-check`「hook の完全な契約」の「導入先の拡張点」）。`.ai-dev-helm.json` 自体はゲート制御面 |
 
 宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。ルート規則（`CLAUDE.md`・`AGENTS.md`・`.cursorrules`）と専用のマージのファイル（`.claude/settings.json`・`.codex/hooks.json`・`.codex/config.toml`・`.codex/agents/`・`.gitignore`）は、`exclude` にもできません（ルート規則は管理ブロックの中だけを扱い、外の製品の節には触れないため。専用のマージは導入先のキーを残すため）。`skillTargets` と `pending` のパスは導入先の中の相対パスに限ります（`..`・絶対パス・`.git` は拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。
 
@@ -151,6 +153,8 @@ JSON を導入先の外へ保存します。Windows PowerShell 5.1 では `> fil
 - `quality-check`・`test-recommendation`・`lint-scaffolding`・`test-design` は、本体（`SKILL.md`）と、その段で読む `references/` に分かれた。スキルを実コピーで持つ導入先は `references/` も写す。
 - 各スキルは、導入先の補足ファイル `documents/development/project/<スキル名>.md` があれば、その段で読む。補足ファイルは製品への当てはめだけを持ち、スキルの規則を緩めない（食い違えばスキルが優先する）。導入先がスキルの本体に足した製品の当てはめ（コマンド・パス・ポートなど）は、このファイルへ移す。
 - ゲート制御面に、リポジトリ直下の `.mcp.json` が入った。release-please のリリースの PR の差分は、条件を満たせば免除される（`quality-check`「ハーネスのみ変更の免除」の「リリースの差分の免除」）。
+- hook の拡張点（設計 C3h）: 導入先の独自のゲート・review-budget は `gate.script`・`reviewBudgetScript` で宣言し、制御面・免除・スピードモードの分類に足すパスは `gate.controlPlane`・`gate.exemptDocs`・`gate.harness` に書く（上の表）。hook の写しへのローカルパッチ（パターンを足す・実体を差し替える）は、これに移して消す。`.ai-dev-helm.json` はゲート制御面になったので、マニフェストを変える PR（ハーネスの更新の PR を含む）は免除されない。
+- 導入先のローカルパッチの取り込み（設計 C3i）: quality-gate は `git push --dry-run` / `-n` をゲート対象から外し、同じコマンドの別の行の `git merge` / `git pull` / `git rebase` を、trunk に届く push / merge の前にあれば拒否するようになった。review-budget はロックを最大 2 秒待ち、古さでロックを外さなくなり（自分のロックは名前を変えてから消す）、Codex の `agent_name`・下線区切りの名前・`collaboration` で始まるツール名を読むようになった（配布の Codex の登録では `collaboration` の名前は届かない — `harness-runtime.md`）。同じ趣旨のパッチを hook の写しに当てていた導入先は、`upgrade` で配布物に置き換えて消す。
 
 ## 計測の範囲
 

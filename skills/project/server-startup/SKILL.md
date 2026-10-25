@@ -114,6 +114,8 @@ lsof -i :[PORT] -t | xargs kill -9
 
 停止後、ポートがLISTENしていないことを確認する。
 
+> **バックグラウンドで起動したラッパーを終わらせたとき**: `gradle bootRun`（`./gradlew bootRun`）・`npm run dev` などをバックグラウンドのタスクとして起動し、そのタスクを終わらせた（TaskStop・`kill` 等）だけでは、ラッパー（gradle・npm）だけが終わり、実際にポートを持つ子のプロセス（Spring Boot の JVM・Node）が残ることがある。タスクを終わらせた後も必ず下の確認でポートの LISTEN が消えたことを確かめ、残っていればその PID を上の停止手順で明示的に終了させる（Windows は `//T` 付きでプロセスの木ごと）。
+
 **Windows（PowerShell）:**
 ```powershell
 Get-NetTCPConnection -LocalPort [PORT] -State Listen -ErrorAction SilentlyContinue

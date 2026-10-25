@@ -108,7 +108,10 @@
 //   in its command, with no other gated call.
 //   Substring matches never count: `feature/main-nav` and `main:feature-x` are
 //   not candidates. A refspec carrying `%` or a leading `~` is a candidate
-//   because its destination cannot be read.
+//   because its destination cannot be read. A push with `--dry-run` / `-n`
+//   (exactly these spellings, before `--`, and no `--no-dry-run` in it)
+//   publishes nothing and is no candidate (3.7.0); the command must still be
+//   simple, and another push in it is judged on its own.
 // Rule 2 (blocked with no exemption): an unreadable PowerShell script (see
 //   ALWAYS REFUSED - gate word or not); a command with a gate word that is not
 //   simple; force/delete/`+refspec`/`--mirror`/`--all`/`--branches` pushes
@@ -131,7 +134,12 @@
 //   alone, which push the LOCAL main, off main).
 //   The movers that move HEAD or make a commit, and `fetch` (it rewrites the
 //   ref a later merge reads), are judged over the WHOLE command;
-//   `branch -f|-d|-D|--force` per line. The one fetch let through is the
+//   `branch -f|-d|-D|--force` per line. A gated merge / pull / rebase on
+//   ANOTHER line counts as a mover too (3.7.0, `gatedSyncMoverOutsideLine`):
+//   for a line whose gated call reaches the trunk on any branch (a push to
+//   main, `gh pr merge`, a trunk rewrite), and for a refspec-less push once it
+//   is gated (on the trunk, or with `@{push}` on it) - so `git pull` and then
+//   `git push` on a feature branch stay allowed. The one fetch let through is the
 //   daily trunk sync - plain `git fetch [origin] [<trunk>]` and then
 //   `git merge [--ff-only] origin/<trunk>` on that trunk - as the WHOLE command
 //   with nothing else in it (`isPlainTrunkSync`), and only while
@@ -186,8 +194,13 @@
 //   and their schemas, the brainstorming / writing-plans skills (Design
 //   Gate), the review guides, and - under `.claude`, `.codex` or `.cursor` -
 //   `hooks/`, the `skills` node itself, `agents/`, `commands/`, `prompts/`,
-//   `rules/`, plus the hook's registration files (see GATE_CONTROL_PATTERNS,
-//   which is the authority).
+//   `rules/`, plus the hook's registration files and `.ai-dev-helm.json` (see
+//   GATE_CONTROL_PATTERNS, which is the authority). A product adds to the
+//   control plane, the exempt documents and the speed-mode harness set in
+//   `.ai-dev-helm.json` (`gate.controlPlane` / `gate.exemptDocs` /
+//   `gate.harness`, 3.7.0 C3h - see parseGateConfig), read from the repository
+//   the call is judged in; a manifest that cannot be read that way blocks
+//   every gated call.
 // Rule 4b (exemption, 3.7.0 #217): a release-please release - only
 //   CHANGELOG.md, package.json, package-lock.json and
 //   .release-please-manifest.json, with nothing changed in the JSON files but
@@ -805,11 +818,18 @@ function trunkWrite(inv) {
 // back and folded in at the end; the indices are re-sorted in that case so
 // the reason still names the first offending refspec in ARGUMENT order.
 // Returns the rule-1 candidate, or null when there is none.
+// 3.7.0 (from MovieMarketer's MM-PATCH 3): `--dry-run` / `-n` publishes nothing, so such a push is no candidate -
+// exact spellings only (a bundle such as `-nv` is not read as a dry run), before `--` only, and a `--no-dry-run`
+// anywhere in the options cancels it. Decided per push invocation: a dry run never exempts another push.
+const PUSH_DRY_RUN_FLAGS = new Set(['--dry-run', '-n']);
+const PUSH_NO_DRY_RUN_FLAG = '--no-dry-run';
 function pushCandidate(inv) {
   const facts = inv.facts.words;
   const { words, expand } = inv.seg;
   const mainSpecs = []; // Word indices, argument order.
   const seenSrc = new Set();
+  let dryRun = false;
+  let noDryRun = false;
   let mainCount = 0;
   let hard = false;
   let forced = false; // A hard flag other than --force-with-lease.
@@ -855,6 +875,8 @@ function pushCandidate(inv) {
         endOfOptions = true;
         continue;
       }
+      if (PUSH_DRY_RUN_FLAGS.has(words[i])) dryRun = true;
+      if (words[i] === PUSH_NO_DRY_RUN_FLAG) noDryRun = true;
       if (f.colon) {
         // Read both ways: a refspec, and an option that leaves the push
         // refspec-less (which lands on whatever the branch tracks).
@@ -876,6 +898,8 @@ function pushCandidate(inv) {
     mainSpecs.sort((a, b) => a - b); // The held-back word is the FIRST argument.
   }
   if (specs === 0) upstream = true;
+  // A dry run publishes nothing; the negation wins whenever it appears (fail closed).
+  if (dryRun && !noDryRun) return null;
 
   if (mainCount === 0 && !upstream && !unreadable && !matching) return null;
   return {
@@ -912,6 +936,7 @@ function analyzeLine(line) {
       continue;
     }
     const inv = gitInvocation(seg, facts);
+    inv.line = line; // gatedSyncMoverOutsideLine
     invocations.push(inv);
     if (SYNC_SUBS.has(inv.sub)) {
       if (facts.ctlFrom[inv.start]) continue;
@@ -963,6 +988,18 @@ function moverOf(invocations, scope) {
   for (const inv of invocations) {
     const name = moverName(inv, scope);
     if (name) return name;
+  }
+  return null;
+}
+// 3.7.0 (from MovieMarketer's MM-PATCH 11, design decision 4): a merge / pull / rebase is itself a gated candidate,
+// so moverName() leaves it out - but on ANOTHER line of the same command it moves HEAD before this line's push or
+// merge runs, so it counts as a mover there. Applied (outside a deferral plan) to a line whose gated call reaches the
+// trunk on any branch (a push to main, `gh pr merge`, a trunk rewrite) in staticRules, and to a trunk-only candidate
+// (a refspec-less push) once contextRules knows it is gated - so the everyday feature-branch sync followed by a push
+// to the branch's own upstream (`git pull` / `git push` on two lines) stays allowed.
+function gatedSyncMoverOutsideLine(invocations, line) {
+  for (const inv of invocations) {
+    if (inv.line !== line && inv.gated && SYNC_SUBS.has(inv.sub)) return inv.sub;
   }
   return null;
 }
@@ -1190,6 +1227,9 @@ const GATE_CONTROL_PATTERNS = [
   /^\.codex\/config\.toml$/i,
   /^\.(claude|codex|cursor)\/mcp\.json$/i,
   /^\.mcp\.json$/i, // 3.7.0: the repository-root MCP registration (Claude Code)
+  // 3.7.0 (C3h): the manifest holds the gate's own configuration (gate.*, the declared gate and review-budget), so
+  // the whole file is control plane: a change to it is never exempt and needs a review.
+  /^\.ai-dev-helm\.json$/i,
 ];
 
 // Diffs made up entirely of these skip the gate (rule 4): the three config
@@ -1210,9 +1250,97 @@ const HARNESS_DOC_RE = /\.(md|mdc)$/i;
 // commented out is not analysed - over-detection is fine here.
 const OVERRIDE_STRINGS = [/quality[-_\s]*gate[-_\s]*overrides/i, /mutation[-_\s]*budget[-_\s]*minutes/i];
 
-const isHarness = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f))
-  || (HARNESS_DOC_RE.test(f) && HARNESS_DOC_DIRS.some((re) => re.test(f)));
-const controlHits = (files) => files.filter((f) => GATE_CONTROL_PATTERNS.some((re) => re.test(f)));
+// 3.7.0 (C3h): a product's additions to these sets, from `.ai-dev-helm.json` at the root of the repository the call
+// is judged in (where a `cd` / `-C` moved it, if one did) - its working-tree file:
+//   gate.controlPlane  more gate control-plane paths. The files `gate.script` and `reviewBudgetScript` name (the
+//                      product's own gate and review-budget) are in it without being listed.
+//   gate.exemptDocs    more documents for the harness-only exemption - `.md` / `.mdc` only, as under
+//                      HARNESS_DOC_DIRS (a script is code). A control-plane path is still never exempt.
+//   gate.harness       more paths a speed-mode flag never takes in (speedRange).
+// Each is an array of glob patterns relative to the root: `**` any depth, `*` and `?` within a segment, a trailing
+// `/` a whole directory; controlPlane and harness match case-insensitively (as GATE_CONTROL_PATTERNS), exemptDocs
+// exactly. No manifest is no addition. A manifest that cannot be read as this configuration - not JSON, a root or a
+// `gate` that is not an object, a list that is not an array of plain patterns, a declared script that is not a
+// plain relative path - blocks every gated call (fail closed; `configBroken`). The manifest is control plane.
+const MANIFEST_FILE = '.ai-dev-helm.json';
+const MAX_MANIFEST_BYTES = 1024 * 1024;
+const NO_GATE_CONFIG = Object.freeze({ controlPlane: [], exemptDocs: [], harness: [] });
+const GATE_LISTS = { controlPlane: 'i', exemptDocs: '', harness: 'i' };
+const PATTERN_RE = /^[^\\\0/][^\\\0]{0,1023}$/;
+const SCRIPT_PATH_RE = /^(?:\.\/)?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:cjs|mjs|js)$/;
+function globRe(pattern, flags) {
+  let re = '';
+  for (let i = 0; i < pattern.length; i += 1) {
+    const c = pattern[i];
+    if (c === '*' && pattern[i + 1] === '*') {
+      re += '.*';
+      i += 1;
+      if (pattern[i + 1] === '/') i += 1;
+    } else if (c === '*') re += '[^/]*';
+    else if (c === '?') re += '[^/]';
+    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}${pattern.endsWith('/') ? '.*' : ''}$`, flags);
+}
+const literalRe = (rel) => new RegExp(`^${rel.replace(/^\.\//, '').replace(/[.+^${}()|[\]\\*?]/g, '\\$&')}$`, 'i');
+// The configuration of a manifest's text: { controlPlane, exemptDocs, harness } (RegExp lists), or { error }.
+function parseGateConfig(text) {
+  let doc;
+  try {
+    doc = JSON.parse(String(text).replace(/^﻿/, ''));
+  } catch {
+    return { error: `${MANIFEST_FILE} is not valid JSON` };
+  }
+  if (!isPlainJson(doc)) return { error: `the root of ${MANIFEST_FILE} is not an object` };
+  if (doc.gate !== undefined && !isPlainJson(doc.gate)) return { error: 'gate is not an object' };
+  const gate = doc.gate || {};
+  const config = { controlPlane: [], exemptDocs: [], harness: [] };
+  for (const [key, flags] of Object.entries(GATE_LISTS)) {
+    const list = gate[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) return { error: `gate.${key} is not an array` };
+    for (const pattern of list) {
+      if (typeof pattern !== 'string' || !PATTERN_RE.test(pattern)) {
+        return { error: `gate.${key} holds ${JSON.stringify(pattern)}, which is not a path pattern relative to the repository root (no leading /, no backslash)` };
+      }
+      config[key].push(globRe(pattern, flags));
+    }
+  }
+  for (const [label, value] of [['gate.script', gate.script], ['reviewBudgetScript', doc.reviewBudgetScript]]) {
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || !SCRIPT_PATH_RE.test(value) || value.split('/').some((s) => s === '..')) {
+      return { error: `${label} ${JSON.stringify(value)} is not a relative path to a .cjs, .mjs or .js file` };
+    }
+    config.controlPlane.push(literalRe(value));
+  }
+  return config;
+}
+// The configuration of the work tree rooted at `top`.
+function readGateConfig(top) {
+  const file = path.join(top, MANIFEST_FILE);
+  let text;
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile()) return { error: `${MANIFEST_FILE} is not a regular file` };
+    if (st.size > MAX_MANIFEST_BYTES) return { error: `${MANIFEST_FILE} is over 1 MB` };
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return NO_GATE_CONFIG;
+    return { error: `${MANIFEST_FILE} could not be read (${(e && e.code) || 'error'})` };
+  }
+  return parseGateConfig(text);
+}
+// A ctx without `gateConfig` (a test stub), or with none, adds nothing; a broken one never reaches here
+// (contextRules blocks first).
+const configOf = (ctx) => (ctx && ctx.gateConfig && !ctx.gateConfig.error ? ctx.gateConfig : NO_GATE_CONFIG);
+const configBroken = (why) => `The gate configuration in ${MANIFEST_FILE} cannot be read (${why}), so this push/merge cannot be judged. Fix ${MANIFEST_FILE} - gate.controlPlane, gate.exemptDocs and gate.harness are arrays of path patterns relative to the repository root; gate.script and reviewBudgetScript are relative paths of a .cjs / .mjs / .js file - then run the command again.`;
+
+const isGateConfig = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f));
+const hasOverride = (value) => OVERRIDE_STRINGS.some((re) => re.test(String(value)));
+const isHarness = (f, config = NO_GATE_CONFIG) => isGateConfig(f)
+  || (HARNESS_DOC_RE.test(f) && (HARNESS_DOC_DIRS.some((re) => re.test(f)) || config.exemptDocs.some((re) => re.test(f))));
+const controlHits = (files, config = NO_GATE_CONFIG) => files.filter((f) => GATE_CONTROL_PATTERNS.some((re) => re.test(f))
+  || config.controlPlane.some((re) => re.test(f)));
 
 // 3.7.0 (#217): a release-please release diff - the four release files only,
 // and in package.json / package-lock.json nothing but the top-level version
@@ -1276,8 +1404,9 @@ function controlReason(files) {
 // the harness config files or the gate parameters - nor anything when there is
 // no base ref to tell what the range holds.
 const SPEED_PREFIX = 'Speed-mode flag ';
-const speedRange = (files, overrideChanged, noBase = false) => ({
-  files: [...controlHits(files), ...gateConfigFiles(files)], override: Boolean(overrideChanged), noBase: Boolean(noBase),
+const speedRange = (files, overrideChanged, noBase = false, config = NO_GATE_CONFIG) => ({
+  files: [...controlHits(files, config), ...gateConfigFiles(files), ...files.filter((f) => config.harness.some((re) => re.test(f)))],
+  override: Boolean(overrideChanged), noBase: Boolean(noBase),
 });
 const speedHit = (range) => range.noBase || range.override || range.files.length > 0;
 function speedReason(range) {
@@ -1347,7 +1476,7 @@ function pushTrunk(cand, ctx) {
 // H-49: a harness-only diff that is not exempt only because of the override
 // strings says so, instead of reading like an ordinary code change.
 const overrideReason = (files) => `Quality Gate Overrides / mutation_budget_minutes changed in ${gateConfigFiles(files).join(', ')}: such a change is not harness-exempt. Run the quality-check skill before merging into main.`;
-const overrideOnly = (diff) => diff.overrideChanged && diff.files.every(isHarness);
+const overrideOnly = (diff, config = NO_GATE_CONFIG) => diff.overrideChanged && diff.files.every((f) => isHarness(f, config));
 // H-49: a pull or merge on the trunk that is close to a sync form names the
 // exact forms that need no flag.
 function needFlagReason(a, branch) {
@@ -1390,7 +1519,7 @@ function isSyncForm(seg, branch, ctx) {
 // Rule 2, items 1-5: no ctx is touched. `commandMover` is the whole command's
 // HEAD mover, computed once by the caller; the movers of a `plan` (see
 // `deferralPlan`) are judged with the branch in `contextRules` instead.
-function staticRules(a, commandMover, plan) {
+function staticRules(a, commandMover, plan, commandInvocations = []) {
   if (a.cands.length === 0) return null;
   for (const c of a.cands) {
     if (c.kind === 'write' && c.never) return deny('2', TRUNK_NEVER);
@@ -1400,7 +1529,8 @@ function staticRules(a, commandMover, plan) {
       return deny('2', 'A push that writes every matching branch (a `:` refspec or one with no destination) is never allowed here. Push one branch with an explicit refspec, from that branch.');
     }
   }
-  const mover = moverOf(a.invocations, 'line') || commandMover;
+  const mover = moverOf(a.invocations, 'line') || commandMover
+    || (a.cands.some((c) => !c.mainOnly) ? gatedSyncMoverOutsideLine(commandInvocations, a.line) : null);
   if (mover && !(plan && plan.kind)) {
     return deny('2', mover === 'commit' && a.cands.some((c) => c.kind === 'push') ? COMMIT_PUSH : splitReason(mover));
   }
@@ -1438,8 +1568,8 @@ function reverseRefspec(gated, branch, ctx) {
 
 // Rule 4: a non-empty `origin/main...HEAD` diff made up entirely of harness
 // files, with no control-plane file and no override string in it.
-function rule4Exempt(base, baseControl) {
-  return base.files.length > 0 && base.files.every(isHarness)
+function rule4Exempt(base, baseControl, config = NO_GATE_CONFIG) {
+  return base.files.length > 0 && base.files.every((f) => isHarness(f, config))
     && !base.overrideChanged && baseControl.length === 0;
 }
 
@@ -1472,10 +1602,11 @@ function rule3Flag(ctx, noFlag, tip = null, stale = STALE, range = speedRange([]
     return deny('5', 'Cannot verify what changed since the last quality check. Re-run the quality-check skill.');
   }
   if (since.files.length === 0) return allow();
-  const hits = controlHits(since.files);
+  const config = configOf(ctx);
+  const hits = controlHits(since.files, config);
   if (hits.length > 0) return deny('3', controlReason(hits));
-  if (since.files.every(isHarness) && !since.overrideChanged) return allow();
-  return deny('3', overrideOnly(since) ? overrideReason(since.files) : stale);
+  if (since.files.every((f) => isHarness(f, config)) && !since.overrideChanged) return allow();
+  return deny('3', overrideOnly(since, config) ? overrideReason(since.files) : stale);
 }
 
 // H-11 / H-13: the trunk `trunk` moves to `ref` (a merge or rebase on it, or a
@@ -1500,13 +1631,14 @@ function judgeTrunkMove(ctx, trunk, ref, reasons) {
   if (!ff) return deny('3', diverged(t, ref));
   const gained = ctx.diffRange(`${tip}..${target}`);
   if (gained === null) return cannot(`what \`${ref}\` adds to ${t}`);
-  const hits = controlHits(gained.files);
-  if (hits.length === 0 && !gained.overrideChanged && gained.files.every(isHarness)) return allow(); // Rule 4.
+  const config = configOf(ctx);
+  const hits = controlHits(gained.files, config);
+  if (hits.length === 0 && !gained.overrideChanged && gained.files.every((f) => isHarness(f, config))) return allow(); // Rule 4.
   if (gained.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
   let noFlag = reasons.noFlag;
   if (hits.length > 0) noFlag = controlReason(hits);
-  else if (overrideOnly(gained)) noFlag = overrideReason(gained.files);
-  return rule3Flag(ctx, noFlag, target, reasons.stale, speedRange(gained.files, gained.overrideChanged));
+  else if (overrideOnly(gained, config)) noFlag = overrideReason(gained.files);
+  return rule3Flag(ctx, noFlag, target, reasons.stale, speedRange(gained.files, gained.overrideChanged, false, config));
 }
 
 // The source a `git merge` / `git rebase` / `git pull` on the trunk brings in
@@ -1530,7 +1662,7 @@ function integrationSource(cand, trunk) {
 
 // Everything that needs ctx. Always returns a decision. `plan` is the
 // command's `deferralPlan` (null when it is not one).
-function contextRules(a, ctx, plan = null) {
+function contextRules(a, ctx, plan = null, commandInvocations = []) {
   // A plan that switches branch judges its calls on the branch it switches
   // to, without reading the current one.
   const branch = plan && plan.branch ? plan.branch : ctx.branch;
@@ -1544,8 +1676,16 @@ function contextRules(a, ctx, plan = null) {
     && /^[^/]+\/(main|master)$/i.test(ctx.pushTarget || '');
   const gated = a.cands.filter((c) => !c.mainOnly || isMainBranch(branch) || toTrunk(c));
   if (gated.length === 0) return allow();
+  // 3.7.0 (C3h): the product's gate configuration is read for every gated call; one that cannot be read blocks.
+  const config = ctx.gateConfig;
+  if (config && config.error) return deny('5', configBroken(config.error));
   if (gated.length > 1) return deny('2', ONE_OPERATION);
   const cand = gated[0];
+  // A trunk-only candidate gated here (on the trunk, or @{push} on it), with a merge / pull / rebase on another line.
+  if (cand.mainOnly && !(plan && plan.kind)) {
+    const m = gatedSyncMoverOutsideLine(commandInvocations, a.line);
+    if (m) return deny('2', splitReason(m));
+  }
   if (cand.kind === 'push' && cand.hard) return localizeForceTrunk(deny('2', FORCE_TRUNK), [cand], ctx);
   if (cand.kind === 'gh' && cand.repo !== null) {
     // H-19(a): another repository's PR is judged in that repository.
@@ -1601,13 +1741,13 @@ function contextRules(a, ctx, plan = null) {
   if (base === null) {
     return deny('5', 'Cannot verify what changed since the base ref (origin/main, or main without a remote). Re-run the quality-check skill.');
   }
-  const baseControl = controlHits(base.files);
-  if (rule4Exempt(base, baseControl)) return allow();
+  const baseControl = controlHits(base.files, configOf(ctx));
+  if (rule4Exempt(base, baseControl, configOf(ctx))) return allow();
   if (base.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
   let noFlag = needFlagReason(a, branch);
   if (baseControl.length > 0) noFlag = controlReason(baseControl);
-  else if (overrideOnly(base)) noFlag = overrideReason(base.files);
-  const verdict = rule3Flag(ctx, noFlag, null, STALE, speedRange(base.files, base.overrideChanged, base.noBase));
+  else if (overrideOnly(base, configOf(ctx))) noFlag = overrideReason(base.files);
+  const verdict = rule3Flag(ctx, noFlag, null, STALE, speedRange(base.files, base.overrideChanged, base.noBase, configOf(ctx)));
   // The pull-request routes below would meet the same refusal: no hint.
   if (verdict.decision === 'block' && verdict.reason.startsWith(SPEED_PREFIX)) return verdict;
   if (cand.kind === 'gh' && verdict.decision === 'block' && verdict.rule === '3') {
@@ -2103,6 +2243,11 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 //                 cannot say (ambiguous, missing, git failed). Read only for
 //                 the trunk sync forms; anything but the remote-tracking ref -
 //                 or a ctx without this method - is no exemption.
+//   gateConfig    the product's additions from `.ai-dev-helm.json` at the
+//                 work tree root (`readGateConfig`: RegExp lists
+//                 controlPlane / exemptDocs / harness), or `{ error }` when it
+//                 cannot be read - then every gated call blocks. Missing (a
+//                 test stub): no additions.
 // Only `flag` uses null to mean "nothing there"; for every other getter null
 // means the repository state could not be resolved, and rule 5 blocks. WHICH
 // git call failed is recorded on `ctx.state` by the getters themselves, never
@@ -2149,7 +2294,7 @@ function classifyText(text, ctx) {
   const commandMover = moverOf(all, 'command');
   const plan = deferralPlan(judged, lines, analyzed, commandMover);
   for (const a of analyzed) {
-    const verdict = staticRules(a, commandMover, plan);
+    const verdict = staticRules(a, commandMover, plan, all);
     if (verdict) return localizeForceTrunk(verdict, a.cands, ctx);
   }
   const candLines = analyzed.filter((a) => a.cands.length > 0);
@@ -2157,7 +2302,7 @@ function classifyText(text, ctx) {
   const placed = locateCandidates(lines, candLines, ctx, crlf);
   if (!Array.isArray(placed)) return placed;
   for (const p of placed) {
-    const verdict = contextRules(p.a, p.ctx, plan);
+    const verdict = contextRules(p.a, p.ctx, plan, all);
     if (verdict.decision === 'block') return p.moved ? elsewhere(judgedThere(verdict, p.ctx)) : verdict;
   }
   return allow();
@@ -2349,6 +2494,13 @@ function makeCtx(cwd) {
     get flag() {
       return flag();
     },
+    // 3.7.0 (C3h): this work tree's `.ai-dev-helm.json` gate configuration, or { error } (readGateConfig).
+    get gateConfig() {
+      return once('gateConfig', () => {
+        const top = root();
+        return top === null ? NO_GATE_CONFIG : readGateConfig(top);
+      });
+    },
     get isAncestor() {
       return once('anc', () => {
         const f = flag();
@@ -2523,6 +2675,8 @@ function main() {
   });
 }
 
-module.exports = { classify, parseSimple, shellOf, isReleaseOnly };
+// The public API (3.7.0, C3h): fixed, and kept by a test (lib/quality-gate-api.test.js). isHarness, controlHits and
+// speedRange take the product's configuration as an optional last argument (no argument: the distributed sets only).
+module.exports = { classify, parseSimple, shellOf, isReleaseOnly, isHarness, isGateConfig, hasOverride, speedRange, controlHits };
 
 if (require.main === module) main();

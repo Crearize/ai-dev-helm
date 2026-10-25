@@ -34,6 +34,8 @@ Step 3: 計画とGit変更差分を比較し判定
 Step 4: レポートを生成
   ↓
 Step 5: PR descriptionに実装レポートを含めてPR作成
+  ↓
+Step 6: マージの前に CI の成功を確かめる（PR をマージするとき）
 ```
 
 ---
@@ -132,3 +134,15 @@ git diff origin/main...HEAD
 ```bash
 gh pr create --title "[PRタイトル]" --body "[テンプレート + 実装レポート]"
 ```
+
+## Step 6: マージの前に CI の成功を確かめる（PR をマージするとき）
+
+PR をマージするときは、PR の CI（必須のチェック）の結論がすべて success になったことを確かめてからマージする。CI が終わる前のマージは、失敗する CI を main に入れる（導入先で、CI が終わる 22 秒前のマージで赤い CI が main に入った）。
+
+```bash
+gh pr checks [PR番号] --watch
+```
+
+- すべてのチェックが success になるまでマージしない（実行中・失敗中はマージしない）
+- CI が失敗したら原因を直し、push した後に、もう一度 CI の成功を確かめる
+- CI の無いリポジトリ・PR を使わない取り込みでは、この Step は無い（品質は quality-check とマージゲートで確かめる）

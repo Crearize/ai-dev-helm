@@ -93,7 +93,7 @@ More Windows shell rules (Git Bash path conversion, `taskkill`, encodings): `doc
 ### Phase 5: Quality Verification
 - Determine the change area **and risk level** first (quality policy §1); `quality-check` records it as `risk_level`
 - Run backend quality checks
-- Run frontend linting, formatting, build (after running the `lint-scaffolding` skill, `lint:all` is the registered static check command and `quality-check` Step 2 runs it as the deterministic check layer)
+- Run frontend linting, formatting, build (after running the `lint-scaffolding` skill, `lint:all` is the registered static check command and `quality-check` Step 2 runs it as the deterministic check layer); the production dependency audit `audit:prod`, when wired, is registered with it - not bundled into `lint:all`, non-blocking, run and recorded by `quality-check` Step 2
 - Run `quality-check` (the review roster and the additional tests included). It holds every review and quality-check rule; numbers (limits, budgets) live in `documents/development/quality-policy.md`. The lines below only name each rule - read the skill for the rule itself:
   - **Flow** (the skill's "実行フロー"): harness-only diffs skip the check; otherwise build and static checks, tests, the review roster, additional tests (`test-recommendation`), then the commit-bound flag `.quality-check-passed`.
   - **Merge gate** (the skill's "hook の完全な契約"): the quality-gate hook stops direct pushes/merges into main (or master) without a valid flag; feature-branch pushes are not gated. It stops accidents, not deliberate evasion. Run a push/merge as its own simple command; a refusal says how to rewrite the command.

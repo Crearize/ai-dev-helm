@@ -230,6 +230,8 @@ When compacting, keep: the user's instructions and answers, verbatim where possi
 
 After running the `lint-scaffolding` skill, register the generated `lint:all` command here as the static check command (`quality-check` Step 2 runs it as the deterministic check layer).
 
+Register the production dependency audit here too, when `lint-scaffolding` (3-5) wired it: `audit:prod` (for example `npm run audit:prod` = `npm audit --omit=dev --audit-level=high`, and the directory it runs in). It is not bundled into `lint:all` and does not block: `quality-check` Step 2 runs it, judges the findings and records them. Where it is not wired (a Gradle backend, for example), write that here.
+
 ### Backend
 ```bash
 # Add your backend commands here
