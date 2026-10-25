@@ -188,6 +188,16 @@
 //   `hooks/`, the `skills` node itself, `agents/`, `commands/`, `prompts/`,
 //   `rules/`, plus the hook's registration files (see GATE_CONTROL_PATTERNS,
 //   which is the authority).
+// Rule 4b (exemption, 3.7.0 #217): a release-please release - only
+//   CHANGELOG.md, package.json, package-lock.json and
+//   .release-please-manifest.json, with nothing changed in the JSON files but
+//   the top-level version (and packages[""].version), compared as parsed JSON
+//   (isReleaseOnly). It applies to a non-empty `<base>...HEAD` diff (merging
+//   or pushing the release branch) and to what a merge / fast-forward of the
+//   trunk takes in (judgeTrunkMove's gained range). It does not apply to the
+//   diff since a flag: commits added after a quality check still need a new
+//   one. On the trunk checkout the base diff is empty, so only the trunk-move
+//   path can take a release in there.
 // Rule 5 (fail-open, exactly twice): a payload whose `tool_input.command` is
 //   not a string (malformed JSON, a missing field) - unless `tool_name` is a
 //   shell tool (`Bash`, `PowerShell`): a shell call whose command cannot be
@@ -1179,6 +1189,7 @@ const GATE_CONTROL_PATTERNS = [
   /^\.claude\/settings(\.local)?\.json$/i,
   /^\.codex\/config\.toml$/i,
   /^\.(claude|codex|cursor)\/mcp\.json$/i,
+  /^\.mcp\.json$/i, // 3.7.0: the repository-root MCP registration (Claude Code)
 ];
 
 // Diffs made up entirely of these skip the gate (rule 4): the three config
@@ -1202,6 +1213,49 @@ const OVERRIDE_STRINGS = [/quality[-_\s]*gate[-_\s]*overrides/i, /mutation[-_\s]
 const isHarness = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f))
   || (HARNESS_DOC_RE.test(f) && HARNESS_DOC_DIRS.some((re) => re.test(f)));
 const controlHits = (files) => files.filter((f) => GATE_CONTROL_PATTERNS.some((re) => re.test(f)));
+
+// 3.7.0 (#217): a release-please release diff - the four release files only,
+// and in package.json / package-lock.json nothing but the top-level version
+// (and the lockfile's packages[""].version): no dependency, script, range,
+// resolved or integrity change, under any key name. The files are compared as
+// parsed JSON, not as diff lines (a nested "version" key - a dependency named
+// version, a "version" script, node_modules/<pkg>.version - looks like a
+// version line). extra-files of release-please-config.json are never exempt:
+// a pom.xml carries dependencies.
+const RELEASE_FILES = ['CHANGELOG.md', 'package.json', 'package-lock.json', '.release-please-manifest.json'];
+const RELEASE_VERSION = /^[0-9A-Za-z.+-]+$/;
+const isPlainJson = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+// `contents`: { file: { before, after } } of the JSON release files (null when absent on a side).
+function isReleaseOnly(files, contents) {
+  if (files.length === 0 || !files.every((f) => RELEASE_FILES.includes(f))) return false;
+  for (const file of files.filter((f) => f !== 'CHANGELOG.md')) {
+    const pair = contents && contents[file];
+    if (!pair || typeof pair.before !== 'string' || typeof pair.after !== 'string') return false;
+    let before; let after;
+    try { before = JSON.parse(pair.before); after = JSON.parse(pair.after); } catch { return false; }
+    if (!isPlainJson(before) || !isPlainJson(after)) return false;
+    if (file === '.release-please-manifest.json') {
+      // Only version values change: the same keys, each a version string on both sides.
+      const keys = Object.keys(before);
+      if (keys.length !== Object.keys(after).length || !keys.every((k) => Object.prototype.hasOwnProperty.call(after, k))) return false;
+      if (![...Object.values(before), ...Object.values(after)].every((v) => typeof v === 'string' && RELEASE_VERSION.test(v))) return false;
+      continue;
+    }
+    const strip = (doc) => {
+      if (typeof doc.version !== 'string' || !RELEASE_VERSION.test(doc.version)) return null;
+      const copy = JSON.parse(JSON.stringify(doc));
+      delete copy.version;
+      if (file === 'package-lock.json' && isPlainJson(copy.packages) && isPlainJson(copy.packages[''])) {
+        if (copy.packages[''].version !== undefined && copy.packages[''].version !== doc.version) return null;
+        delete copy.packages[''].version;
+      }
+      return JSON.stringify(copy);
+    };
+    const [a, b] = [strip(before), strip(after)];
+    if (a === null || b === null || a !== b) return false;
+  }
+  return true;
+}
 const gateConfigFiles = (files) => files.filter((f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f)));
 
 // --------------------------------------------------------------------------
@@ -1448,6 +1502,7 @@ function judgeTrunkMove(ctx, trunk, ref, reasons) {
   if (gained === null) return cannot(`what \`${ref}\` adds to ${t}`);
   const hits = controlHits(gained.files);
   if (hits.length === 0 && !gained.overrideChanged && gained.files.every(isHarness)) return allow(); // Rule 4.
+  if (gained.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
   let noFlag = reasons.noFlag;
   if (hits.length > 0) noFlag = controlReason(hits);
   else if (overrideOnly(gained)) noFlag = overrideReason(gained.files);
@@ -1548,6 +1603,7 @@ function contextRules(a, ctx, plan = null) {
   }
   const baseControl = controlHits(base.files);
   if (rule4Exempt(base, baseControl)) return allow();
+  if (base.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
   let noFlag = needFlagReason(a, branch);
   if (baseControl.length > 0) noFlag = controlReason(baseControl);
   else if (overrideOnly(base)) noFlag = overrideReason(base.files);
@@ -2020,8 +2076,8 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 //                 not a failure.
 //   isAncestor    true/false for `flag.commit..HEAD`, or null when git failed;
 //                 null when there is no flag (never reached in that case).
-//   diffSinceFlag `{ files, overrideChanged }`, or null on failure.
-//   diffSinceBase `{ files, overrideChanged }` for `<base>...HEAD` (BASE_REFS),
+//   diffSinceFlag `{ files, overrideChanged, releaseOnly }`, or null on failure.
+//   diffSinceBase `{ files, overrideChanged, releaseOnly }` for `<base>...HEAD` (BASE_REFS),
 //                 or null on failure. An absent base ref is an EMPTY diff (no
 //                 exemption), not null.
 //   resolveCommit(ref) the sha `ref` names, or null. ancestor(a, b): a is an
@@ -2127,7 +2183,9 @@ function judgedThere(verdict, there) {
 // not get to execute code through the gate.
 const SAFE_GIT = ['-c', 'core.fsmonitor=false'];
 const BASE_REFS = ['refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master'];
-const SAFE_DIFF = ['--no-ext-diff', '--no-textconv'];
+// --no-color: a user's color.ui=always would prefix each diff line with an
+// escape sequence and hide the +/- of a changed override string.
+const SAFE_DIFF = ['--no-ext-diff', '--no-textconv', '--no-color'];
 // No network either: in a partial clone a diff that needs a missing blob
 // would fetch it from the promisor remote (a stall, and a request the user
 // never approved), and a credential prompt would wait for input that never
@@ -2202,7 +2260,24 @@ function makeCtx(cwd) {
         (l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l) && OVERRIDE_STRINGS.some((re) => re.test(l))
       );
     }
-    return { files, overrideChanged };
+    let releaseOnly = false;
+    if (files.length > 0 && files.every((f) => RELEASE_FILES.includes(f))) {
+      // Both ends of the range: `X...HEAD` compares HEAD with the merge base, `A..B` B with A.
+      const three = range.includes('...');
+      const [left, right] = range.split(three ? '...' : '..');
+      let from = left;
+      if (three) {
+        const mb = git(['merge-base', left, right]);
+        if (!mb.ok) return fail('git-error');
+        from = mb.out.trim();
+      }
+      // cat-file reads the stored blob (no textconv); a side without the file is not a release diff.
+      const blob = (rev, f) => { const r = git(['cat-file', 'blob', `${rev}:${f}`]); return r.ok ? r.out : null; };
+      const contents = {};
+      for (const f of files.filter((name) => name !== 'CHANGELOG.md')) contents[f] = { before: blob(from, f), after: blob(right, f) };
+      releaseOnly = isReleaseOnly(files, contents);
+    }
+    return { files, overrideChanged, releaseOnly };
   };
 
   const flag = () => once('flag', () => {
@@ -2448,6 +2523,6 @@ function main() {
   });
 }
 
-module.exports = { classify, parseSimple, shellOf };
+module.exports = { classify, parseSimple, shellOf, isReleaseOnly };
 
 if (require.main === module) main();

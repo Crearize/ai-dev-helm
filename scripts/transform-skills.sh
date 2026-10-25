@@ -107,9 +107,14 @@ find "$DEST" -name '*.helm-sed-bak' -type f -delete
 find "$DEST" -name '*.md' -print0 | xargs -0 "$SCRIPT_DIR/fix-nested-fences.sh"
 
 # Files the harness does not ship: executing-plans/scripts (task-start/task-done
-# belong to upstream's native execution, which the harness replaces) and the
-# Muse tool mapping (an unsupported runtime).
-rm -rf "$DEST/executing-plans/scripts" "$DEST/using-superpowers/references/muse-tools.md"
+# belong to upstream's native execution, which the harness replaces), the Muse
+# tool mapping (an unsupported runtime), subagent-driven-development/references
+# (upstream v7's five-round fix loop and final whole-branch review contradict
+# the harness's review rounds, which its SKILL.md overlay defines) and
+# brainstorming/builder-check-prompt.md (the harness keeps no prompt of its own
+# for that check).
+rm -rf "$DEST/executing-plans/scripts" "$DEST/using-superpowers/references/muse-tools.md" \
+    "$DEST/subagent-driven-development/references" "$DEST/brainstorming/builder-check-prompt.md"
 
 # Policy lives in harness-owned overlays (scripts/skill-overlays), not line
 # patches: each overlay records the hash of the upstream file it was written

@@ -11,7 +11,7 @@
 # variants with identical rule bodies.
 # Not covered (documented): the tagged-template `it.only.each\`...\`` form -
 # reliably matching a tagged template of a member chain is out of scope in
-# ast-grep 0.45.1, so that spelling stays assigned to AI review.
+# ast-grep 0.45.1 and 0.51.0, so that spelling stays assigned to AI review.
 id: no-focused-test-ts
 language: TypeScript
 severity: error

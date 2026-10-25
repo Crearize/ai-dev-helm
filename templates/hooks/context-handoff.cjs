@@ -82,19 +82,42 @@ function redact(text) {
 function capture(text, max, total) {
   const s = String(text || '');
   const length = Math.max(Number(total) || 0, s.length);
-  if (length <= max) return { body: redact(s), length };
-  const head = redact(cut(s, max)).replace(OPEN_KEY_RE, '[REDACTED]');
+  // rest: original characters the body does not stand for (a cut-off tail, text that was never handed in). It is
+  // kept apart from the body's own length because redaction changes that length (3.7.0 cycle 1).
+  if (length <= max) return { body: redact(s), length, rest: length - s.length };
+  const kept = cut(s, max);
+  const head = redact(kept).replace(OPEN_KEY_RE, '[REDACTED]');
   let end = head.length;
   while (end > 0 && head.length - end < TAIL_DROP_MAX && /[\x21-\x7e]/.test(head[end - 1])) end -= 1;
-  return { body: head.slice(0, end), length };
+  return { body: head.slice(0, end), length, rest: (length - kept.length) + (head.length - end) };
 }
+
+// A capture saved before `rest` existed counts like before: the original length past the body.
+const restOf = (captured) => (Number.isInteger(captured.rest) && captured.rest >= 0 ? captured.rest : Math.max(captured.length - captured.body.length, 0));
 
 // Render a captured text in at most max characters; the omitted count is always taken from the original length.
 function show(captured, max, flat) {
   const body = flat ? captured.body.replace(/\s+/g, ' ').trim() : captured.body;
   const shown = cut(body, max);
-  const omitted = captured.length > max || shown.length < body.length;
-  return omitted ? `${shown}…（${Math.max(captured.length - shown.length, body.length - shown.length, 1)} 文字省略）` : shown;
+  // 3.7.0: count the ORIGINAL characters the shown text does not stand for - collapsed whitespace is not omitted text.
+  const consumed = flat ? rawPrefixFor(captured.body, shown.length) : shown.length;
+  // The count is in body characters past what is shown (a [REDACTED] stands for itself, so a secret's length never
+  // shows) plus the original characters the body never held.
+  const omitted = (captured.body.length - consumed) + restOf(captured);
+  if (shown.length >= body.length && restOf(captured) === 0 && captured.body.slice(consumed).trim() === '') return shown;
+  return `${shown}…（${Math.max(omitted, 1)} 文字省略）`;
+}
+
+// The shortest prefix of raw whose whitespace-collapsed form is at least n characters long (binary search).
+function rawPrefixFor(raw, n) {
+  const flatLength = (p) => raw.slice(0, p).replace(/\s+/g, ' ').replace(/^ /, '').length;
+  let lo = 0;
+  let hi = raw.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (flatLength(mid) >= n) hi = mid; else lo = mid + 1;
+  }
+  return lo;
 }
 
 function cleanText(text, max, total) {
@@ -605,7 +628,7 @@ async function main() {
       const instructions = capture(typeof input.custom_instructions === 'string' ? input.custom_instructions : '', 2000);
       // SessionStart (compact) rebuilds the record and reads these back, since its input has no trigger. The redacted
       // start and the original length are kept apart, so the omitted count is rendered once.
-      writePrivate(trigger, JSON.stringify({ reason, instructions: instructions.body, instructionsLength: instructions.length, at: Date.now() }));
+      writePrivate(trigger, JSON.stringify({ reason, instructions: instructions.body, instructionsLength: instructions.length, instructionsRest: instructions.rest, at: Date.now() }));
       await saveRecord({ ...base, reason, instructions });
     } else if (event === 'SessionEnd' && input.reason === 'clear') {
       writeMarker(input);
@@ -620,7 +643,7 @@ async function main() {
       }
       const fresh = Date.now() - Number(saved.at) <= COMPACT_TRIGGER_MAX_AGE_MS;
       const instructions = fresh && typeof saved.instructions === 'string'
-        ? { body: saved.instructions, length: validLength(saved.instructionsLength, saved.instructions.length) }
+        ? { body: saved.instructions, length: validLength(saved.instructionsLength, saved.instructions.length), ...(Number.isInteger(saved.instructionsRest) ? { rest: saved.instructionsRest } : {}) }
         : null;
       await restore({ ...base, reason: fresh && saved.reason ? saved.reason : 'compact', instructions });
     } else if (event === 'SessionStart' && input.source === 'clear') {
