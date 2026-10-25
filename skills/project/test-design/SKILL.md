@@ -5,7 +5,7 @@ description: 実装前に呼ぶ。High/Medium リスク変更のテストオラ�
 
 # Test Design Skill - テストオラクル起点のテスト設計
 
-導入先の補足ファイル `documents/development/project/test-design.md` があれば、その段で読む。
+導入先の補足ファイル `documents/development/project/test-design.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則（完了条件・レビュー体制・優先度・フラグ・hook の契約・止まる場面）を緩めない。食い違えば本スキルが優先する。
 
 ## 実行フロー
 

@@ -115,7 +115,7 @@ Windows PowerShell 5.1 で JSON を保存するときは `> file.json`（既定 
 
 - レビュー・品質チェックの規則（優先度の基準、巡の数、検証の巡、スピード優先モード、後回しのレビュー、完了条件、hook の完全な契約）の本文は `quality-check` スキル（本体と `references/`）だけに置くようになった。テンプレート（CLAUDE.md・AGENTS.md・.cursorrules）の「Quality Check Rules」「Design Confirmation Rules」「Autonomy Principles」は、規則の名前・1〜2 行の要約・正本への参照だけになった。導入先のルート規則の同じ節も、テンプレートの新しい節に置き換える（導入先の独自の節は残す）。
 - `quality-check`・`test-recommendation`・`lint-scaffolding`・`test-design` は、本体（`SKILL.md`）と、その段で読む `references/` に分かれた。スキルを実コピーで持つ導入先は `references/` も写す。
-- 各スキルは、導入先の補足ファイル `documents/development/project/<スキル名>.md` があれば、その段で読む。導入先がスキルの本体に足した製品の当てはめ（コマンド・パス・ポートなど）は、このファイルへ移す。
+- 各スキルは、導入先の補足ファイル `documents/development/project/<スキル名>.md` があれば、その段で読む。補足ファイルは製品への当てはめだけを持ち、スキルの規則を緩めない（食い違えばスキルが優先する）。導入先がスキルの本体に足した製品の当てはめ（コマンド・パス・ポートなど）は、このファイルへ移す。
 - ゲート制御面に、リポジトリ直下の `.mcp.json` が入った。release-please のリリースの PR の差分は、条件を満たせば免除される（`quality-check`「ハーネスのみ変更の免除」の「リリースの差分の免除」）。
 
 ## 計測の範囲

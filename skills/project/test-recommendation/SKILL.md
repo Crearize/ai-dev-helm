@@ -5,7 +5,7 @@ description: 変更内容からミューテーション/E2Eの推奨度を判定
 
 # Test Recommendation Skill - 追加テストの判定と実施
 
-導入先の補足ファイル `documents/development/project/test-recommendation.md` があれば、その段で読む。
+導入先の補足ファイル `documents/development/project/test-recommendation.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則（完了条件・レビュー体制・優先度・フラグ・hook の契約・止まる場面）を緩めない。食い違えば本スキルが優先する。
 
 ## 実行フロー
 
@@ -36,7 +36,7 @@ Step 5: 永続台帳の更新 + 記録
 
 ## 止まる条件（例外）
 
-途中で区切るのは `documents/development/development-policy.md` §1.0「承認後の進め方」の例外に当たる次の 2 つだけ（手順と選択肢は参照ファイルの文が正）。
+途中で区切るのは `documents/development/development-policy.md` §1.0「承認後の進め方」の例外だけ。このスキルに固有のものは次の 2 つ（手順と選択肢は参照ファイルの文が正。X6・X8 などの共通の例外は、どの段でも当たる）。
 
 - X5: 実施した E2E の修正 → 再検証が、上限の回数で緑にならない（Step 4。[references/step4-e2e.md](references/step4-e2e.md)）
 - X7: 永続台帳が読み取れない・フォーマットが逸脱している（Step 1・Step 5。[references/step5-ledger.md](references/step5-ledger.md)）

@@ -5,7 +5,7 @@ description: init 直後またはスタック変更時に実行。静的チェ�
 
 # Lint Scaffolding Skill - 決定的チェック層の配線
 
-導入先の補足ファイル `documents/development/project/lint-scaffolding.md` があれば、その段で読む。
+導入先の補足ファイル `documents/development/project/lint-scaffolding.md` があれば、その段で読む。補足ファイルは製品への当てはめ（コマンド・パス・ポート等）だけを持ち、本スキルの規則（完了条件・レビュー体制・優先度・フラグ・hook の契約・止まる場面）を緩めない。食い違えば本スキルが優先する。
 
 ## 最重要ルール
 
@@ -14,7 +14,7 @@ description: init 直後またはスタック変更時に実行。静的チェ�
 - 成果物は3つ: **カバレッジマップ（採否台帳）**・**`lint:all` コマンド**・**レビューガイドへの反映**
 - カテゴリを採用しない場合も「AI レビュー担保」に割り当てて理由を記録する。**チェック自体が黙って消えることは許さない**（カタログ §3）
 - 配線した Lint 資産は**実際に実行して動くことを確認するまで配線完了としない**
-- `quality-check` スキルの Step 2 は、`lint:all` が定義されていればそれを静的チェックコマンドとして使う（`quality-check` SKILL.md 側に規定済み）。本スキルはその `lint:all` を整備する側である
+- `quality-check` スキルの Step 2 は、`lint:all` が定義されていればそれを静的チェックコマンドとして使う（`quality-check` スキル 側に規定済み）。本スキルはその `lint:all` を整備する側である
 
 数値（修正サイクル上限・ミューテーションの実行時間バジェット等）は本スキルに置かない。`documents/development/quality-policy.md` §2 / §5 を正とする。
 
