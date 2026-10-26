@@ -419,7 +419,7 @@ const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
 // letters (値 / 2).
 const JS_NAME_START = String.raw`(?:[\w$]|(?![\s\u2028\u2029\ufeff])[\u0080-\uffff])`;
 const JS_TOKEN_RE = new RegExp(String.raw`\s+|"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
-  String.raw`|\/\/[^\r\n]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(` +
+  String.raw`|\/\/[^\r\n\u2028\u2029]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(` +
   String.raw`|\d[\w$]*(?:\.[\w$]*)?|${JS_NAME_START}+|\+\+|--|[\s\S]`, 'y');
 const JS_NAME_TOKEN_RE = new RegExp(`^${JS_NAME_START}`);
 const JS_REGEX_RE = new RegExp(String.raw`\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`, 'y');
@@ -510,14 +510,19 @@ function jsStringValue(literal) {
 }
 
 // The tokens of exec's JavaScript from pos, telling a regex literal from a division by the last token that is not a
-// space or a comment (a word after "." is a property name). seek() goes on from another position.
+// space or a comment (a word after "." or "#" is a property name). seek() goes on from another position.
 function jsLexer(code, pos, last = null) {
   const token = new RegExp(JS_TOKEN_RE.source, 'y');
   const regex = new RegExp(JS_REGEX_RE.source, 'y');
   let prev = last;
+  let before = null; // the token before prev
   let afterDot = false;
   const regexStarts = () => {
     if (prev === null || prev.endsWith('(')) return true; // also after a call's "tools.name("
+    // for (const m of /'/g ...): "of" after a name, "]" or "}" is for-of's (a variable named of divides: x = of / 2).
+    if (prev === 'of' && !afterDot && before !== null) {
+      return before === ']' || before === '}' || (JS_NAME_TOKEN_RE.test(before) && !JS_REGEX_AFTER_WORDS.has(before));
+    }
     if (JS_NAME_TOKEN_RE.test(prev)) return !afterDot && JS_REGEX_AFTER_WORDS.has(prev);
     if (/^["'`/]/.test(prev) && prev.length > 1) return false; // after a literal
     return !/^(?:[)\]}]|\+\+|--)$/.test(prev);
@@ -526,9 +531,10 @@ function jsLexer(code, pos, last = null) {
     get pos() {
       return pos;
     },
-    seek(at, before) {
+    seek(at, last) {
       pos = at;
-      prev = before;
+      prev = last;
+      before = null;
       afterDot = false;
     },
     // { text, call } or null at the end. call is the tools.* name when the token is a call's "tools.name(".
@@ -545,7 +551,8 @@ function jsLexer(code, pos, last = null) {
       const text = match[0];
       pos += text.length;
       if (!/^(?:\s|\/\/|\/\*)/.test(text)) {
-        afterDot = prev === '.';
+        afterDot = prev === '.' || prev === '#';
+        before = prev;
         prev = text;
       }
       return { text, call: match[1] };
@@ -681,6 +688,28 @@ function parseJson(text) {
   }
 }
 
+// The lines of a JSONL file, split at "\n" only (a "\r" before it is dropped). readline also ends a line at U+2028 and
+// U+2029, which Codex (serde_json) leaves raw inside a JSON string. The pieces of a long line are joined once.
+async function* jsonlLines(file) {
+  let pending = [];
+  const line = () => {
+    const text = pending.join('');
+    pending = [];
+    return text.endsWith('\r') ? text.slice(0, -1) : text;
+  };
+  for await (const chunk of fs.createReadStream(file, { encoding: 'utf8' })) {
+    let start = 0;
+    let end;
+    while ((end = chunk.indexOf('\n', start)) !== -1) {
+      pending.push(chunk.slice(start, end));
+      yield line();
+      start = end + 1;
+    }
+    if (start < chunk.length) pending.push(chunk.slice(start));
+  }
+  if (pending.length) yield line();
+}
+
 // The same record readTranscript builds, from a Codex rollout ({timestamp, type, payload} per line). Only the
 // response_item lines are read for the conversation: event_msg differs between the Legacy and Paginated history
 // modes, response_item does not.
@@ -706,8 +735,7 @@ async function readCodexRollout(file) {
     if (last && last.text.body === text.body && last.text.length === text.length) last.at = at;
     else record.ops.push({ at, text });
   };
-  const lines = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
-  for await (const line of lines) {
+  for await (const line of jsonlLines(file)) {
     if (!line.includes('"response_item"') && !line.includes('"session_meta"') && !line.includes('"turn_context"') && !line.includes('"compacted"')) continue;
     const entry = parseJson(line);
     if (!entry || typeof entry !== 'object' || !entry.payload || typeof entry.payload !== 'object') continue;
