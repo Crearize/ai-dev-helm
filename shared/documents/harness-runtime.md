@@ -123,7 +123,7 @@ Codex での動き（3.7.1）:
 - **戻す要点**: Codex の既定の上限（2,500 トークン。UTF-8 のバイト数 ÷ 4 で数え、超えるとファイルに置かれる）に収まるよう、9,000 バイト以内に縮める（`additionalContextLimit` は信頼のハッシュの対象なので設定しない）。全文はファイルに書き、パスを添える。
 - **置き場所**: `$CODEX_HOME/context-handoff/<git のルート>/`（`CODEX_HOME` が無ければ `~/.codex`）。プロジェクトは hook の cwd の `git rev-parse --show-toplevel` で決める（Codex の hook には `CLAUDE_PROJECT_DIR` が無い）。消す期限は 30 日。
 - **何もしないとき**: 入力の `transcript_path` が null・読めない（rollout を探し回らない）、古い圧縮された記録（`.jsonl.zst`）、サブエージェントのコンパクト（`agent_id` がある）。文脈の大きさの知らせ（Claude Code の `Stop`）は Codex では出さない。
-- **終了コード**: 本体は常に 0 で、`Stop` では何も出力しない。登録は 3.3.0 の Codex のラッパーと同じ形で（文字列は以後変えない）、本体や git が無いときは exit 1 で終わる。Codex は exit 1 を失敗したフックとして表示するだけで、コンパクトも会話も止めない（Codex が止める・続けさせるのは、`Stop` の exit 2（stderr に理由があるとき）と `continue: false` などの JSON だけ）。
+- **終了コード**: 本体は常に 0 で、`Stop` では何も出力しない。登録は 3.3.0 の Codex のラッパーと同じ形で（文字列は以後変えない）、本体や git が無いときは exit 1 で終わる。Codex は exit 1 を失敗したフックとして表示するだけで、コンパクトも会話もそのまま進む（Codex が終了コードや出力で動きを変えるのは、`Stop` の exit 2（stderr に理由があるとき）と `continue: false` などの JSON だけ）。
 - **信頼**: 新しい 3 件は、Codex の起動時の確認（Hooks need review）で利用者が信頼するまで動かない（下の「Codex のフックの信頼」）。各イベントの配列の末尾に足すだけなので、quality-gate・review-budget の信頼と MCP の承認はそのまま。
 
 効く範囲と限界:
