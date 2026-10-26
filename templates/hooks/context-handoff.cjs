@@ -412,16 +412,17 @@ const SESSION_META_BYTES = 8192; // session_meta's source sits within the first 
 // '...' or `...`) has one way to match each character, so these stay linear.
 const JS_STRING = String.raw`("(?:[^"\\\r\n]|\\[\s\S])*"|'(?:[^'\\\r\n]|\\[\s\S])*'|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`)';
 const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
-// The tokens of exec's JavaScript that hide a call: a regex literal, a string literal and a comment. An unterminated
-// literal runs to the end of its line (`...` to the end of the script) and an unterminated comment to the end, so
-// every token matches where it starts and the scan reads each character once. A regex literal (/'/g, /\/*$/,
-// /[{(]/) is a "/" where an expression starts (not after a name, a number or ")"): read as anything else, its quote,
-// "/*" or bracket would hide the calls after it. A call inside a template literal's ${...} is not read.
-const JS_REGEX = String.raw`(?<=(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn|\btypeof)\s*)\/(?![*/])(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`;
-const JS_SKIP = `${JS_REGEX}|` + String.raw`"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
-  String.raw`|\/\/[^\r\n]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?`;
-const EXEC_CALL_RE = new RegExp(`${JS_SKIP}|\\btools\\.(apply_patch|exec_command|shell_command)\\(`, 'g');
-const EXEC_ARG_TOKEN_RE = new RegExp(`\\s+|${JS_SKIP}|[\\w$]+|[\\s\\S]`, 'y');
+// The tokens of exec's JavaScript (jsLexer). A string literal, a regex literal and a comment hide the calls written in
+// them. An unterminated literal runs to the end of its line (`...` to the end of the script) and an unterminated
+// comment to the end, so every token matches where it starts and each character is read once. A call inside a
+// template literal's ${...} is not read.
+const JS_TOKEN_RE = new RegExp(String.raw`\s+|"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
+  String.raw`|\/\/[^\r\n]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(|[\w$]+|\+\+|--|[\s\S]`, 'y');
+const JS_REGEX_RE = new RegExp(String.raw`\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`, 'y');
+// A "/" is a regex literal (/'/g, /\/*$/, /[{(]/) where an expression starts: at the start, after an operator or
+// punctuation, or after one of these words. After a name, a number, a literal, ")", "]", "}", "++" or "--" it divides
+// (so `if (a) /'/.test(s)` is read as a division).
+const JS_REGEX_AFTER_WORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'await', 'yield']);
 const EXEC_PATCH_ARG_RE = new RegExp(String.raw`\s*` + JS_STRING, 'y');
 const EXEC_OBJECT_START_RE = /\s*\{/y;
 const EXEC_CODE_MAX = 500000;
@@ -503,18 +504,61 @@ function jsStringValue(literal) {
   });
 }
 
+// The tokens of exec's JavaScript from pos, telling a regex literal from a division by the last token that is not a
+// space or a comment (a word after "." is a property name). seek() goes on from another position.
+function jsLexer(code, pos, last = null) {
+  const token = new RegExp(JS_TOKEN_RE.source, 'y');
+  const regex = new RegExp(JS_REGEX_RE.source, 'y');
+  let prev = last;
+  let afterDot = false;
+  const regexStarts = () => {
+    if (prev === null || prev.endsWith('(')) return true; // also after a call's "tools.name("
+    if (/^[\w$]/.test(prev)) return !afterDot && JS_REGEX_AFTER_WORDS.has(prev);
+    if (/^["'`/]/.test(prev) && prev.length > 1) return false; // after a literal
+    return !/^(?:[)\]}]|\+\+|--)$/.test(prev);
+  };
+  return {
+    get pos() {
+      return pos;
+    },
+    seek(at, before) {
+      pos = at;
+      prev = before;
+      afterDot = false;
+    },
+    // { text, call } or null at the end. call is the tools.* name when the token is a call's "tools.name(".
+    next() {
+      if (pos >= code.length) return null;
+      let match;
+      if (code[pos] === '/' && code[pos + 1] !== '/' && code[pos + 1] !== '*' && regexStarts()) {
+        regex.lastIndex = pos;
+        match = regex.exec(code);
+      } else {
+        token.lastIndex = pos;
+        match = token.exec(code);
+      }
+      const text = match[0];
+      pos += text.length;
+      if (!/^(?:\s|\/\/|\/\*)/.test(text)) {
+        afterDot = prev === '.';
+        prev = text;
+      }
+      return { text, call: match[1] };
+    },
+  };
+}
+
 // The cmd / command string of the object literal whose '{' is at code[start], read at its top level in any order
 // ({workdir: "/w", cmd: "git push"}), and the index after the object.
 function execCommandArg(code, start) {
-  const token = new RegExp(EXEC_ARG_TOKEN_RE.source, 'y');
-  token.lastIndex = start + 1;
+  const lexer = jsLexer(code, start + 1, '{');
   let depth = 1;
   let key = null;
   let expect = 'key'; // what comes next at the top level: 'key', 'colon', 'value' or null (the rest of a value)
   let command = null;
-  let match;
-  while (depth > 0 && (match = token.exec(code)) !== null) {
-    const t = match[0];
+  let tok;
+  while (depth > 0 && (tok = lexer.next()) !== null) {
+    const t = tok.text;
     if (/^(?:\s|\/\/|\/\*)/.test(t)) continue;
     if (depth === 1) {
       const literal = JS_STRING_FULL.test(t);
@@ -530,36 +574,36 @@ function execCommandArg(code, start) {
       if (expect === 'value' && literal && (key === 'cmd' || key === 'command')) command = jsStringValue(t);
       expect = t === ',' ? 'key' : null;
     }
-    if ('{[('.includes(t)) depth += 1;
-    else if ('}])'.includes(t)) depth -= 1;
+    if (t === '{' || t === '[' || t === '(' || tok.call) depth += 1;
+    else if (t === '}' || t === ']' || t === ')') depth -= 1;
   }
-  return { command, end: token.lastIndex || code.length };
+  return { command, end: lexer.pos };
 }
 
 // The patches and commands of the tools.apply_patch / exec_command / shell_command calls in exec's JavaScript, in
 // order. A call written in a string literal (a patch, a heredoc) or a comment is not one the script makes.
 function execCalls(code) {
   const calls = [];
-  const scan = new RegExp(EXEC_CALL_RE.source, 'g');
-  let match;
-  while ((match = scan.exec(code)) !== null) {
-    if (!match[1]) continue;
-    if (match[1] === 'apply_patch') {
+  const lexer = jsLexer(code, 0);
+  let tok;
+  while ((tok = lexer.next()) !== null) {
+    if (!tok.call) continue;
+    if (tok.call === 'apply_patch') {
       const arg = new RegExp(EXEC_PATCH_ARG_RE.source, 'y');
-      arg.lastIndex = scan.lastIndex;
+      arg.lastIndex = lexer.pos;
       const literal = arg.exec(code);
       if (!literal) continue;
       calls.push({ patch: jsStringValue(literal[1]) });
-      scan.lastIndex = arg.lastIndex;
+      lexer.seek(arg.lastIndex, literal[1]);
       continue;
     }
     const open = new RegExp(EXEC_OBJECT_START_RE.source, 'y');
-    open.lastIndex = scan.lastIndex;
+    open.lastIndex = lexer.pos;
     if (!open.exec(code)) continue;
     // The object is read once here, and the scan goes on after it.
     const { command, end } = execCommandArg(code, open.lastIndex - 1);
     if (command !== null) calls.push({ command });
-    scan.lastIndex = end;
+    lexer.seek(end, '}');
   }
   return calls;
 }
