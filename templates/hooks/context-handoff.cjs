@@ -412,10 +412,13 @@ const SESSION_META_BYTES = 8192; // session_meta's source sits within the first 
 // '...' or `...`) has one way to match each character, so these stay linear.
 const JS_STRING = String.raw`("(?:[^"\\\r\n]|\\[\s\S])*"|'(?:[^'\\\r\n]|\\[\s\S])*'|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`)';
 const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
-// The tokens of exec's JavaScript that hide a call: a string literal and a comment. An unterminated literal runs to
-// the end of its line (`...` to the end of the script) and an unterminated comment to the end, so every token
-// matches where it starts and the scan reads each character once.
-const JS_SKIP = String.raw`"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
+// The tokens of exec's JavaScript that hide a call: a regex literal, a string literal and a comment. An unterminated
+// literal runs to the end of its line (`...` to the end of the script) and an unterminated comment to the end, so
+// every token matches where it starts and the scan reads each character once. A regex literal (/'/g, /\/*$/,
+// /[{(]/) is a "/" where an expression starts (not after a name, a number or ")"): read as anything else, its quote,
+// "/*" or bracket would hide the calls after it. A call inside a template literal's ${...} is not read.
+const JS_REGEX = String.raw`(?<=(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn|\btypeof)\s*)\/(?![*/])(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`;
+const JS_SKIP = `${JS_REGEX}|` + String.raw`"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
   String.raw`|\/\/[^\r\n]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?`;
 const EXEC_CALL_RE = new RegExp(`${JS_SKIP}|\\btools\\.(apply_patch|exec_command|shell_command)\\(`, 'g');
 const EXEC_ARG_TOKEN_RE = new RegExp(`\\s+|${JS_SKIP}|[\\w$]+|[\\s\\S]`, 'y');
