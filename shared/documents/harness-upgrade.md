@@ -9,13 +9,14 @@
 AI が行います。オーナーの作業はありません。
 
 1. 更新用のブランチを作る（`chore/harness-<新版>` など）。
-2. `npx -y @crearize/ai-dev-helm@<新版> upgrade --plan` で、何が起きるかを確かめる（何も書かない）。扱いの一覧（置換・三者マージ・衝突・新規・削除・削除を保持・seed・宣言で外す・登録の変更）、推した構成（3.7.0 より前のマニフェスト）、「二重登録のおそれ」が出る。
+2. `npx -y @crearize/ai-dev-helm@<新版> upgrade --plan` で、何が起きるかを確かめる（何も書かない）。扱いの一覧（置換・三者マージ・衝突・新規・削除・削除を保持・seed・宣言で外す・登録の変更）、推した構成（3.7.0 より前のマニフェスト）、「二重登録のおそれ」、警告（`Warnings`。`.cursorrules`・`.cursor/rules/` や `.codex/` があるのに `tools` にそのツールが無い — そのツールのファイルは入らず更新もされない）が出る。
 3. `npx -y @crearize/ai-dev-helm@<新版> upgrade --record <導入先の外のファイル>` で更新する。最後に照合が自動で走る。
-4. 保留（`pending`）があれば解消する。各 `<file>.ai-dev-helm-new` を対応するファイルと比べ、導入先の独自の内容を残して新版の変更を取り込み、`.ai-dev-helm-new` を消してから `upgrade --resolve <path>` で保留から外す。ルート規則のブロックの衝突（`CLAUDE.md#harness` など）は、`CLAUDE.md.ai-dev-helm-new`（新版のファイル全体）の同じブロックの中身を取り込んで `--resolve CLAUDE.md#harness`。目印が無くて囲めなかったブロックは、下の「初回の移行」の 3 に従って囲んでから `--resolve`。保留を解消したら（hook 本体の衝突を直したときは必ず）、`upgrade` をもう一度実行する（保留のファイルは衝突したときの版を比較元にして比べ直すので、新版の変更が抜けていれば保留のまま残る。hook の登録もここで今の形になり、マニフェストの `complete` が更新される）。`--resolve` は、中身が衝突したときから変わっていない（`.ai-dev-helm-new` を取り込まずに消した）・空のときは拒否する。解消したファイル・ブロックは記録に「resolved by hand」として一覧で出るので、新版の変更を取り込めているかは更新の PR のレビューで確かめる（手でのマージは規則では判定できないため。照合は、衝突したときの中身に戻っていれば未導入にする）。
+4. 保留（`pending`）があれば解消する。各 `<file>.ai-dev-helm-new` を対応するファイルと比べ、導入先の独自の内容を残して新版の変更を取り込み、`.ai-dev-helm-new` を消してから `upgrade --resolve <path>` で保留から外す（`--resolve <path> <path> …` で複数をまとめて外せる。全部を先に確かめ、1 つでも通らなければ何も書かない）。ルート規則のブロックの衝突（`CLAUDE.md#harness` など）は、`CLAUDE.md.ai-dev-helm-new`（新版のファイル全体）の同じブロックの中身を取り込んで `--resolve CLAUDE.md#harness`。目印が無くて囲めなかったブロックは、下の「初回の移行」の 3 に従って囲んでから `--resolve`。保留を解消したら（hook 本体の衝突を直したときは必ず）、`upgrade` をもう一度実行する（保留のファイルは衝突したときの版を比較元にして比べ直すので、新版の変更が抜けていれば保留のまま残る。hook の登録もここで今の形になり、マニフェストの `complete` が更新される）。`--resolve` は、中身が衝突したときから変わっていない（`.ai-dev-helm-new` を取り込まずに消した）・空のときは拒否する（衝突の後に宣言（`reviewBudgetScript`・`skillTargets`）を変えて `upgrade` をやり直しても同じ）。解消したファイル・ブロックは記録に「resolved by hand」として一覧で出る（照合で新版と一致したものも出る。local の区切りやブロックの外の製品の節は照合から外れるため）ので、新版の変更を取り込めているかは更新の PR のレビューで確かめる（手でのマージは規則では判定できないため。照合は、衝突したときの中身に戻っていれば未導入にする）。
 5. `npx -y @crearize/ai-dev-helm@<新版> upgrade --verify` が終了コード 0 になることを確かめる（未導入 0・保留 0）。
-6. `npx -y @crearize/ai-dev-helm@<新版> hook-selftest` が全件通ることを確かめる（hook の判定表に加えて、登録が各 1 回・Codex の登録が呼ぶ実体がある・hook の写しが配布物と一致・スキルの写しが互いに一致）。
-7. Codex を使う導入先で `.codex/hooks.json` が変わったら、`/hooks` で信頼し直す（下の「Codex の信頼」）。
-8. quality-check（「ハーネスの更新の PR」の扱い — 下）→ PR → マージ。PR の本文に、`--record` の記録の「宣言で外したものの配布元の変更」の一覧を載せる。
+6. 記録の Changes に `.claude/settings.json` が出たら、導入先で `claude doctor` を実行し、出力に `Invalid settings` の節が無い（設定の読み込みの誤りが無い）ことを確かめる。`claude doctor` は対話なしで終わるが、誤りがあっても終了コードは 0 なので、出力で判断する。
+7. `npx -y @crearize/ai-dev-helm@<新版> hook-selftest` が全件通ることを確かめる（hook の判定表に加えて、登録が各 1 回・Codex の登録が呼ぶ実体がある・hook の写しが配布物と一致・スキルの写しが互いに一致。照合した項目は `ok install:` の行で出る）。
+8. `.codex/hooks.json` が変わったら、Codex を使う人は `/hooks` で信頼し直す（下の「Codex の信頼」）。
+9. quality-check（「ハーネスの更新の PR」の扱い — 下）→ PR → マージ。PR の本文に、`--record` の記録の「宣言で外したものの配布元の変更」の一覧を載せる。
 
 ### 結果の見方
 
@@ -26,40 +27,41 @@ AI が行います。オーナーの作業はありません。
 - **配布物から消えたファイル**: 導入先が旧版のままなら消す。変えていれば残して一覧に出す。
 - **宣言で外したもの**: 触らない。配布元で変わっていれば、記録に差分付きで出す（止めない）。取り込むかを PR のレビューで判断する。
 - **未導入**: どれにも当たらないもの。終了コード 1。`upgrade` をやり直すか、理由があれば宣言する。
+- **読み替えの書き戻し**（記録の `references read as the layout`）: `skillTargets`・`reviewBudgetScript` の読み替え（文書の `skills/<木>/`、ルート規則の `.codex/skills/<木>/`・`.cursor/skills/<木>/`、review-budget の呼び出し）で文が変わるファイルを、読み替えた形で書き戻した。ルート規則では管理ブロックの外の製品の節も同じ読み替えだけを当てる（ほかの文字は変えない）。宣言した後の最初の `upgrade` で一度だけ起き、2 回目からは変わらない。
 
 比べるときは BOM を除いて改行を LF にそろえ、書き戻すときは導入先のそのファイルの改行（CRLF / LF）と BOM に合わせます。git で管理しているファイルには `.backup.<時刻>` を作りません（git の履歴で戻せるため）。
 
-旧版の配布物は `npm pack` で取ります（3 回まで取り直し、取れなければ何も書かずに終了する）。オフラインのときは、展開した旧版のパッケージを `--base-dir <dir>` で渡します。旧版のパッケージと描画は、版と構成ごとに利用者のキャッシュ（Windows は `%LOCALAPPDATA%\ai-dev-helm\render-cache`、ほかは `$XDG_CACHE_HOME` か `~/.cache` の下の `ai-dev-helm/render-cache`）に残し、同じ版の `--plan`・`upgrade`・`--verify` では作り直しません。キャッシュは実行するコードを含むので、共有の一時フォルダーには置かず、持ち主が自分でない・ほかの利用者が書ける場所なら使いません。
+旧版の配布物は `npm pack` で取ります（3 回まで取り直し、取れなければ何も書かずに終了する）。オフラインのときは、展開した旧版のパッケージを `--base-dir <dir>` で渡します。旧版のパッケージと描画は、版と構成ごとに利用者のキャッシュ（Windows は `%LOCALAPPDATA%\ai-dev-helm\render-cache`、ほかは `$XDG_CACHE_HOME` か `~/.cache` の下の `ai-dev-helm/render-cache`）に残し、同じ版の `--plan`・`upgrade`・`--verify` では作り直しません。キャッシュは実行するコードを含むので、共有の一時フォルダーには置かず、持ち主が自分でない・ほかの利用者が書ける場所なら使いません。キャッシュは別々に作ってから置くので、並行して動く upgrade どうしが互いの置き先を消すことはありません。未完成の置き先（3.7.0 以前の版が中で書いている途中のもの、途中で終わった実行が残したもの）は消さずに待ち、30 秒たっても未完成ならその実行はキャッシュを使わずに進めて、警告にその置き先を出します。upgrade が動いていないときに、その置き先を手で消してください。
 
 `upgrade` は、マニフェストより古い版では実行しません（新しい版の導入先を古い版で戻さない）。`--plan`・`--verify` と `--resolve` は一緒に使えません。
 
 ### ハーネスの更新の PR の quality-check
 
 - 完了条件に「`upgrade --verify` が終了コード 0」を入れる。
-- レビューの対象は、三者マージしたファイル・衝突を直したファイル・宣言（`.ai-dev-helm.json`）の変更・導入先の補足ファイル（`documents/development/project/`）だけ。照合で「新版と一致」と分かったファイルは、配布元の quality-check で確認済みなので見ない。共通コンテキストは `--record` の記録からこの範囲を作る。対象が無ければ（すべて新版と一致）、Step 4 は統合レビュアー 1 体が記録と宣言だけを確かめる。
+- レビューの対象は、三者マージしたファイル・衝突を直したファイル・宣言（`.ai-dev-helm.json`）の変更・導入先の補足ファイル（`documents/development/project/`）・記録の `references read as the layout` に出たルート規則（管理ブロックの外の製品の節の差分）だけ。照合で「新版と一致」と分かったファイルは、配布元の quality-check で確認済みなので見ない。共通コンテキストは `--record` の記録からこの範囲を作る。対象が無ければ（すべて新版と一致）、Step 4 は統合レビュアー 1 体が記録と宣言だけを確かめる。
 - 「宣言で外したものの配布元の変更」の一覧をレビュアーに渡し、取り込みの要否を見る。
 
 ## 構成と宣言（`.ai-dev-helm.json`）
 
-`upgrade` はマニフェストの構成を読み、同じ構成で描画します。引数（`--project-name`・`--tools`・`--stacks`・`--skills`）で上書きできます。配布元が書くキーだけを書き換え、導入先の独自のキー（`reviewBudgetScript` など）は残します。
+`upgrade` はマニフェストの構成を読み、同じ構成で描画します。引数（`--project-name`・`--tools`・`--stacks`・`--skills`）で上書きできます（上書きはマニフェストに記録される）。`upgrade` は `tools` を勝手に足しません（導入先の宣言を変えるのは更新の作業として `--tools` で行う）。配布元が書くキーだけを書き換え、導入先の独自のキー（`reviewBudgetScript` など）は残します。
 
 | キー | 中身 |
 |---|---|
 | `version` / `upgradedFrom` / `appliedAt` / `complete` | 記録した版・直前の版・適用の時刻・未導入と保留が無いか |
-| `tools` / `stacks` / `skillScope` / `skills` / `projectName` | 描画の構成。配布元に無いスタック名（`custom-*`）は、エラーにせずそのスタックの部品を入れないだけ |
+| `tools` / `stacks` / `skillScope` / `skills` / `projectName` | 描画の構成。配布元に無いスタック名（`custom-*`）は、エラーにせずそのスタックの部品を入れないだけ。`tools` は全導入先で claude-code・codex・cursor の 3 つを前提にする（どれも使われうるため。`init` の既定も 3 つ）。使わないツールのルート規則・hook の登録は、そのツールを起動しない限り動かないだけで害は無い |
 | `exclude` | 入れない部品（`{ "part": "lint" | "review-guides" | "superpowers" | <スキル名>, "reason": "…" }`）かパス（`{ "path": "<glob>", "reason": "…" }`） |
 | `owned` | 配布元が書かないパス（`{ "path": "<glob>", "reason": "…" }`）。既定で `documents/development/project/**` |
 | `seed` | 無いときだけ作るパス。既定で `documents/development/error-codes.md`・`naming-conventions.md`・`coding-rules/**`・`test-recommendation-ledger.md` |
 | `pending` | 衝突が残ったファイル（`{ path, baseVersion }`、ルート規則のブロックは `block` 付き） |
-| `skillTargets` | スキルの木ごとの置き先（例 `{ "project": [".claude/skills"] }`） |
-| `settings.mergeDeny` | `false` で `permissions.deny` をマージしない（下の保護ブランチの拒否も足さない） |
-| `gate.script` / `reviewBudgetScript` | 配布の `quality-gate.cjs` / `review-budget.cjs` の代わりに登録する導入先のゲート・review-budget の実体（リポジトリ直下からの相対パス。`.cjs` / `.mjs` / `.js`）。登録は配布と同じ形のラッパーで宣言のパスを呼び、配布の本体は写さない（どれかの登録（Codex など）が配布の写しを呼び続けていれば、その写しは普通の hook 本体として更新・照合する。どの登録も呼ばない写しは更新しないので、宣言した実体が配布の本体を `require` するなら、宣言をやめるか、その実体の側で版をそろえる）。`hook-selftest` は配布の判定表をこの実体に当てる |
+| `skillTargets` | スキルの木ごとの置き先（例 `{ "project": [".claude/skills"] }`）。文書とルート規則の `skills/<木>/`、ルート規則の `.codex/skills/<木>/`・`.cursor/skills/<木>/` は置き先に読み替えて入れる。置き先、または git で追跡しているファイルがあるスキルのディレクトリ（`/.claude/skills`・`/.codex/skills`・`/.cursor/skills`）は `.gitignore` に足さない（既に足された行は消さないので、要らなければ更新の PR で消す） |
+| `settings.mergeDeny` | `false` で `permissions.deny` をマージしない（下の保護ブランチの拒否も足さない。無い `permissions` / `allow` も作らない） |
+| `gate.script` / `reviewBudgetScript` | 配布の `quality-gate.cjs` / `review-budget.cjs` の代わりに登録する導入先のゲート・review-budget の実体（リポジトリ直下からの相対パス。`.cjs` / `.mjs` / `.js`）。登録は配布と同じ形のラッパーで宣言のパスを呼び、配布の本体は写さない（どれかの登録（Codex など）が配布の写しを呼び続けていれば、その写しは普通の hook 本体として更新・照合する。どの登録も呼ばない写しは更新しないので、宣言した実体が配布の本体を `require` するなら、宣言をやめるか、その実体の側で版をそろえる）。`hook-selftest` は配布の判定表をこの実体に当てる（判定表の一時リポジトリは main が origin/main より 1 コミット進んでいるので、送るものを見て判定するゲートでも「main への push」が意味を持つ。読めないペイロードは、配布の hook では通す（fail-open）が、宣言した実体では拒否も合格にする）。配布の文書・スキルで `.claude/hooks/review-budget.cjs`（`.codex` も）を `node` で呼ぶ箇所は、宣言した実体の呼び出し（`node <reviewBudgetScript>`）に読み替えて入れる（`init --force` の再実行では、その実行で書いた配布の文書・スキルに当てる） |
 | `gate.controlPlane` / `gate.exemptDocs` / `gate.harness` | ゲート制御面・ハーネスのみの免除（文書だけ）・スピードモードのハーネスの分類に足すパスの glob の配列。hook が判定するリポジトリの `.ai-dev-helm.json` から読み、読めない・コミットしていない変更があるときはゲート対象のコマンドを block する（`quality-check`「hook の完全な契約」の「導入先の拡張点」）。`.ai-dev-helm.json` 自体はゲート制御面 |
 | `settings.enabledPlugins` | `.claude/settings.json` の `enabledPlugins` に書くプラグインの有効・無効（例 `{ "superpowers@claude-plugins-official": false }`。書いたキーだけを入れ、ほかは残す） |
 | `workflow` | 運用の形。`remote: "none"`・`issues: "none"`（リモートなし・Issue なし。development-policy の当てはめが変わる）、`protectedBranches`（main・master のほかに force push を禁じるブランチ。deny と Codex の rules に入る） |
-| `apps` | アプリの置き場所（`{ "frontend": "apps/web", "backend": "api" }`）。Cursor の `.mdc` の globs をここから作る（既定は `frontend`・`backend`） |
+| `apps` | アプリの置き場所（`{ "frontend": "apps/web", "backend": "api" }`）。Cursor の `.mdc` の globs をここから作る（既定は `frontend`・`backend`）。宣言の理由は `reason`（文字列、任意）に書ける |
 
-宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。ルート規則（`CLAUDE.md`・`AGENTS.md`・`.cursorrules`）と専用のマージのファイル（`.claude/settings.json`・`.codex/hooks.json`・`.codex/config.toml`・`.codex/agents/`・`.gitignore`）は、`exclude` にもできません（ルート規則は管理ブロックの中だけを扱い、外の製品の節には触れないため。専用のマージは導入先のキーを残すため）。`skillTargets` と `pending` のパスは導入先の中の相対パスに限ります（`..`・絶対パス・`.git` は拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。配布文書（`documents/development/` の `.md`。スキルの中は補足ファイルを使う）の中に導入先の節を残すときは、`<!-- ai-dev-helm:local:start -->` 〜 `<!-- ai-dev-helm:local:end -->` で囲みます。`upgrade` は区切りの中を三者マージの前に取り出し、マージの後に同じ場所（同じ見出しの節の中で、直前の行と同じ行の同じ番目の後。その行が消えていれば節の末尾、その場所がコードブロックの中になっていれば節の末尾で記録に出る、見出しも消えていればファイルの末尾で記録に出る）へ戻します。照合（`--verify`）は区切りの中を除いて比べます。
+宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。ルート規則（`CLAUDE.md`・`AGENTS.md`・`.cursorrules`）と専用のマージのファイル（`.claude/settings.json`・`.codex/hooks.json`・`.codex/config.toml`・`.codex/agents/`・`.gitignore`）は、`exclude` にもできません（ルート規則は管理ブロックの中だけをマージし、外の製品の節には読み替え（`skillTargets`・`reviewBudgetScript`）のほかは触れないため。専用のマージは導入先のキーを残すため）。`skillTargets` と `pending` のパスは導入先の中の相対パスに限ります（`..`・絶対パス・`.git` は拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。配布文書（`documents/development/` の `.md`。スキルの中は補足ファイルを使う）の中に導入先の節を残すときは、`<!-- ai-dev-helm:local:start -->` 〜 `<!-- ai-dev-helm:local:end -->` で囲みます。`upgrade` は区切りの中を三者マージの前に取り出し、マージの後に同じ場所（同じ見出しの節の中で、直前の行と同じ行の同じ番目の後。その行が消えていれば節の末尾、その場所がコードブロックの中になっていれば節の末尾で記録に出る、見出しも消えていればファイルの末尾で記録に出る）へ戻します。照合（`--verify`）は区切りの中を除いて比べます。
 
 ## 初回の移行（3.6.0 以前から）
 
@@ -73,7 +75,7 @@ AI が行います。オーナーの作業はありません。
 
 ## Codex の信頼
 
-Codex を使う導入先では、`/hooks` で `.codex/hooks.json` のフックを信頼するまで、quality-gate も review-budget も動かない（警告も出ない）。`upgrade` は、ゲートと review-budget を呼ぶ登録が既にあれば `.codex/hooks.json` に一切触れない（matcher も変えない）。無いときだけ足すので、`hooks.json` が変わったら（matcher・command・timeout・順序）、再び信頼する（`.cjs` の中身だけの更新では信頼は外れない）。信頼は Codex の設定の場所（`CODEX_HOME`）ごとに記録されるので、Codex のアカウント・設定の場所を切り替えたら（orca のアカウントの切り替えなど）、切り替えた先でも信頼する。`npx @crearize/ai-dev-helm codex-trust --dir <導入先> [--codex-home <設定の場所>]` で、プロジェクトとフックが信頼されているかを読み取りだけで確かめ、終了コード 0 になるまで対応する。
+Codex では、`/hooks` で `.codex/hooks.json` のフックを信頼するまで、quality-gate も review-budget も動かない（警告も出ない）。`upgrade` は、ゲートと review-budget を呼ぶ登録が既にあれば `.codex/hooks.json` に一切触れない（matcher も変えない）。無いときだけ足すので、`hooks.json` が変わったら（matcher・command・timeout・順序）、再び信頼する（`.cjs` の中身だけの更新では信頼は外れない）。信頼は Codex の設定の場所（`CODEX_HOME`）ごとに記録されるので、Codex のアカウント・設定の場所を切り替えたら（orca のアカウントの切り替えなど）、切り替えた先でも信頼する。その端末で Codex を使うなら、`npx @crearize/ai-dev-helm codex-trust --dir <導入先> [--codex-home <設定の場所>]` で、プロジェクトとフックが信頼されているかを読み取りだけで確かめ、終了コード 0 になるまで対応する（Codex を使わない端末では Codex の設定が無く 2 で終わるので、使い始めるときに確かめる）。`tools` に codex が無く、Codex が読む `.codex/hooks.json`（linked worktree では本体側のもの）も無い導入先では、Codex の設定を読まずに `NOT APPLICABLE`（対象外）と出して終了コード 0 で終わる（3.7.0 までは 2）。
 
 ## 診断（`harness-inventory`）
 

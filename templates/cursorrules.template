@@ -155,6 +155,7 @@ Other project skills (server-startup, branch-workflow, backend/frontend-developm
 - Naming conventions: `documents/development/naming-conventions.md`
 - Static check standard: `documents/development/static-check-standard.md` (static check standard catalog)
 - Quick checklist: `documents/development/quick-checklist.md`
+- Runtime major upgrade (Node.js): `documents/development/runtime-upgrade.md` (what to check when moving to a new major version)
 <!-- ai-dev-helm:refs:end -->
 
 ## Development Server Ports
