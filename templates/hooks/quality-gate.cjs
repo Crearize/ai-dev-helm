@@ -276,7 +276,8 @@
 // master. P is read from the payload cwd's repository, as the union of the
 // manifest committed at HEAD and at the trunk (`<trunk>` is the first of
 // BASE_REFS that exists) - never the working tree, which `upgrade` rewrites -
-// and only when the work tree has a manifest at all (`declarations`). With no
+// for a command with a gate word (`declarations`; a trunk rewrite with none is
+// read when the work tree's manifest mentions `protectedBranches`). With no
 // P, T is main / master and every decision is the 3.7.0 one. On P the
 // harness-only and release exemptions (rules 4 / 4b, their trunk-move forms
 // and rule 3's harness-only diff since the flag) do not apply: P reaches
@@ -298,7 +299,8 @@
 // continuations folded). Read from the same committed manifests as P, and only
 // when the work tree's manifest mentions `denyCommands` (no git runs
 // otherwise). A broken declaration blocks the commands with a gate word and
-// lets the others through with the reason on stderr.
+// lets the others through with the reason on stderr. A command over the
+// command budget is refused while a declaration is there (it cannot be checked).
 //
 // CURSOR (3.7.1, D4). Run as `quality-gate.cjs cursor`, the hook reads
 // Cursor's beforeShellExecution payload (top-level `command` and `cwd`, no
@@ -1444,14 +1446,16 @@ function parseDeclarations(text) {
   try {
     doc = JSON.parse(String(text).replace(/^﻿/, ''));
   } catch {
-    return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not valid JSON`, denyError: `${MANIFEST_FILE} is not valid JSON` };
+    return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not valid JSON`, denyError: `${MANIFEST_FILE} is not valid JSON`, whole: true };
   }
   if (!isPlainJson(doc)) {
     const why = `the root of ${MANIFEST_FILE} is not an object`;
-    return { ...NO_DECLARATIONS, branchesError: why, denyError: why };
+    return { ...NO_DECLARATIONS, branchesError: why, denyError: why, whole: true };
   }
-  const out = { branches: [], branchesError: null, deny: [], denyError: null };
+  const out = { branches: [], branchesError: null, deny: [], denyError: null, declared: { branches: false, deny: false } };
   const wf = doc.workflow;
+  out.declared.branches = isPlainJson(wf) && wf.protectedBranches !== undefined;
+  out.declared.deny = isPlainJson(doc.gate) && doc.gate.denyCommands !== undefined;
   if (wf !== undefined && !isPlainJson(wf)) out.branchesError = 'workflow must be an object';
   else if (wf && wf.protectedBranches !== undefined) {
     const list = wf.protectedBranches;
@@ -1505,14 +1509,19 @@ function mergeDeclarations(list) {
 }
 // The declarations of HEAD's and the trunk's manifests (each `parseDeclarations`, or null when that version has none).
 // A kind (protected branches / denied commands) broken at the trunk only does not lock out the change that fixes it:
-// when HEAD's manifest has that kind readable, the trunk's broken one is left out - reported in `skipped` (stderr) -
-// and HEAD's is used alone. A kind broken at HEAD, or at the trunk with no manifest at HEAD, stays an error.
+// when HEAD's manifest DECLARES that kind, readably, the trunk's broken one is left out - reported in `skipped`
+// (stderr) - and HEAD's is used alone. When the trunk's whole file cannot be read (`whole`: not JSON, not an object,
+// not a file, over 1 MB), which kinds it declared is unknown: a HEAD that declares either kind, readably, stands for
+// it. A kind broken at HEAD, or broken at the trunk while HEAD declares nothing of it (a branch cut before the
+// declaration, one that removed it, no manifest at HEAD), stays an error: such a branch would otherwise lose the
+// trunk's protection.
 function combineDeclarations(head, trunk) {
   if (head === null || trunk === null) return { decl: mergeDeclarations([head, trunk].filter(Boolean)), skipped: [] };
   const used = { ...trunk };
   const skipped = [];
+  const declares = (kind) => Boolean(head.declared && (trunk.whole ? head.declared.branches || head.declared.deny : head.declared[kind]));
   for (const [list, error] of [['branches', 'branchesError'], ['deny', 'denyError']]) {
-    if (trunk[error] && !head[error]) {
+    if (trunk[error] && !head[error] && declares(list)) {
       if (!skipped.includes(trunk[error])) skipped.push(trunk[error]);
       used[list] = [];
       used[error] = null;
@@ -1521,6 +1530,7 @@ function combineDeclarations(head, trunk) {
   return { decl: mergeDeclarations([head, used]), skipped };
 }
 const trunkDeclarationSkipped = (why) => `quality-gate: the declarations in the trunk's ${MANIFEST_FILE} cannot be read (${why}); judging with the ones committed at HEAD. Bring the fix of ${MANIFEST_FILE} into the trunk.`;
+const DENY_TOO_LONG = `This command is over ${MAX_COMMAND_BYTES / 1024} KB, too long to check against the denied commands of ${MANIFEST_FILE} (gate.denyCommands). Make it shorter - pass a large body from a file (for example curl -d @file) - and run it again.`;
 const declarationsBroken = (why) => `The declarations in the committed ${MANIFEST_FILE} cannot be read (${why}), so the protected branches or the denied commands are unknown and this command cannot be judged. Fix ${MANIFEST_FILE} - workflow.protectedBranches is an array of branch names; gate.denyCommands is an array (at most ${DENY_LIMITS.rules}) of { "all": [1-${DENY_LIMITS.patterns} regular expressions], "reason": "<text>" } - commit it (and bring it into the trunk), then run the command again.`;
 
 const isGateConfig = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f));
@@ -2495,8 +2505,9 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 // by classify, and is read only by `main()`, which turns the single "not inside
 // a git repository" case into a fail-open.
 //   declarations  3.7.1 (D2 / D3): `{ branches, branchesError, deny, denyError }` from the manifests committed at
-//                 HEAD and at the trunk (`parseDeclarations`), or null when the work tree has no manifest (git does
-//                 not run then). Missing (a test stub): none.
+//                 HEAD and at the trunk (`parseDeclarations` / `combineDeclarations`), or null outside a repository.
+//                 Read only for a command with a gate word, or behind the cheap screens below. Missing (a test
+//                 stub): none.
 //   denyMentioned / protectedMentioned  whether the work tree's manifest text holds `denyCommands` /
 //                 `protectedBranches` - the cheap screens (no git) in front of `declarations` for a command with
 //                 no gate word.
@@ -2516,10 +2527,13 @@ function classify(command, ctx, shell = null) {
     guard = savedGuard;
   }
 }
-// 3.7.1 (D2): with declared protected branches, a refusal that speaks of main/master names them too.
+// 3.7.1 (D2): with declared protected branches, a refusal that speaks of main/master - or of merging into main - names
+// them too.
 function protectedWording(verdict) {
-  if (verdict.decision !== 'block' || guard.extra.length === 0 || !verdict.reason.includes('main/master')) return verdict;
-  return { ...verdict, reason: verdict.reason.split('main/master').join(`main/master (or the protected branch ${guard.extra.join(', ')})`) };
+  if (verdict.decision !== 'block' || guard.extra.length === 0) return verdict;
+  const named = `(or the protected branch ${guard.extra.join(', ')})`;
+  const reason = verdict.reason.split('main/master').join(`main/master ${named}`).split('merging into main').join(`merging into main ${named}`);
+  return reason === verdict.reason ? verdict : { ...verdict, reason };
 }
 // 3.7.1 (D3): the product's denied commands. Read only when the work tree's manifest mentions them; matched against
 // the text within the command budget, as written and with line continuations folded.
@@ -2527,8 +2541,10 @@ function productDenied(text, ctx) {
   if (!ctx || !ctx.denyMentioned) return null;
   const decl = ctx.declarations;
   if (!decl || decl.deny.length === 0) return null;
-  const body = text.length > MAX_COMMAND_BYTES ? text.slice(0, MAX_COMMAND_BYTES) : text;
-  const texts = [body, body.replace(LINE_CONTINUATION_RE, '')];
+  // Past the command budget the patterns are not tried (a declared pattern could be slow on a huge text), and a part
+  // left unchecked could hold the denied form - so a declaration that is there refuses such a command.
+  if (text.length > MAX_COMMAND_BYTES || Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) return deny('2', DENY_TOO_LONG);
+  const texts = [text, text.replace(LINE_CONTINUATION_RE, '')];
   for (const rule of decl.deny) {
     if (texts.some((t) => rule.all.every((re) => re.test(t)))) return deny('2', rule.reason);
   }
@@ -2790,9 +2806,10 @@ function makeCtx(cwd) {
   });
   // origin's trunk for the main-passed route: origin/main, else origin/master (a remote-tracking ref only).
   const originTrunk = () => once('originTrunk', () => commit(BASE_REFS[0]) || commit(BASE_REFS[1]));
-  // `git diff --quiet a...b`: true when b adds nothing to a, false when it does, null on a failure.
+  // `git diff --quiet a...b`: true when b adds nothing to a, false when it does, null on a failure. Submodule changes
+  // count whatever the repository's diff.ignoreSubmodules / .gitmodules say (a "nothing added" lets a push through).
   const nothingAdded = (a, b) => {
-    const r = git(['diff', ...SAFE_DIFF, '--quiet', `${a}...${b}`]);
+    const r = git(['diff', ...SAFE_DIFF, '--ignore-submodules=none', '--quiet', `${a}...${b}`]);
     if (r.ok) return true;
     return r.status === 1 ? false : null;
   };
@@ -2809,16 +2826,22 @@ function makeCtx(cwd) {
       return text !== null && text.includes('protectedBranches');
     },
     // The declarations of the manifests committed at HEAD and at the trunk (the first of BASE_REFS that exists),
-    // read in one `git cat-file --batch`; null without a manifest in the work tree.
+    // read in one `git cat-file --batch` - whether or not the work tree has a manifest (a branch that removed it, or
+    // was cut before it, still meets the trunk's). null where no `.git` is found above the cwd, or where git answers
+    // that this is not a repository it can read (then the 3.7.0 route decides, fail-open #2 included).
     get declarations() {
       return once('declarations', () => {
-        if (manifestText() === null) return null;
+        const top = workTreeRoot(cwd);
+        if (top === null) return null;
         const names = ['HEAD', ...BASE_REFS];
         const input = [...names.map((n) => `${n}:${MANIFEST_FILE}`), ...BASE_REFS].join('\n') + '\n';
-        const buf = runGitBatch(input, workTreeRoot(cwd));
+        const buf = runGitBatch(input, top);
         const objects = buf === null ? null : parseBatch(buf, names.length + BASE_REFS.length);
         let decl;
         if (objects === null) {
+          // Only a failure here asks rev-parse where we are: outside a repository (or where git cannot run at all)
+          // there is nothing to read, and the failure rev-parse records is the one 3.7.0 would have met.
+          if (root() === null) return null;
           fail('git-error');
           const why = `git could not read the committed ${MANIFEST_FILE}`;
           decl = { ...NO_DECLARATIONS, branchesError: why, denyError: why };
@@ -2826,8 +2849,8 @@ function makeCtx(cwd) {
           const trunkAt = BASE_REFS.findIndex((_, i) => objects[names.length + i] !== null);
           const parse = (o) => {
             if (o === null) return null;
-            if (o.type !== 'blob') return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not a file`, denyError: `${MANIFEST_FILE} is not a file` };
-            if (o.size > MAX_MANIFEST_BYTES) return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is over 1 MB`, denyError: `${MANIFEST_FILE} is over 1 MB` };
+            if (o.type !== 'blob') return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not a file`, denyError: `${MANIFEST_FILE} is not a file`, whole: true };
+            if (o.size > MAX_MANIFEST_BYTES) return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is over 1 MB`, denyError: `${MANIFEST_FILE} is over 1 MB`, whole: true };
             return parseDeclarations(o.content.toString('utf8'));
           };
           const combined = combineDeclarations(parse(objects[0]), trunkAt === -1 ? null : parse(objects[1 + trunkAt]));
