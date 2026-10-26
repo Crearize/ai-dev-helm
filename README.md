@@ -81,7 +81,7 @@ npx @crearize/ai-dev-helm lint --checks secrets,import-exists --json
 ```
 
 - 設定はプロジェクトルートの `.ai-dev-helm-lint.json` で調整できます（`exclude` グロブ、チェックごとの `enabled` / オプション）
-- 終了コード: `0` = 問題なし（`.ai-dev-helm.json` の `tools` に codex が無く `.codex/hooks.json` も無いプロジェクトは、Codex の設定を読まずに `NOT APPLICABLE` と出して 0） / `1` = 違反あり / `2` = 実行エラー（設定不正など）
+- 終了コード: `0` = 問題なし / `1` = 違反あり / `2` = 実行エラー（設定不正など）
 
 ### 4. quality-check の共通コンテキスト生成（コーディネータ AI 向け）
 
@@ -122,7 +122,7 @@ npx @crearize/ai-dev-helm codex-trust --dir . [--codex-home <Codex の設定の�
 
 Codex は、信頼されていないフック（新しいもの、または `.codex/hooks.json` の登録が変わったもの）を警告なしに飛ばします。`/hooks` でフックを信頼するまで、quality-gate も review-budget も動きません。`hooks.json` を変えたら再び信頼し、Codex のアカウント・設定の場所（`CODEX_HOME`）を切り替えたら、切り替えた先でも信頼します。このコマンドは、Codex の `config.toml` とプロジェクトの `.codex/hooks.json` を読み取るだけで、Codex の設定には書き込みません。読む場所は `--codex-home` > `CODEX_HOME` > `~/.codex` の順で、読んだファイルを必ず表示します。
 
-- 終了コード: `0` = 問題なし / `1` = `ACTION REQUIRED`（プロジェクトかフックが信頼されていない、別の綴りのパスでだけ信頼されている、信頼の後に登録が変わった、無効にされている、信頼が今も有効か確かめられない、Codex が `hooks.json` を読み込めない） / `2` = 読めない（読もうとしたパスを表示。空の `--codex-home`、1 MB を超えるファイルも含む）
+- 終了コード: `0` = 問題なし（`.ai-dev-helm.json` の `tools` に codex が無く、Codex が読む `.codex/hooks.json`（linked worktree では本体側のもの）も無いプロジェクトは、Codex の設定を読まずに `NOT APPLICABLE` と出して 0） / `1` = `ACTION REQUIRED`（プロジェクトかフックが信頼されていない、別の綴りのパスでだけ信頼されている、信頼の後に登録が変わった、無効にされている、信頼が今も有効か確かめられない、Codex が `hooks.json` を読み込めない） / `2` = 読めない（読もうとしたパスを表示。空の `--codex-home`、1 MB を超えるファイルも含む）
 - git の linked worktree では、Codex と同じく本体（main checkout）側の `hooks.json` を読み、どれを読んだかを表示します
 - 詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「効く範囲と限界」
 

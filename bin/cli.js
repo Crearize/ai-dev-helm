@@ -208,6 +208,7 @@ yargs(hideBin(process.argv))
         try {
           const gap = checkUntrackedReviewGap({ dir: process.cwd(), cycle: argv.cycle, baseRef: argv.base, outDir: argv.out });
           // 3.7.1 (D9): untracked files the change's committed files name - reported, never the verdict.
+          if (gap.referenced === null) console.log('WARNING: the change\'s committed files could not be read (git cat-file failed), so references to untracked files were not checked.');
           if (gap.referenced && gap.referenced.length) {
             console.log(`WARNING: ${gap.referenced.length} untracked file(s) are referenced from the change's committed files (a checkout without them, such as CI, fails):`);
             for (const r of gap.referenced) console.log(`  ${r.path} (in ${r.in.slice(0, 3).join(', ')}${r.in.length > 3 ? `, +${r.in.length - 3} more` : ''})`);
@@ -392,7 +393,7 @@ yargs(hideBin(process.argv))
   )
   .command(
     'codex-trust',
-    'Read-only check that Codex trusts the project and its .codex/hooks.json hooks (exit 0 ok - or NOT APPLICABLE: .ai-dev-helm.json tools has no codex and there is no .codex/hooks.json; 1 action required, 2 unreadable)',
+    'Read-only check that Codex trusts the project and its .codex/hooks.json hooks (exit 0 ok - or NOT APPLICABLE: .ai-dev-helm.json tools has no codex and there is no .codex/hooks.json, nor the one Codex reads in a linked worktree; 1 action required, 2 unreadable)',
     (yargs) => yargs
       .option('dir', { type: 'string', describe: 'Project directory', default: process.cwd() })
       .option('codex-home', { type: 'string', describe: 'Codex config location to read (default: CODEX_HOME, then ~/.codex)' }),
