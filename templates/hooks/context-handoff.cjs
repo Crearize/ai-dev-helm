@@ -411,8 +411,16 @@ const SESSION_META_BYTES = 8192; // session_meta's source sits within the first 
 // tools.exec_command({cmd:"git push ..."}) and tools.apply_patch("*** Begin Patch\n..."). A string literal ("...",
 // '...' or `...`) has one way to match each character, so these stay linear.
 const JS_STRING = String.raw`("(?:[^"\\\r\n]|\\[\s\S])*"|'(?:[^'\\\r\n]|\\[\s\S])*'|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`)';
-const EXEC_PATCH_RE = new RegExp(String.raw`\btools\.apply_patch\(\s*` + JS_STRING, 'g');
-const EXEC_SHELL_RE = new RegExp(String.raw`\btools\.(?:exec_command|shell_command)\(\s*\{\s*["']?(?:cmd|command)["']?\s*:\s*` + JS_STRING, 'g');
+const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
+// The tokens of exec's JavaScript that hide a call: a string literal and a comment. An unterminated literal runs to
+// the end of its line (`...` to the end of the script) and an unterminated comment to the end, so every token
+// matches where it starts and the scan reads each character once.
+const JS_SKIP = String.raw`"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
+  String.raw`|\/\/[^\r\n]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?`;
+const EXEC_CALL_RE = new RegExp(`${JS_SKIP}|\\btools\\.(apply_patch|exec_command|shell_command)\\(`, 'g');
+const EXEC_ARG_TOKEN_RE = new RegExp(`\\s+|${JS_SKIP}|[\\w$]+|[\\s\\S]`, 'y');
+const EXEC_PATCH_ARG_RE = new RegExp(String.raw`\s*` + JS_STRING, 'y');
+const EXEC_OBJECT_START_RE = /\s*\{/y;
 const EXEC_CODE_MAX = 500000;
 const QUESTION_REPLY_TAG = 'send_user_message_question_reply';
 // Codex's own tags are snake_case (environment_context, turn_aborted, user_shell_command, recommended_plugins ...);
@@ -490,6 +498,67 @@ function jsStringValue(literal) {
     }
     return Object.prototype.hasOwnProperty.call(singles, e) ? singles[e] : e;
   });
+}
+
+// The cmd / command string of the object literal whose '{' is at code[start], read at its top level in any order
+// ({workdir: "/w", cmd: "git push"}), and the index after the object.
+function execCommandArg(code, start) {
+  const token = new RegExp(EXEC_ARG_TOKEN_RE.source, 'y');
+  token.lastIndex = start + 1;
+  let depth = 1;
+  let key = null;
+  let expect = 'key'; // what comes next at the top level: 'key', 'colon', 'value' or null (the rest of a value)
+  let command = null;
+  let match;
+  while (depth > 0 && (match = token.exec(code)) !== null) {
+    const t = match[0];
+    if (/^(?:\s|\/\/|\/\*)/.test(t)) continue;
+    if (depth === 1) {
+      const literal = JS_STRING_FULL.test(t);
+      if (expect === 'key' && (literal || /^[\w$]+$/.test(t))) {
+        key = literal ? jsStringValue(t) : t;
+        expect = 'colon';
+        continue;
+      }
+      if (expect === 'colon' && t === ':') {
+        expect = 'value';
+        continue;
+      }
+      if (expect === 'value' && literal && (key === 'cmd' || key === 'command')) command = jsStringValue(t);
+      expect = t === ',' ? 'key' : null;
+    }
+    if ('{[('.includes(t)) depth += 1;
+    else if ('}])'.includes(t)) depth -= 1;
+  }
+  return { command, end: token.lastIndex || code.length };
+}
+
+// The patches and commands of the tools.apply_patch / exec_command / shell_command calls in exec's JavaScript, in
+// order. A call written in a string literal (a patch, a heredoc) or a comment is not one the script makes.
+function execCalls(code) {
+  const calls = [];
+  const scan = new RegExp(EXEC_CALL_RE.source, 'g');
+  let match;
+  while ((match = scan.exec(code)) !== null) {
+    if (!match[1]) continue;
+    if (match[1] === 'apply_patch') {
+      const arg = new RegExp(EXEC_PATCH_ARG_RE.source, 'y');
+      arg.lastIndex = scan.lastIndex;
+      const literal = arg.exec(code);
+      if (!literal) continue;
+      calls.push({ patch: jsStringValue(literal[1]) });
+      scan.lastIndex = arg.lastIndex;
+      continue;
+    }
+    const open = new RegExp(EXEC_OBJECT_START_RE.source, 'y');
+    open.lastIndex = scan.lastIndex;
+    if (!open.exec(code)) continue;
+    // The object is read once here, and the scan goes on after it.
+    const { command, end } = execCommandArg(code, open.lastIndex - 1);
+    if (command !== null) calls.push({ command });
+    scan.lastIndex = end;
+  }
+  return calls;
 }
 
 // The answers in a user message that replies to Codex's question (request_user_input):
@@ -633,9 +702,10 @@ async function readCodexRollout(file) {
       if (p.name === 'apply_patch') touch(p.input, at);
       if (p.name === 'exec') {
         // The script's output is one output for all its calls: a git / gh call in it makes its PR URLs count.
-        const code = cut(p.input, EXEC_CODE_MAX);
-        for (const match of code.matchAll(EXEC_PATCH_RE)) touch(jsStringValue(match[1]), at);
-        for (const match of code.matchAll(EXEC_SHELL_RE)) shell(jsStringValue(match[1]), p.call_id, at);
+        for (const call of execCalls(cut(p.input, EXEC_CODE_MAX))) {
+          if (call.patch !== undefined) touch(call.patch, at);
+          else shell(call.command, p.call_id, at);
+        }
       }
     } else if ((p.type === 'function_call_output' || p.type === 'custom_tool_call_output') && prCalls.has(p.call_id)) {
       // A PR URL the output of a git / gh command printed (the rollout has no pr-link entry).
@@ -911,10 +981,12 @@ function codexProjectKey(cwd) {
     // Not a repository (or git missing): the cwd itself.
   }
   // safeName alone turns every non-ASCII name into "_" (two projects named in Japanese would share one store and
-  // one /clear marker), so a hash of the whole path follows the readable name.
+  // one /clear marker), so a hash of the whole path follows the readable name. The name is the root's own folder
+  // name cut to 64 characters: the whole path would pass the 255-character limit of one name for a deep root.
+  // Windows paths are compared in lower case (C:\Work and c:\work are one project).
   const resolved = path.resolve(dir || '.');
   const id = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-  return `${safeName(resolved)}-${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}`;
+  return `${safeName(path.basename(id)).slice(0, 64)}-${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}`;
 }
 
 async function codexEvent(input, event) {
@@ -1036,4 +1108,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { readTranscript, readCodexRollout, transcriptKind, isCodexInjected, renderRecord, renderInjection, lastContextTokens, redact, cut, prune, INJECT_LIMIT, CODEX_INJECT_BYTES };
+module.exports = { readTranscript, readCodexRollout, transcriptKind, isCodexInjected, codexProjectKey, renderRecord, renderInjection, lastContextTokens, redact, cut, prune, INJECT_LIMIT, CODEX_INJECT_BYTES };
