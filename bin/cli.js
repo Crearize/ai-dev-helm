@@ -386,7 +386,7 @@ yargs(hideBin(process.argv))
   )
   .command(
     'codex-trust',
-    'Read-only check that Codex trusts the project and its .codex/hooks.json hooks (exit 0 ok, 1 action required, 2 unreadable)',
+    'Read-only check that Codex trusts the project and its .codex/hooks.json hooks (exit 0 ok - or NOT APPLICABLE: .ai-dev-helm.json tools has no codex and there is no .codex/hooks.json; 1 action required, 2 unreadable)',
     (yargs) => yargs
       .option('dir', { type: 'string', describe: 'Project directory', default: process.cwd() })
       .option('codex-home', { type: 'string', describe: 'Codex config location to read (default: CODEX_HOME, then ~/.codex)' }),

@@ -81,7 +81,7 @@ npx @crearize/ai-dev-helm lint --checks secrets,import-exists --json
 ```
 
 - 設定はプロジェクトルートの `.ai-dev-helm-lint.json` で調整できます（`exclude` グロブ、チェックごとの `enabled` / オプション）
-- 終了コード: `0` = 問題なし / `1` = 違反あり / `2` = 実行エラー（設定不正など）
+- 終了コード: `0` = 問題なし（`.ai-dev-helm.json` の `tools` に codex が無く `.codex/hooks.json` も無いプロジェクトは、Codex の設定を読まずに `NOT APPLICABLE` と出して 0） / `1` = 違反あり / `2` = 実行エラー（設定不正など）
 
 ### 4. quality-check の共通コンテキスト生成（コーディネータ AI 向け）
 
