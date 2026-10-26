@@ -285,12 +285,18 @@
 // to P whose source tip adds nothing to `origin/<trunk>` (`git diff --quiet
 // origin/<trunk>...<src>` exits 0), and on P a `git merge <rev>` of a commit
 // `origin/<trunk>` holds while P adds nothing to it (`mainPassed` /
-// `mergePassed`) - main to release, after main's own check. A manifest whose
-// declaration cannot be read blocks every command with a gate word - except a
-// kind broken at the trunk only, while HEAD's manifest has it readable: then
-// HEAD's is used and the trunk's is reported on stderr, so the change that
-// fixes the trunk can still be pushed and merged (`combineDeclarations`). A
-// `cd` / `-C` into another repository is judged with the cwd repository's T.
+// `mergePassed`) - main to release, after main's own check. Each version's
+// reading of each kind (protected branches / denied commands) is one of three:
+// none (no manifest, no such key - or a broken text that never names the
+// kind), read, or unreadable (a value that fails the check, a broken text that
+// names the kind, a git failure other than "not a repository", a blob a
+// partial clone lacks). An unreadable kind blocks every command with a gate
+// word - except a value broken at the trunk while HEAD's manifest reads that
+// kind: then HEAD's is used and the trunk's is reported on stderr, so the
+// change that fixes the trunk can still be pushed and merged
+// (`combineDeclarations`). A manifest that names neither kind leaves every
+// decision the 3.7.0 one, broken or not. A `cd` / `-C` into another
+// repository is judged with the cwd repository's T.
 //
 // DECLARED DENIED COMMANDS (3.7.1, D3). `gate.denyCommands` - `[{ all:
 // [<regex>, ...], reason }]` - refuses, before anything else and with or
@@ -1441,21 +1447,26 @@ const configBroken = (why) => `The gate configuration in ${MANIFEST_FILE} cannot
 const DECL_BRANCH_RE = /^[A-Za-z0-9._/-]+$/; // lib/workflow.js BRANCH_RE
 const DENY_LIMITS = Object.freeze({ rules: 32, patterns: 8, pattern: 512, reason: 500 });
 const NO_DECLARATIONS = Object.freeze({ branches: [], branchesError: null, deny: [], denyError: null });
+// The word that names each kind. A text broken around a kind's word may declare it; one without the word does not.
+const DECL_WORDS = Object.freeze({ branches: 'protectedBranches', deny: 'denyCommands' });
+const namedIn = (text) => ({ branches: String(text).includes(DECL_WORDS.branches), deny: String(text).includes(DECL_WORDS.deny) });
+// `declared`: the kind's key is there (only a parsed object has one). `named`: the key is there, or the text holds the
+// kind's word - an error of a kind not named is no reading of that kind (`declarationState`).
 function parseDeclarations(text) {
+  const whole = (why) => ({ ...NO_DECLARATIONS, branchesError: why, denyError: why, declared: { branches: false, deny: false }, named: namedIn(text) });
   let doc;
   try {
     doc = JSON.parse(String(text).replace(/^﻿/, ''));
   } catch {
-    return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not valid JSON`, denyError: `${MANIFEST_FILE} is not valid JSON`, whole: true };
+    return whole(`${MANIFEST_FILE} is not valid JSON`);
   }
-  if (!isPlainJson(doc)) {
-    const why = `the root of ${MANIFEST_FILE} is not an object`;
-    return { ...NO_DECLARATIONS, branchesError: why, denyError: why, whole: true };
-  }
+  if (!isPlainJson(doc)) return whole(`the root of ${MANIFEST_FILE} is not an object`);
   const out = { branches: [], branchesError: null, deny: [], denyError: null, declared: { branches: false, deny: false } };
   const wf = doc.workflow;
   out.declared.branches = isPlainJson(wf) && wf.protectedBranches !== undefined;
   out.declared.deny = isPlainJson(doc.gate) && doc.gate.denyCommands !== undefined;
+  const words = namedIn(text);
+  out.named = { branches: out.declared.branches || words.branches, deny: out.declared.deny || words.deny };
   if (wf !== undefined && !isPlainJson(wf)) out.branchesError = 'workflow must be an object';
   else if (wf && wf.protectedBranches !== undefined) {
     const list = wf.protectedBranches;
@@ -1492,46 +1503,63 @@ function parseDeclarations(text) {
   }
   return out;
 }
-// The union of the declarations of several manifests: every protected branch, each deny entry once (the same
-// declaration on both sides is one entry), the first error of each kind.
-function mergeDeclarations(list) {
-  const out = { branches: [], branchesError: null, deny: [], denyError: null };
-  const keys = new Set();
-  for (const d of list) {
-    out.branchesError = out.branchesError || d.branchesError;
-    out.denyError = out.denyError || d.denyError;
-    for (const b of d.branches) if (!out.branches.includes(b)) out.branches.push(b);
-    for (const rule of d.deny) if (!keys.has(rule.key)) { keys.add(rule.key); out.deny.push(rule); }
-  }
-  if (out.branchesError) out.branches = [];
-  if (out.denyError) out.deny = [];
-  return out;
+// One version's reading of one kind: none (no manifest, no key, or an error of a kind the text never names), read
+// (the key, its value checked - an empty array included), broken (a value that fails the check, or a broken text that
+// names the kind) or unreadable (git could not give that version: `{ unreadable: why }`).
+function declarationState(side, kind) {
+  if (side === null) return { state: 'none' };
+  if (side.unreadable) return { state: 'unreadable', why: side.unreadable };
+  const error = side[`${kind}Error`];
+  if (error) return side.named && side.named[kind] ? { state: 'broken', why: error } : { state: 'none' };
+  return side.declared && side.declared[kind] ? { state: 'read', values: side[kind] } : { state: 'none' };
 }
-// The declarations of HEAD's and the trunk's manifests (each `parseDeclarations`, or null when that version has none).
-// A kind (protected branches / denied commands) broken at the trunk only does not lock out the change that fixes it:
-// when HEAD's manifest DECLARES that kind, readably, the trunk's broken one is left out - reported in `skipped`
-// (stderr) - and HEAD's is used alone. When the trunk's whole file cannot be read (`whole`: not JSON, not an object,
-// not a file, over 1 MB), which kinds it declared is unknown: a HEAD that declares either kind, readably, stands for
-// it. A kind broken at HEAD, or broken at the trunk while HEAD declares nothing of it (a branch cut before the
-// declaration, one that removed it, no manifest at HEAD), stays an error: such a branch would otherwise lose the
-// trunk's protection.
+// The declarations the gate uses, from HEAD's and the trunk's versions (each `parseDeclarations`, `{ unreadable }`,
+// or null when that version has no manifest), kind by kind (protected branches / denied commands):
+//   - unreadable at either version, or broken at HEAD: an error (`gitError` keeps the first git failure, worded apart
+//     from a broken value);
+//   - broken at the trunk: an error, unless HEAD READS that kind - then HEAD's stands for it and the trunk's is reported
+//     in `skipped` (stderr), so the change that fixes the trunk is not locked out, while a branch that does not declare
+//     the kind (cut before the declaration, one that removed it, no manifest at HEAD) keeps the trunk's protection;
+//   - otherwise the union of what was read (the same deny entry on both sides is one entry).
 function combineDeclarations(head, trunk) {
-  if (head === null || trunk === null) return { decl: mergeDeclarations([head, trunk].filter(Boolean)), skipped: [] };
-  const used = { ...trunk };
+  const decl = { branches: [], branchesError: null, deny: [], denyError: null, gitError: null };
   const skipped = [];
-  const declares = (kind) => Boolean(head.declared && (trunk.whole ? head.declared.branches || head.declared.deny : head.declared[kind]));
-  for (const [list, error] of [['branches', 'branchesError'], ['deny', 'denyError']]) {
-    if (trunk[error] && !head[error] && declares(list)) {
-      if (!skipped.includes(trunk[error])) skipped.push(trunk[error]);
-      used[list] = [];
-      used[error] = null;
+  for (const kind of ['branches', 'deny']) {
+    const h = declarationState(head, kind);
+    const t = declarationState(trunk, kind);
+    const failed = [h, t].find((s) => s.state === 'unreadable');
+    if (failed) decl.gitError = decl.gitError || failed.why;
+    let error = failed ? failed.why : h.state === 'broken' ? h.why : null;
+    if (!error && t.state === 'broken') {
+      if (h.state !== 'read') error = t.why;
+      else if (!skipped.includes(t.why)) skipped.push(t.why);
+    }
+    if (error) {
+      decl[`${kind}Error`] = error;
+      continue;
+    }
+    const keys = new Set();
+    for (const s of [h, t]) {
+      if (s.state !== 'read') continue;
+      for (const v of s.values) {
+        const key = kind === 'deny' ? v.key : v;
+        if (!keys.has(key)) { keys.add(key); decl[kind].push(v); }
+      }
     }
   }
-  return { decl: mergeDeclarations([head, used]), skipped };
+  return { decl, skipped };
 }
 const trunkDeclarationSkipped = (why) => `quality-gate: the declarations in the trunk's ${MANIFEST_FILE} cannot be read (${why}); judging with the ones committed at HEAD. Bring the fix of ${MANIFEST_FILE} into the trunk.`;
 const DENY_TOO_LONG = `This command is over ${MAX_COMMAND_BYTES / 1024} KB, too long to check against the denied commands of ${MANIFEST_FILE} (gate.denyCommands). Make it shorter - pass a large body from a file (for example curl -d @file) - and run it again.`;
-const declarationsBroken = (why) => `The declarations in the committed ${MANIFEST_FILE} cannot be read (${why}), so the protected branches or the denied commands are unknown and this command cannot be judged. Fix ${MANIFEST_FILE} - workflow.protectedBranches is an array of branch names; gate.denyCommands is an array (at most ${DENY_LIMITS.rules}) of { "all": [1-${DENY_LIMITS.patterns} regular expressions], "reason": "<text>" } - commit it (and bring it into the trunk), then run the command again.`;
+const declarationsBroken = (why) => `The declarations in the committed ${MANIFEST_FILE} cannot be read (${why}), so the protected branches or the denied commands are unknown and this command cannot be judged. Fix ${MANIFEST_FILE} - workflow.protectedBranches is an array of branch names; gate.denyCommands is an array (at most ${DENY_LIMITS.rules}) of { "all": [1-${DENY_LIMITS.patterns} regular expressions], "reason": "<text>" } - commit it (and bring it into the trunk), then run the command again. While the trunk's is broken, a branch that fixes it must keep the key: to drop a declaration, set it to an empty array ([]) first, and remove the key after that is in the trunk.`;
+const declarationsUnreadable = (why) => `git could not read the committed ${MANIFEST_FILE} (${why}), so the protected branches or the denied commands are unknown and this command cannot be judged. Run the command again; if it keeps failing, check the repository (git status, git fsck).`;
+// The reason a command with a gate word is blocked for, from the declarations: null when they were read.
+function declarationsReason(decl) {
+  if (!decl) return null;
+  if (decl.gitError) return declarationsUnreadable(decl.gitError);
+  const why = decl.branchesError || decl.denyError;
+  return why ? declarationsBroken(why) : null;
+}
 
 const isGateConfig = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f));
 const hasOverride = (value) => OVERRIDE_STRINGS.some((re) => re.test(String(value)));
@@ -2504,7 +2532,7 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 // git call failed is recorded on `ctx.state` by the getters themselves, never
 // by classify, and is read only by `main()`, which turns the single "not inside
 // a git repository" case into a fail-open.
-//   declarations  3.7.1 (D2 / D3): `{ branches, branchesError, deny, denyError }` from the manifests committed at
+//   declarations  3.7.1 (D2 / D3): `{ branches, branchesError, deny, denyError, gitError }` from the manifests committed at
 //                 HEAD and at the trunk (`parseDeclarations` / `combineDeclarations`), or null outside a repository.
 //                 Read only for a command with a gate word, or behind the cheap screens below. Missing (a test
 //                 stub): none.
@@ -2551,13 +2579,13 @@ function productDenied(text, ctx) {
   return null;
 }
 // 3.7.1 (D2): read T for this call - for a command with a live gate word, or a trunk rewrite where the work tree's
-// manifest mentions protected branches. Returns the declarations' error, if any.
+// manifest mentions protected branches. Returns the reason to block a command with a gate word for, if any.
 function loadGuard(ctx, live, text) {
   if (!ctx || (!live && !(TRUNK_WRITE_RE.test(text) && ctx.protectedMentioned))) return null;
   const decl = ctx.declarations;
   if (!decl) return null;
   if (decl.branches.length > 0) guard = guardSet(decl.branches);
-  return decl.branchesError || decl.denyError || null;
+  return declarationsReason(decl);
 }
 function classifyText(text, ctx) {
   const product = productDenied(text, ctx); // 3.7.1 (D3), before every other rule
@@ -2577,7 +2605,7 @@ function classifyText(text, ctx) {
   const broken = loadGuard(ctx, masked === null ? gateWord : gateWordIn(masked), judged);
   if (masked !== null && !gateWordIn(masked) && !trunkWriteIn(masked)) return allow(); // Only in a message.
   if (!gateWord && !trunkWriteIn(text)) return allow();
-  if (broken && gateWordIn(judged)) return deny('5', declarationsBroken(broken));
+  if (broken && gateWordIn(judged)) return deny('5', broken);
   let lines;
   try {
     lines = parseSimple(judged);
@@ -2679,18 +2707,35 @@ function parseBatch(buf, count) {
     if (nl === -1) return null;
     const header = buf.slice(at, nl).toString('utf8');
     at = nl + 1;
-    const m = /^[0-9a-f]+ (\S+) (\d+)$/.exec(header);
+    const m = /^([0-9a-f]+) (\S+) (\d+)$/.exec(header);
     if (!m) { out.push(null); continue; } // `<name> missing` / `<name> ambiguous`
-    const size = Number(m[2]);
-    out.push({ type: m[1], size, content: buf.slice(at, at + size) });
+    const size = Number(m[3]);
+    if (buf.length < at + size) return null;
+    out.push({ oid: m[1], type: m[2], size, content: buf.slice(at, at + size) });
     at += size + 1;
   }
   return out;
 }
+// Whether a tree object (from parseBatch) has an entry `name`: true / false, or null when it cannot be read. An entry
+// is `<mode> <name>\0<oid as raw bytes>`.
+function treeHas(tree, name) {
+  const oidBytes = tree.oid.length / 2;
+  const buf = tree.content;
+  let at = 0;
+  while (at < buf.length) {
+    const sp = buf.indexOf(0x20, at);
+    const nul = sp === -1 ? -1 : buf.indexOf(0x00, sp);
+    if (nul === -1 || nul + 1 + oidBytes > buf.length) return null;
+    if (buf.slice(sp + 1, nul).toString('utf8') === name) return true;
+    at = nul + 1 + oidBytes;
+  }
+  return false;
+}
 // The work tree root above `dir` - the first directory holding `.git` (a directory, or a worktree's file) - found
 // without running git, or null.
+const isUncPath = (dir) => typeof dir === 'string' && /^[\\/]{2}/.test(dir);
 function workTreeRoot(dir) {
-  if (typeof dir !== 'string' || dir === '' || /^[\\/]{2}/.test(dir)) return null;
+  if (typeof dir !== 'string' || dir === '' || isUncPath(dir)) return null;
   let cur = path.resolve(dir);
   for (;;) {
     if (fs.existsSync(path.join(cur, '.git'))) return cur;
@@ -2716,14 +2761,24 @@ function makeCtx(cwd) {
   // message: git localizes its errors, so matching "not a git repository" made
   // the fail-open depend on the user's locale. Outside a repository rev-parse
   // exits 128; inside one it prints `true` and the work-tree root.
-  const root = () => once('root', () => {
+  // `{ top }`, or `{ top: null, kind }` with kind 'not-a-repo' (fail-open #2) or 'git-error'. Records nothing: root()
+  // records the failure when the judgement asks git where it is - the declarations only look (3.7.1), so a block decided
+  // without git (not a simple form) stays a block outside a repository, as in 3.7.0.
+  const probeRoot = () => once('probeRoot', () => {
     const r = runGit(['rev-parse', '--is-inside-work-tree', '--show-toplevel'], cwd);
-    if (!r.ok) return fail(r.status === 128 ? 'not-a-repo' : 'git-error');
+    if (!r.ok) return { top: null, kind: r.status === 128 ? 'not-a-repo' : 'git-error' };
     const out = r.out.split(/\r?\n/).map((s) => s.trim()).filter((s) => s !== '');
-    if (out[0] !== 'true') return fail('not-a-repo'); // Bare repo or inside .git.
-    if (!out[1]) return fail('git-error');
-    return out[1];
+    if (out[0] !== 'true') return { top: null, kind: 'not-a-repo' }; // Bare repo or inside .git.
+    if (!out[1]) return { top: null, kind: 'git-error' };
+    return { top: out[1] };
   });
+  const root = () => once('root', () => {
+    const probe = probeRoot();
+    return probe.top === null ? fail(probe.kind) : probe.top;
+  });
+  // 3.7.1: the work tree root for the declarations - found by the `.git` walk (no git), or, where that walk is not made
+  // (a UNC path) or finds nothing, by git.
+  const declarationRoot = () => workTreeRoot(cwd) || probeRoot().top;
   const git = (args) => {
     const top = root();
     if (top === null) return { ok: false, out: '', err: '' };
@@ -2790,9 +2845,10 @@ function makeCtx(cwd) {
     return null;
   });
 
-  // 3.7.1 (D2 / D3): the work tree's manifest text (no git), or null when there is none.
+  // 3.7.1 (D2 / D3): the work tree's manifest text, or null when there is none. No git runs, but on a UNC path, which the
+  // `.git` walk does not take: there git finds the root (the 3.7.0 gateConfig reads it there too).
   const manifestText = () => once('manifestText', () => {
-    const top = workTreeRoot(cwd);
+    const top = workTreeRoot(cwd) || (isUncPath(cwd) ? probeRoot().top : null);
     if (top === null) return null;
     try {
       return fs.readFileSync(path.join(top, MANIFEST_FILE), 'utf8');
@@ -2827,37 +2883,54 @@ function makeCtx(cwd) {
     },
     // The declarations of the manifests committed at HEAD and at the trunk (the first of BASE_REFS that exists),
     // read in one `git cat-file --batch` - whether or not the work tree has a manifest (a branch that removed it, or
-    // was cut before it, still meets the trunk's). null where no `.git` is found above the cwd, or where git answers
-    // that this is not a repository it can read (then the 3.7.0 route decides, fail-open #2 included).
+    // was cut before it, still meets the trunk's). For each version the batch asks the manifest, the commit and its
+    // root tree: a commit whose manifest git calls missing has none only when its tree has no such entry - a partial
+    // clone lacks the blob, or the tree, and then that version is unreadable (GIT_NO_LAZY_FETCH: no fetch here).
+    // null only where git answers that this is not a repository (then the 3.7.0 route decides, fail-open #2
+    // included); any other failure is unreadable, and blocks a command with a gate word.
     get declarations() {
       return once('declarations', () => {
-        const top = workTreeRoot(cwd);
-        if (top === null) return null;
-        const names = ['HEAD', ...BASE_REFS];
-        const input = [...names.map((n) => `${n}:${MANIFEST_FILE}`), ...BASE_REFS].join('\n') + '\n';
-        const buf = runGitBatch(input, top);
-        const objects = buf === null ? null : parseBatch(buf, names.length + BASE_REFS.length);
+        const top = declarationRoot();
         let decl;
+        const names = ['HEAD', ...BASE_REFS];
+        const buf = top === null ? null : runGitBatch(names.map((n) => `${n}:${MANIFEST_FILE}\n${n}\n${n}^{tree}\n`).join(''), top);
+        const objects = buf === null ? null : parseBatch(buf, names.length * 3);
         if (objects === null) {
-          // Only a failure here asks rev-parse where we are: outside a repository (or where git cannot run at all)
-          // there is nothing to read, and the failure rev-parse records is the one 3.7.0 would have met.
-          if (root() === null) return null;
+          // Only a failure here asks rev-parse where we are. Not a repository: nothing to read (and nothing recorded -
+          // the 3.7.0 route meets the same answer when it asks).
+          const probe = probeRoot();
+          if (probe.top === null && probe.kind === 'not-a-repo') return null;
           fail('git-error');
-          const why = `git could not read the committed ${MANIFEST_FILE}`;
-          decl = { ...NO_DECLARATIONS, branchesError: why, denyError: why };
+          decl = combineDeclarations({ unreadable: 'git failed or timed out' }, null).decl;
         } else {
-          const trunkAt = BASE_REFS.findIndex((_, i) => objects[names.length + i] !== null);
-          const parse = (o) => {
-            if (o === null) return null;
-            if (o.type !== 'blob') return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not a file`, denyError: `${MANIFEST_FILE} is not a file`, whole: true };
-            if (o.size > MAX_MANIFEST_BYTES) return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is over 1 MB`, denyError: `${MANIFEST_FILE} is over 1 MB`, whole: true };
-            return parseDeclarations(o.content.toString('utf8'));
+          const version = (i) => {
+            const [blob, ref, tree] = objects.slice(i * 3, i * 3 + 3);
+            if (ref === null) return null; // No such ref: an unborn HEAD, or not this trunk.
+            const fetch = `not in this clone - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}`;
+            if (blob === null) {
+              const has = tree && tree.type === 'tree' ? treeHas(tree, MANIFEST_FILE) : null;
+              if (has === false) return null;
+              return { unreadable: has ? `${names[i]}:${MANIFEST_FILE} is ${fetch}` : `the tree of ${names[i]} is ${fetch}` };
+            }
+            if (blob.type !== 'blob') {
+              const why = `${MANIFEST_FILE} is not a file`;
+              const both = { branches: true, deny: true }; // No text: it may declare either kind.
+              return { ...NO_DECLARATIONS, branchesError: why, denyError: why, declared: { branches: false, deny: false }, named: both };
+            }
+            const text = blob.content.toString('utf8');
+            if (blob.size > MAX_MANIFEST_BYTES) {
+              const why = `${MANIFEST_FILE} is over 1 MB`;
+              return { ...NO_DECLARATIONS, branchesError: why, denyError: why, declared: { branches: false, deny: false }, named: namedIn(text) };
+            }
+            return parseDeclarations(text);
           };
-          const combined = combineDeclarations(parse(objects[0]), trunkAt === -1 ? null : parse(objects[1 + trunkAt]));
+          const trunkAt = BASE_REFS.findIndex((_, i) => objects[(i + 1) * 3 + 1] !== null);
+          const combined = combineDeclarations(version(0), trunkAt === -1 ? null : version(trunkAt + 1));
           decl = combined.decl;
           for (const why of combined.skipped) state.notes.push(trunkDeclarationSkipped(why));
         }
-        for (const why of new Set([decl.branchesError, decl.denyError].filter(Boolean))) state.notes.push(`quality-gate: ${declarationsBroken(why)}`);
+        const reasons = decl.gitError ? [declarationsUnreadable(decl.gitError)] : [...new Set([decl.branchesError, decl.denyError].filter(Boolean))].map(declarationsBroken);
+        for (const reason of reasons) state.notes.push(`quality-gate: ${reason}`);
         return decl;
       });
     },
