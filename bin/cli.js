@@ -34,7 +34,7 @@ yargs(hideBin(process.argv))
         .option('yes', {
           alias: 'y',
           type: 'boolean',
-          describe: 'Never prompt; use defaults for anything not given (project name = directory name, tools = claude-code, skills = all)',
+          describe: 'Never prompt; use defaults for anything not given (project name = directory name, tools = claude-code,cursor,codex, skills = all)',
           default: false,
         })
         .option('project-name', { type: 'string', describe: 'Project name (non-interactive)' })

@@ -42,12 +42,12 @@ AI が行います。オーナーの作業はありません。
 
 ## 構成と宣言（`.ai-dev-helm.json`）
 
-`upgrade` はマニフェストの構成を読み、同じ構成で描画します。引数（`--project-name`・`--tools`・`--stacks`・`--skills`）で上書きできます。配布元が書くキーだけを書き換え、導入先の独自のキー（`reviewBudgetScript` など）は残します。
+`upgrade` はマニフェストの構成を読み、同じ構成で描画します。引数（`--project-name`・`--tools`・`--stacks`・`--skills`）で上書きできます（上書きはマニフェストに記録される）。`upgrade` は `tools` を勝手に足しません（導入先の宣言を変えるのは更新の作業として `--tools` で行う）。配布元が書くキーだけを書き換え、導入先の独自のキー（`reviewBudgetScript` など）は残します。
 
 | キー | 中身 |
 |---|---|
 | `version` / `upgradedFrom` / `appliedAt` / `complete` | 記録した版・直前の版・適用の時刻・未導入と保留が無いか |
-| `tools` / `stacks` / `skillScope` / `skills` / `projectName` | 描画の構成。配布元に無いスタック名（`custom-*`）は、エラーにせずそのスタックの部品を入れないだけ |
+| `tools` / `stacks` / `skillScope` / `skills` / `projectName` | 描画の構成。配布元に無いスタック名（`custom-*`）は、エラーにせずそのスタックの部品を入れないだけ。`tools` は全導入先で claude-code・codex・cursor の 3 つを前提にする（どれも使われうるため。`init` の既定も 3 つ）。使わないツールのルート規則・hook の登録は、そのツールを起動しない限り動かないだけで害は無い |
 | `exclude` | 入れない部品（`{ "part": "lint" | "review-guides" | "superpowers" | <スキル名>, "reason": "…" }`）かパス（`{ "path": "<glob>", "reason": "…" }`） |
 | `owned` | 配布元が書かないパス（`{ "path": "<glob>", "reason": "…" }`）。既定で `documents/development/project/**` |
 | `seed` | 無いときだけ作るパス。既定で `documents/development/error-codes.md`・`naming-conventions.md`・`coding-rules/**`・`test-recommendation-ledger.md` |
@@ -74,7 +74,7 @@ AI が行います。オーナーの作業はありません。
 
 ## Codex の信頼
 
-Codex を使う導入先では、`/hooks` で `.codex/hooks.json` のフックを信頼するまで、quality-gate も review-budget も動かない（警告も出ない）。`upgrade` は、ゲートと review-budget を呼ぶ登録が既にあれば `.codex/hooks.json` に一切触れない（matcher も変えない）。無いときだけ足すので、`hooks.json` が変わったら（matcher・command・timeout・順序）、再び信頼する（`.cjs` の中身だけの更新では信頼は外れない）。信頼は Codex の設定の場所（`CODEX_HOME`）ごとに記録されるので、Codex のアカウント・設定の場所を切り替えたら（orca のアカウントの切り替えなど）、切り替えた先でも信頼する。`npx @crearize/ai-dev-helm codex-trust --dir <導入先> [--codex-home <設定の場所>]` で、プロジェクトとフックが信頼されているかを読み取りだけで確かめ、終了コード 0 になるまで対応する。`tools` に codex が無く `.codex/hooks.json` も無い導入先では、Codex の設定を読まずに `NOT APPLICABLE`（対象外）と出して終了コード 0 で終わる（3.7.0 までは 2）。
+Codex では、`/hooks` で `.codex/hooks.json` のフックを信頼するまで、quality-gate も review-budget も動かない（警告も出ない）。`upgrade` は、ゲートと review-budget を呼ぶ登録が既にあれば `.codex/hooks.json` に一切触れない（matcher も変えない）。無いときだけ足すので、`hooks.json` が変わったら（matcher・command・timeout・順序）、再び信頼する（`.cjs` の中身だけの更新では信頼は外れない）。信頼は Codex の設定の場所（`CODEX_HOME`）ごとに記録されるので、Codex のアカウント・設定の場所を切り替えたら（orca のアカウントの切り替えなど）、切り替えた先でも信頼する。`npx @crearize/ai-dev-helm codex-trust --dir <導入先> [--codex-home <設定の場所>]` で、プロジェクトとフックが信頼されているかを読み取りだけで確かめ、終了コード 0 になるまで対応する。`tools` に codex が無く `.codex/hooks.json` も無い導入先では、Codex の設定を読まずに `NOT APPLICABLE`（対象外）と出して終了コード 0 で終わる（3.7.0 までは 2）。
 
 ## 診断（`harness-inventory`）
 
