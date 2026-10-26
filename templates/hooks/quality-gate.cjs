@@ -285,8 +285,11 @@
 // origin/<trunk>...<src>` exits 0), and on P a `git merge <rev>` of a commit
 // `origin/<trunk>` holds while P adds nothing to it (`mainPassed` /
 // `mergePassed`) - main to release, after main's own check. A manifest whose
-// declaration cannot be read blocks every command with a gate word. A `cd` /
-// `-C` into another repository is judged with the cwd repository's T.
+// declaration cannot be read blocks every command with a gate word - except a
+// kind broken at the trunk only, while HEAD's manifest has it readable: then
+// HEAD's is used and the trunk's is reported on stderr, so the change that
+// fixes the trunk can still be pushed and merged (`combineDeclarations`). A
+// `cd` / `-C` into another repository is judged with the cwd repository's T.
 //
 // DECLARED DENIED COMMANDS (3.7.1, D3). `gate.denyCommands` - `[{ all:
 // [<regex>, ...], reason }]` - refuses, before anything else and with or
@@ -1500,6 +1503,24 @@ function mergeDeclarations(list) {
   if (out.denyError) out.deny = [];
   return out;
 }
+// The declarations of HEAD's and the trunk's manifests (each `parseDeclarations`, or null when that version has none).
+// A kind (protected branches / denied commands) broken at the trunk only does not lock out the change that fixes it:
+// when HEAD's manifest has that kind readable, the trunk's broken one is left out - reported in `skipped` (stderr) -
+// and HEAD's is used alone. A kind broken at HEAD, or at the trunk with no manifest at HEAD, stays an error.
+function combineDeclarations(head, trunk) {
+  if (head === null || trunk === null) return { decl: mergeDeclarations([head, trunk].filter(Boolean)), skipped: [] };
+  const used = { ...trunk };
+  const skipped = [];
+  for (const [list, error] of [['branches', 'branchesError'], ['deny', 'denyError']]) {
+    if (trunk[error] && !head[error]) {
+      if (!skipped.includes(trunk[error])) skipped.push(trunk[error]);
+      used[list] = [];
+      used[error] = null;
+    }
+  }
+  return { decl: mergeDeclarations([head, used]), skipped };
+}
+const trunkDeclarationSkipped = (why) => `quality-gate: the declarations in the trunk's ${MANIFEST_FILE} cannot be read (${why}); judging with the ones committed at HEAD. Bring the fix of ${MANIFEST_FILE} into the trunk.`;
 const declarationsBroken = (why) => `The declarations in the committed ${MANIFEST_FILE} cannot be read (${why}), so the protected branches or the denied commands are unknown and this command cannot be judged. Fix ${MANIFEST_FILE} - workflow.protectedBranches is an array of branch names; gate.denyCommands is an array (at most ${DENY_LIMITS.rules}) of { "all": [1-${DENY_LIMITS.patterns} regular expressions], "reason": "<text>" } - commit it (and bring it into the trunk), then run the command again.`;
 
 const isGateConfig = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f));
@@ -2803,12 +2824,15 @@ function makeCtx(cwd) {
           decl = { ...NO_DECLARATIONS, branchesError: why, denyError: why };
         } else {
           const trunkAt = BASE_REFS.findIndex((_, i) => objects[names.length + i] !== null);
-          const files = [objects[0], trunkAt === -1 ? null : objects[1 + trunkAt]].filter((o) => o !== null);
-          decl = mergeDeclarations(files.map((o) => {
+          const parse = (o) => {
+            if (o === null) return null;
             if (o.type !== 'blob') return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not a file`, denyError: `${MANIFEST_FILE} is not a file` };
             if (o.size > MAX_MANIFEST_BYTES) return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is over 1 MB`, denyError: `${MANIFEST_FILE} is over 1 MB` };
             return parseDeclarations(o.content.toString('utf8'));
-          }));
+          };
+          const combined = combineDeclarations(parse(objects[0]), trunkAt === -1 ? null : parse(objects[1 + trunkAt]));
+          decl = combined.decl;
+          for (const why of combined.skipped) state.notes.push(trunkDeclarationSkipped(why));
         }
         for (const why of new Set([decl.branchesError, decl.denyError].filter(Boolean))) state.notes.push(`quality-gate: ${declarationsBroken(why)}`);
         return decl;
