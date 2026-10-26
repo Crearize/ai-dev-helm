@@ -112,7 +112,7 @@ npx @crearize/ai-dev-helm integrate-check --main <main のチェックアウト>
 npx @crearize/ai-dev-helm hook-selftest [--dir .]
 ```
 
-導入先にインストールされている quality-gate・review-budget の hook に、同梱の判定表（約 20 件）を実行します。1 件でも違えば終了コード 1 です。
+導入先にインストールされている quality-gate・review-budget の hook に、同梱の判定表（約 20 件）を実行します。あわせて登録・hook の写し・スキルの写しを照合し、通った項目を `ok install:` の行で出します。1 件でも違えば終了コード 1 です。
 
 ### 5. Codex のフックの信頼の確認（Codex を使う場合）
 
