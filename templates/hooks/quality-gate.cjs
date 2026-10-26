@@ -213,8 +213,9 @@
 //   path can take a release in there.
 // Rule 5 (fail-open, exactly twice): a payload whose `tool_input.command` is
 //   not a string (malformed JSON, a missing field) - unless `tool_name` is a
-//   shell tool (`Bash`, `PowerShell`): a shell call whose command cannot be
-//   read is refused (H-52(5)) - and a PAYLOAD cwd that is
+//   shell tool (`Bash`, `PowerShell`, `Monitor` - 3.7.1; a Monitor with only
+//   `ws` runs no shell and is not judged) or the hook runs for Cursor: a shell
+//   call whose command cannot be read is refused (H-52(5)) - and a PAYLOAD cwd that is
 //   not inside a git work tree - decided by rev-parse's EXIT STATUS, never by
 //   its (localized) message. The second one is about the payload cwd only: a
 //   block decided where a `cd` / `-C` moved the call stands even when the cwd
@@ -264,6 +265,45 @@
 // name is not gated here and relies on the `permissions.deny` layer and
 // convention. Every git call here goes through execFileSync with an argv
 // array - no shell is ever involved.
+//
+// DECLARED PROTECTED BRANCHES (3.7.1, D2). `workflow.protectedBranches` in
+// `.ai-dev-helm.json` adds branches (P, platform's `release`) that are judged
+// like main / master: before a command with a gate word is judged, the set of
+// branches it must not reach unchecked - T = main / master + P - is read, and
+// every rule above that names "the trunk" as the branch being protected uses
+// T (`isMainBranch`, the trunk-write screen, the sync forms). The comparison
+// base (`BASE_REFS`, `origin/<trunk>` of the pull request hints) stays main /
+// master. P is read from the payload cwd's repository, as the union of the
+// manifest committed at HEAD and at the trunk (`<trunk>` is the first of
+// BASE_REFS that exists) - never the working tree, which `upgrade` rewrites -
+// and only when the work tree has a manifest at all (`declarations`). With no
+// P, T is main / master and every decision is the 3.7.0 one. On P the
+// harness-only and release exemptions (rules 4 / 4b, their trunk-move forms
+// and rule 3's harness-only diff since the flag) do not apply: P reaches
+// production, so only main's route has them. One route needs no flag: a push
+// to P whose source tip adds nothing to `origin/<trunk>` (`git diff --quiet
+// origin/<trunk>...<src>` exits 0), and on P a `git merge <rev>` of a commit
+// `origin/<trunk>` holds while P adds nothing to it (`mainPassed` /
+// `mergePassed`) - main to release, after main's own check. A manifest whose
+// declaration cannot be read blocks every command with a gate word. A `cd` /
+// `-C` into another repository is judged with the cwd repository's T.
+//
+// DECLARED DENIED COMMANDS (3.7.1, D3). `gate.denyCommands` - `[{ all:
+// [<regex>, ...], reason }]` - refuses, before anything else and with or
+// without a gate word or a flag, a command whose text every pattern of one
+// entry matches (case-insensitive; also tried on the text with line
+// continuations folded). Read from the same committed manifests as P, and only
+// when the work tree's manifest mentions `denyCommands` (no git runs
+// otherwise). A broken declaration blocks the commands with a gate word and
+// lets the others through with the reason on stderr.
+//
+// CURSOR (3.7.1, D4). Run as `quality-gate.cjs cursor`, the hook reads
+// Cursor's beforeShellExecution payload (top-level `command` and `cwd`, no
+// tool name - so the shell is unknown) and prints `{"permission":"deny",
+// "user_message", "agent_message"}` or `{"permission":"allow"}` (Cursor does
+// not read silence as an allow). Monitor (Claude Code) runs its `command` in
+// the Bash tool's shell; a Monitor call with only `ws` (a WebSocket, no shell)
+// is not judged.
 
 const fs = require('fs');
 const path = require('path');
@@ -300,8 +340,37 @@ function gateWordIn(text) {
 // holding one of those words and a trunk name is parsed too; when it is not simple it is
 // allowed (only an ordinary, simple trunk rewrite is judged).
 const TRUNK_WRITE_RE = /(?<![A-Za-z-])(?:branch|fetch)(?![A-Za-z-])/i;
-const TRUNK_NAME_RE = /(?<![A-Za-z0-9_-])(?:main|master)(?![A-Za-z0-9_-])/i;
-const trunkWriteIn = (text) => TRUNK_WRITE_RE.test(text) && TRUNK_NAME_RE.test(text);
+const trunkWriteIn = (text) => TRUNK_WRITE_RE.test(text) && guarded().nameRe.test(text);
+
+// 3.7.1 (D2): T, the branches a command must not reach unchecked - main /
+// master plus the declared protected branches (P). Set by `classify` for the
+// duration of one synchronous call, like `reading`; outside one it is main /
+// master. `names` keeps the spelling of the declaration (the sync forms and
+// plain fetches compare words exactly, as they did for main / master), the
+// other checks compare in lower case. P names may hold `.` and `/`, so they
+// are escaped wherever they enter a regular expression.
+const BASE_TRUNKS = Object.freeze(['main', 'master']);
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function guardSet(extra) {
+  const names = [...BASE_TRUNKS, ...extra.filter((b) => !BASE_TRUNKS.includes(b.toLowerCase()))];
+  const alt = names.map(escapeRe).join('|');
+  return Object.freeze({
+    names,
+    lower: new Set(names.map((b) => b.toLowerCase())),
+    extra: names.slice(BASE_TRUNKS.length),
+    nameRe: new RegExp(`(?<![A-Za-z0-9_-])(?:${alt})(?![A-Za-z0-9_-])`, 'i'),
+    syncSourceRe: new RegExp(`^(?:refs\\/remotes\\/)?origin\\/(${alt})$`),
+    pushTargetRe: new RegExp(`^[^/]+\\/(${alt})$`, 'i'),
+  });
+}
+const DEFAULT_GUARD = guardSet([]);
+let guard = DEFAULT_GUARD;
+const guarded = () => guard;
+// A name of P (in T, and not main / master): the exemptions of main's route do not apply there.
+function isExtraProtected(name) {
+  const b = String(name || '').toLowerCase();
+  return guard.lower.has(b) && !BASE_TRUNKS.includes(b);
+}
 
 // --------------------------------------------------------------------------
 // The simple form
@@ -355,7 +424,8 @@ let reading = null;
 function shellOf(toolName) {
   const tool = String(toolName || '').replace(/^.*\./, '');
   if (tool === 'PowerShell') return 'powershell';
-  if (tool === 'Bash') return 'posix';
+  // 3.7.1 (D1): Monitor runs its command in the Bash tool's shell.
+  if (tool === 'Bash' || tool === 'Monitor') return 'posix';
   return null;
 }
 
@@ -645,9 +715,9 @@ const MAX_COMMAND_BYTES = 64 * 1024;
 // Past this there is no command line to judge at all, so it is a block.
 const MAX_PAYLOAD_BYTES = 1024 * 1024;
 
+// A branch of T (main / master, and the declared protected branches - 3.7.1 D2).
 function isMainBranch(name) {
-  const b = String(name || '').toLowerCase();
-  return b === 'main' || b === 'master';
+  return guard.lower.has(String(name || '').toLowerCase());
 }
 function isMainRef(ref) {
   return isMainBranch(
@@ -833,6 +903,8 @@ function pushCandidate(inv) {
   let dryRun = false;
   let noDryRun = false;
   let mainCount = 0;
+  let toBase = false; // 3.7.1: a T destination that is main / master ...
+  let toExtra = false; // ... or a declared protected branch (counted before the dedupe by source)
   let hard = false;
   let forced = false; // A hard flag other than --force-with-lease.
   let repoOpt = false;
@@ -857,6 +929,8 @@ function pushCandidate(inv) {
       upstream = true;
     } else if (f.main) {
       mainCount++;
+      if (isExtraProtected(f.dst.replace(/^refs\/heads\//i, '').replace(/^heads\//i, ''))) toExtra = true;
+      else toBase = true;
       if (f.src === '') neverExempt = true; // `:main` is the delete form.
       // `main` alone pushes the local `main`: its source is the same word.
       const src = f.src === null ? f.dst : f.src;
@@ -915,8 +989,11 @@ function pushCandidate(inv) {
     // branch (allowed off the trunk, always refused on it).
     lease: hard && !forced && !neverExempt && mainCount === 0 && !unreadable && !matching,
     toTrunk: mainCount > 0,
+    toBase,
+    toExtra,
     mainSpecs,
     neverExempt,
+    upstream, // Some part of it lands on the branch's own push target (mainPassedPush).
   };
 }
 
@@ -1018,7 +1095,8 @@ function gatedSyncMoverOutsideLine(invocations, line) {
 // segment, and - checked with ctx - the current branch is that trunk and any
 // trunk a fetch names is the same one.
 const FETCH_SYNC_FLAGS = new Set(['--prune', '-p', '--quiet', '-q']);
-const SYNC_SOURCE_RE = /^(?:refs\/remotes\/)?origin\/(main|master)$/;
+// `origin/<a branch of T>` (3.7.1: P too, read against `origin/P`).
+const syncSource = (ref) => guard.syncSourceRe.exec(ref);
 function plainFetch(inv) {
   if (inv.sub !== 'fetch' || inv.globals.length > 0) return null;
   const { words, expand } = inv.seg;
@@ -1033,7 +1111,7 @@ function plainFetch(inv) {
   }
   if (positional.length > 2) return null;
   if (positional.length >= 1 && positional[0] !== 'origin') return null;
-  if (positional.length === 2 && positional[1] !== 'main' && positional[1] !== 'master') return null;
+  if (positional.length === 2 && !guard.names.includes(positional[1])) return null;
   return { trunk: positional[1] || null };
 }
 function fetchOnlyMovers(invocations) {
@@ -1059,7 +1137,7 @@ function syncTarget(cand) {
   const rest = words.slice(2);
   if (inv.sub === 'merge' && rest.length === 2 && rest[0] === '--ff-only') rest.shift();
   if (rest.length !== 1) return null;
-  const m = SYNC_SOURCE_RE.exec(rest[0]);
+  const m = syncSource(rest[0]);
   return m ? { sub: inv.sub, trunk: m[1], source: rest[0] } : null;
 }
 // The whole command has to be the sync and nothing else: exactly one plain
@@ -1126,7 +1204,7 @@ function isBranchDelete(inv) {
 const sameWords = (form, words) => form.length === words.length && form.every((x, i) => x === words[i]);
 function syncFormShape(inv) {
   const rest = plainArgs(inv);
-  return Boolean(rest) && ['main', 'master'].some((t) => syncForms(t).some((f) => sameWords(f, [inv.sub, ...rest])));
+  return Boolean(rest) && guard.names.some((t) => syncForms(t).some((f) => sameWords(f, [inv.sub, ...rest])));
 }
 
 // Which movers a command may hold next to its gated calls (`deferralPlan`).
@@ -1345,6 +1423,85 @@ function readGateConfig(top) {
 const configOf = (ctx) => (ctx && ctx.gateConfig && !ctx.gateConfig.error ? ctx.gateConfig : NO_GATE_CONFIG);
 const configBroken = (why) => `The gate configuration in ${MANIFEST_FILE} cannot be read (${why}), so this push/merge cannot be judged. Fix ${MANIFEST_FILE} - gate.controlPlane, gate.exemptDocs and gate.harness are arrays of path patterns relative to the repository root; gate.script and reviewBudgetScript are relative paths of a .cjs / .mjs / .js file - then run the command again.`;
 
+// 3.7.1 (D2 / D3): the declarations the gate reads from the COMMITTED manifests (HEAD and the trunk - makeCtx
+// `declarations`), never from the working tree:
+//   workflow.protectedBranches  more branches judged like main / master (P). Checked exactly as lib/workflow.js
+//                               extrasErrors checks it (a test keeps the two in step): an array of names of
+//                               `[A-Za-z0-9._/-]` not starting with `-`; `workflow` itself an object.
+//   gate.denyCommands           [{ all: [<regex>, ...], reason }]: refused when every pattern of one entry matches
+//                               the command (case-insensitive). At most 32 entries; 1-8 patterns of 1-512 characters
+//                               that compile; a reason of 1-500 characters.
+// Nothing is dropped in silence: a value that does not pass is an error, and an error blocks the commands with a gate
+// word (classifyText).
+const DECL_BRANCH_RE = /^[A-Za-z0-9._/-]+$/; // lib/workflow.js BRANCH_RE
+const DENY_LIMITS = Object.freeze({ rules: 32, patterns: 8, pattern: 512, reason: 500 });
+const NO_DECLARATIONS = Object.freeze({ branches: [], branchesError: null, deny: [], denyError: null });
+function parseDeclarations(text) {
+  let doc;
+  try {
+    doc = JSON.parse(String(text).replace(/^﻿/, ''));
+  } catch {
+    return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not valid JSON`, denyError: `${MANIFEST_FILE} is not valid JSON` };
+  }
+  if (!isPlainJson(doc)) {
+    const why = `the root of ${MANIFEST_FILE} is not an object`;
+    return { ...NO_DECLARATIONS, branchesError: why, denyError: why };
+  }
+  const out = { branches: [], branchesError: null, deny: [], denyError: null };
+  const wf = doc.workflow;
+  if (wf !== undefined && !isPlainJson(wf)) out.branchesError = 'workflow must be an object';
+  else if (wf && wf.protectedBranches !== undefined) {
+    const list = wf.protectedBranches;
+    if (!Array.isArray(list)) out.branchesError = 'workflow.protectedBranches must be an array of branch names';
+    else {
+      const bad = list.findIndex((b) => typeof b !== 'string' || !DECL_BRANCH_RE.test(b) || b.startsWith('-'));
+      if (bad !== -1) out.branchesError = `workflow.protectedBranches[${bad}] is not a branch name`;
+      else out.branches = [...new Set(list)];
+    }
+  }
+  const gate = doc.gate;
+  if (gate !== undefined && !isPlainJson(gate)) out.denyError = 'gate is not an object';
+  else if (gate && gate.denyCommands !== undefined) {
+    const list = gate.denyCommands;
+    const L = DENY_LIMITS;
+    if (!Array.isArray(list) || list.length > L.rules) out.denyError = `gate.denyCommands must be an array of at most ${L.rules} entries`;
+    else {
+      for (let i = 0; i < list.length && !out.denyError; i += 1) {
+        const entry = list[i];
+        const at = `gate.denyCommands[${i}]`;
+        if (!isPlainJson(entry)) { out.denyError = `${at} is not an object`; break; }
+        const { all, reason } = entry;
+        if (!Array.isArray(all) || all.length < 1 || all.length > L.patterns) { out.denyError = `${at}.all must be an array of 1-${L.patterns} patterns`; break; }
+        if (typeof reason !== 'string' || reason.trim() === '' || reason.length > L.reason) { out.denyError = `${at}.reason must be a text of 1-${L.reason} characters`; break; }
+        const res = [];
+        for (const [k, pattern] of all.entries()) {
+          if (typeof pattern !== 'string' || pattern === '' || pattern.length > L.pattern) { out.denyError = `${at}.all[${k}] must be a regular expression of 1-${L.pattern} characters`; break; }
+          try { res.push(new RegExp(pattern, 'i')); } catch (e) { out.denyError = `${at}.all[${k}] is not a valid regular expression (${e.message})`; break; }
+        }
+        if (!out.denyError) out.deny.push({ all: res, reason, key: JSON.stringify([all, reason]) });
+      }
+      if (out.denyError) out.deny = [];
+    }
+  }
+  return out;
+}
+// The union of the declarations of several manifests: every protected branch, each deny entry once (the same
+// declaration on both sides is one entry), the first error of each kind.
+function mergeDeclarations(list) {
+  const out = { branches: [], branchesError: null, deny: [], denyError: null };
+  const keys = new Set();
+  for (const d of list) {
+    out.branchesError = out.branchesError || d.branchesError;
+    out.denyError = out.denyError || d.denyError;
+    for (const b of d.branches) if (!out.branches.includes(b)) out.branches.push(b);
+    for (const rule of d.deny) if (!keys.has(rule.key)) { keys.add(rule.key); out.deny.push(rule); }
+  }
+  if (out.branchesError) out.branches = [];
+  if (out.denyError) out.deny = [];
+  return out;
+}
+const declarationsBroken = (why) => `The declarations in the committed ${MANIFEST_FILE} cannot be read (${why}), so the protected branches or the denied commands are unknown and this command cannot be judged. Fix ${MANIFEST_FILE} - workflow.protectedBranches is an array of branch names; gate.denyCommands is an array (at most ${DENY_LIMITS.rules}) of { "all": [1-${DENY_LIMITS.patterns} regular expressions], "reason": "<text>" } - commit it (and bring it into the trunk), then run the command again.`;
+
 const isGateConfig = (f) => GATE_CONFIG_PATTERNS.some((re) => re.test(f));
 const hasOverride = (value) => OVERRIDE_STRINGS.some((re) => re.test(String(value)));
 const isHarness = (f, config = NO_GATE_CONFIG) => isGateConfig(f)
@@ -1480,7 +1637,7 @@ function pushTrunk(cand, ctx) {
     const dst = cand.inv.facts.words[i].dst;
     if (dst) return dst.replace(/^\+/, '').replace(/^(refs\/)?heads\//, '').toLowerCase();
   }
-  const target = /^[^/]+\/(main|master)$/i.exec(ctx.pushTarget || '');
+  const target = guard.pushTargetRe.exec(ctx.pushTarget || '');
   return target ? target[1].toLowerCase() : 'main';
 }
 // H-49: a harness-only diff that is not exempt only because of the override
@@ -1590,7 +1747,9 @@ function rule4Exempt(base, baseControl, config = NO_GATE_CONFIG) {
 // changes in the range the trunk takes in (the gained range of a trunk move,
 // or the base diff - `speedRange`); a speed-mode flag never covers them,
 // even on HEAD itself (3.6.0, #213).
-function rule3Flag(ctx, noFlag, tip = null, stale = STALE, range = speedRange([], false)) {
+// `strict` (3.7.1, D2): the call reaches a declared protected branch (P), where a harness-only diff since the flag
+// is not let through - anything committed after the check needs a new one there.
+function rule3Flag(ctx, noFlag, tip = null, stale = STALE, range = speedRange([], false), strict = false) {
   const flag = ctx.flag;
   if (!flag) return deny('3', noFlag);
   if (flag.mode === 'speed' && speedHit(range)) return deny('3', speedReason(range));
@@ -1615,7 +1774,7 @@ function rule3Flag(ctx, noFlag, tip = null, stale = STALE, range = speedRange([]
   const config = configOf(ctx);
   const hits = controlHits(since.files, config);
   if (hits.length > 0) return deny('3', controlReason(hits));
-  if (since.files.every((f) => isHarness(f, config)) && !since.overrideChanged) return allow();
+  if (!strict && since.files.every((f) => isHarness(f, config)) && !since.overrideChanged) return allow();
   return deny('3', overrideOnly(since, config) ? overrideReason(since.files) : stale);
 }
 
@@ -1643,12 +1802,14 @@ function judgeTrunkMove(ctx, trunk, ref, reasons) {
   if (gained === null) return cannot(`what \`${ref}\` adds to ${t}`);
   const config = configOf(ctx);
   const hits = controlHits(gained.files, config);
-  if (hits.length === 0 && !gained.overrideChanged && gained.files.every((f) => isHarness(f, config))) return allow(); // Rule 4.
-  if (gained.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
+  // 3.7.1 (D2): on a declared protected branch neither exemption applies.
+  const strict = isExtraProtected(t);
+  if (!strict && hits.length === 0 && !gained.overrideChanged && gained.files.every((f) => isHarness(f, config))) return allow(); // Rule 4.
+  if (!strict && gained.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
   let noFlag = reasons.noFlag;
   if (hits.length > 0) noFlag = controlReason(hits);
   else if (overrideOnly(gained, config)) noFlag = overrideReason(gained.files);
-  return rule3Flag(ctx, noFlag, target, reasons.stale, speedRange(gained.files, gained.overrideChanged, false, config));
+  return rule3Flag(ctx, noFlag, target, reasons.stale, speedRange(gained.files, gained.overrideChanged, false, config), strict);
 }
 
 // The source a `git merge` / `git rebase` / `git pull` on the trunk brings in
@@ -1670,6 +1831,47 @@ function integrationSource(cand, trunk) {
   return { ref: pos[0] };
 }
 
+// The branch name a refspec destination writes.
+const refBranch = (ref) => ref.replace(/^\+/, '').replace(/^refs\/heads\//i, '').replace(/^heads\//i, '');
+// The branch of T a refspec-less push off T lands on through `@{push}`, or null (H-19(d)).
+function pushTargetBranch(ctx, plan) {
+  if (plan && plan.branch) return null;
+  const m = guard.pushTargetRe.exec(ctx.pushTarget || '');
+  return m ? m[1] : null;
+}
+// 3.7.1 (D2): whether a gated candidate reaches a declared protected branch (P) - then the exemptions of main's
+// route (rules 4 / 4b, the harness-only diff since the flag) do not apply to it.
+function reachesExtra(cand, branch, ctx, plan) {
+  if (cand.kind === 'git') return isExtraProtected(branch);
+  if (cand.kind === 'write') return isExtraProtected(cand.trunk);
+  if (cand.kind !== 'push') return false;
+  if (cand.toExtra) return true;
+  if (!cand.upstream) return false;
+  return isMainBranch(branch) ? isExtraProtected(branch) : isExtraProtected(pushTargetBranch(ctx, plan));
+}
+// 3.7.1 (D2, platform's former gate #2): a push whose every branch of T is a P, and whose every source tip adds
+// nothing to `origin/<trunk>` (`ctx.mainPassed`), needs no flag - main to release, once main had its check. A push
+// that reaches main / master too is judged as usual.
+function mainPassedPush(cand, branch, ctx, plan) {
+  if (typeof ctx.mainPassed !== 'function' || cand.toBase) return false;
+  const facts = cand.inv.facts.words;
+  const sources = [];
+  for (const i of cand.mainSpecs) {
+    const { src: written, dst } = facts[i];
+    if (!isExtraProtected(refBranch(dst))) return false;
+    const src = (written === null ? dst : written).replace(/^\+/, '');
+    sources.push(UPSTREAM_REFS.has(src.toLowerCase()) ? 'HEAD' : src);
+  }
+  if (cand.upstream) {
+    const target = isMainBranch(branch) ? branch : pushTargetBranch(ctx, plan);
+    if (target !== null) {
+      if (!isExtraProtected(target)) return false;
+      sources.push('HEAD');
+    }
+  }
+  return sources.length > 0 && sources.every((src) => ctx.mainPassed(src) === true);
+}
+
 // Everything that needs ctx. Always returns a decision. `plan` is the
 // command's `deferralPlan` (null when it is not one).
 function contextRules(a, ctx, plan = null, commandInvocations = []) {
@@ -1682,8 +1884,7 @@ function contextRules(a, ctx, plan = null, commandInvocations = []) {
   }
   // H-19(d): a refspec-less push off the trunk still lands on the trunk when
   // the branch's push target is one (an upstream set to origin/main).
-  const toTrunk = (c) => c.kind === 'push' && c.omittedRefspec && !(plan && plan.branch)
-    && /^[^/]+\/(main|master)$/i.test(ctx.pushTarget || '');
+  const toTrunk = (c) => c.kind === 'push' && c.omittedRefspec && pushTargetBranch(ctx, plan) !== null;
   const gated = a.cands.filter((c) => !c.mainOnly || isMainBranch(branch) || toTrunk(c));
   if (gated.length === 0) return allow();
   // 3.7.0 (C3h): the product's gate configuration is read for every gated call; one that cannot be read blocks.
@@ -1715,12 +1916,15 @@ function contextRules(a, ctx, plan = null, commandInvocations = []) {
     if (sync.sub === 'merge') {
       const trunk = String(branch).toLowerCase();
       const target = syncTarget(a.cands[0]);
-      const ok = target !== null && target.trunk === trunk && sync.trunks.every((t) => t === trunk)
+      const ok = target !== null && target.trunk.toLowerCase() === trunk && sync.trunks.every((t) => t.toLowerCase() === trunk)
         && typeof ctx.fullRef === 'function' && ctx.fullRef(target.source) === `refs/remotes/origin/${trunk}`;
       return ok ? allow() : deny('2', splitReason('fetch'));
     }
   }
 
+  // 3.7.1 (D2): content main already has goes to a declared protected branch without a flag - checked before rule 2
+  // item 6, so `git push origin origin/main:release` is this route too.
+  if (cand.kind === 'push' && mainPassedPush(cand, branch, ctx, plan)) return allow();
   const reverse = reverseRefspec(gated, branch, ctx); // Rule 2 item 6, ahead of every exemption.
   if (reverse) return reverse;
 
@@ -1735,14 +1939,18 @@ function contextRules(a, ctx, plan = null, commandInvocations = []) {
   if (cand.kind === 'write') {
     if (cand.ref === undefined) return cand.sameName ? allow() : deny('2', FETCH_INTO_TRUNK);
     const why = integrateReason(cand.trunk, cand.ref, untrackedTrunk(ctx, cand.trunk));
-    return resolves ? judgeTrunkMove(ctx, cand.trunk, cand.ref, { noFlag: why, stale: why }) : rule3Flag(ctx, why);
+    return resolves ? judgeTrunkMove(ctx, cand.trunk, cand.ref, { noFlag: why, stale: why }) : rule3Flag(ctx, why, null, STALE, undefined, isExtraProtected(cand.trunk));
   }
   if (cand.kind === 'git') {
     const source = integrationSource(cand, branch);
     if (source.deny) return source.deny;
+    // 3.7.1 (D2): on a declared protected branch, `git merge <rev>` of a commit origin's trunk holds, while the
+    // branch adds nothing to it, needs no flag (release takes in main).
+    if (cand.sub === 'merge' && source.ref !== undefined && isExtraProtected(branch)
+      && typeof ctx.mergePassed === 'function' && ctx.mergePassed(source.ref) === true) return allow();
     if (source.ref !== undefined && resolves) {
       const why = integrateReason(branch, source.ref, untrackedTrunk(ctx, branch));
-      const noFlag = SYNC_SOURCE_RE.test(source.ref) ? needFlagReason(a, branch) : why;
+      const noFlag = syncSource(source.ref) ? needFlagReason(a, branch) : why;
       return judgeTrunkMove(ctx, branch, source.ref, { noFlag, stale: why });
     }
   }
@@ -1752,12 +1960,14 @@ function contextRules(a, ctx, plan = null, commandInvocations = []) {
     return deny('5', 'Cannot verify what changed since the base ref (origin/main, or main without a remote). Re-run the quality-check skill.');
   }
   const baseControl = controlHits(base.files, configOf(ctx));
-  if (rule4Exempt(base, baseControl, configOf(ctx))) return allow();
-  if (base.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
+  // 3.7.1 (D2): on a declared protected branch neither exemption applies (only main's route has them).
+  const strict = reachesExtra(cand, branch, ctx, plan);
+  if (!strict && rule4Exempt(base, baseControl, configOf(ctx))) return allow();
+  if (!strict && base.releaseOnly === true) return allow(); // 3.7.0 (#217): a release-please release diff
   let noFlag = needFlagReason(a, branch);
   if (baseControl.length > 0) noFlag = controlReason(baseControl);
   else if (overrideOnly(base, configOf(ctx))) noFlag = overrideReason(base.files);
-  const verdict = rule3Flag(ctx, noFlag, null, STALE, speedRange(base.files, base.overrideChanged, base.noBase, configOf(ctx)));
+  const verdict = rule3Flag(ctx, noFlag, null, STALE, speedRange(base.files, base.overrideChanged, base.noBase, configOf(ctx)), strict);
   // The pull-request routes below would meet the same refusal: no hint.
   if (verdict.decision === 'block' && verdict.reason.startsWith(SPEED_PREFIX)) return verdict;
   if (cand.kind === 'gh' && verdict.decision === 'block' && verdict.rule === '3') {
@@ -2263,28 +2473,74 @@ function locateCandidates(lines, candLines, ctx, crlf) {
 // git call failed is recorded on `ctx.state` by the getters themselves, never
 // by classify, and is read only by `main()`, which turns the single "not inside
 // a git repository" case into a fail-open.
+//   declarations  3.7.1 (D2 / D3): `{ branches, branchesError, deny, denyError }` from the manifests committed at
+//                 HEAD and at the trunk (`parseDeclarations`), or null when the work tree has no manifest (git does
+//                 not run then). Missing (a test stub): none.
+//   denyMentioned / protectedMentioned  whether the work tree's manifest text holds `denyCommands` /
+//                 `protectedBranches` - the cheap screens (no git) in front of `declarations` for a command with
+//                 no gate word.
+//   mainPassed(src) true when `src` adds nothing to origin's trunk (`git diff --quiet origin/<trunk>...<src>`
+//                 exits 0), false when it does, null when it cannot be told (no origin/main or origin/master, an
+//                 unknown `src`, a git failure). mergePassed(rev): `rev` is in origin's trunk and HEAD adds nothing
+//                 to it - true / false / null. A ctx without them (a test stub) has no such route.
 function classify(command, ctx, shell = null) {
   const saved = reading;
+  const savedGuard = guard;
   reading = shell;
+  guard = DEFAULT_GUARD;
   try {
-    return classifyText(String(command || ''), ctx);
+    return protectedWording(classifyText(String(command || ''), ctx));
   } finally {
     reading = saved;
+    guard = savedGuard;
   }
 }
+// 3.7.1 (D2): with declared protected branches, a refusal that speaks of main/master names them too.
+function protectedWording(verdict) {
+  if (verdict.decision !== 'block' || guard.extra.length === 0 || !verdict.reason.includes('main/master')) return verdict;
+  return { ...verdict, reason: verdict.reason.split('main/master').join(`main/master (or the protected branch ${guard.extra.join(', ')})`) };
+}
+// 3.7.1 (D3): the product's denied commands. Read only when the work tree's manifest mentions them; matched against
+// the text within the command budget, as written and with line continuations folded.
+function productDenied(text, ctx) {
+  if (!ctx || !ctx.denyMentioned) return null;
+  const decl = ctx.declarations;
+  if (!decl || decl.deny.length === 0) return null;
+  const body = text.length > MAX_COMMAND_BYTES ? text.slice(0, MAX_COMMAND_BYTES) : text;
+  const texts = [body, body.replace(LINE_CONTINUATION_RE, '')];
+  for (const rule of decl.deny) {
+    if (texts.some((t) => rule.all.every((re) => re.test(t)))) return deny('2', rule.reason);
+  }
+  return null;
+}
+// 3.7.1 (D2): read T for this call - for a command with a live gate word, or a trunk rewrite where the work tree's
+// manifest mentions protected branches. Returns the declarations' error, if any.
+function loadGuard(ctx, live, text) {
+  if (!ctx || (!live && !(TRUNK_WRITE_RE.test(text) && ctx.protectedMentioned))) return null;
+  const decl = ctx.declarations;
+  if (!decl) return null;
+  if (decl.branches.length > 0) guard = guardSet(decl.branches);
+  return decl.branchesError || decl.denyError || null;
+}
 function classifyText(text, ctx) {
+  const product = productDenied(text, ctx); // 3.7.1 (D3), before every other rule
+  if (product) return product;
   const always = alwaysDeny(text);
   if (always) return always;
   if (Buffer.byteLength(text, 'utf8') > MAX_COMMAND_BYTES) return gateWordFallback(text, TOO_LONG);
-  if (!gateWordIn(text) && !trunkWriteIn(text)) return allow();
+  const gateWord = gateWordIn(text);
+  if (!gateWord && !TRUNK_WRITE_RE.test(text)) return allow();
   // A CRLF line end is read as LF (a lone CR is still not simple).
   const crlf = text.includes('\r\n');
   const stripped = stripTrailingOutput(crlf ? text.replace(/\r\n/g, '\n') : text);
   const body = reading === 'powershell' ? readPsIfOk(stripped) : stripped;
   const masked = maskMessages(body);
-  if (masked !== null && !gateWordIn(masked) && !trunkWriteIn(masked)) return allow(); // Only in a message.
   // The rest of the command is judged with its message values masked.
   const judged = masked === null ? body : masked;
+  const broken = loadGuard(ctx, masked === null ? gateWord : gateWordIn(masked), judged);
+  if (masked !== null && !gateWordIn(masked) && !trunkWriteIn(masked)) return allow(); // Only in a message.
+  if (!gateWord && !trunkWriteIn(text)) return allow();
+  if (broken && gateWordIn(judged)) return deny('5', declarationsBroken(broken));
   let lines;
   try {
     lines = parseSimple(judged);
@@ -2365,8 +2621,50 @@ function runGit(args, cwd) {
   }
 }
 
+// `git cat-file --batch` with `input` on stdin: the raw stdout as a Buffer, or null on a failure (3.7.1).
+function runGitBatch(input, cwd) {
+  const budget = DEADLINE - Date.now();
+  if (budget <= 0) return null;
+  try {
+    return execFileSync('git', [...SAFE_GIT, 'cat-file', '--batch'], {
+      cwd, env: GIT_ENV, input, stdio: ['pipe', 'pipe', 'pipe'], timeout: Math.min(5000, budget), maxBuffer: MAX_BUFFER,
+    });
+  } catch {
+    return null;
+  }
+}
+// The objects of a `cat-file --batch` answer, in input order: { type, content } or null (missing / ambiguous).
+function parseBatch(buf, count) {
+  const out = [];
+  let at = 0;
+  for (let i = 0; i < count; i += 1) {
+    const nl = buf.indexOf(0x0a, at);
+    if (nl === -1) return null;
+    const header = buf.slice(at, nl).toString('utf8');
+    at = nl + 1;
+    const m = /^[0-9a-f]+ (\S+) (\d+)$/.exec(header);
+    if (!m) { out.push(null); continue; } // `<name> missing` / `<name> ambiguous`
+    const size = Number(m[2]);
+    out.push({ type: m[1], size, content: buf.slice(at, at + size) });
+    at += size + 1;
+  }
+  return out;
+}
+// The work tree root above `dir` - the first directory holding `.git` (a directory, or a worktree's file) - found
+// without running git, or null.
+function workTreeRoot(dir) {
+  if (typeof dir !== 'string' || dir === '' || /^[\\/]{2}/.test(dir)) return null;
+  let cur = path.resolve(dir);
+  for (;;) {
+    if (fs.existsSync(path.join(cur, '.git'))) return cur;
+    const up = path.dirname(cur);
+    if (up === cur) return null;
+    cur = up;
+  }
+}
+
 function makeCtx(cwd) {
-  const state = { failure: null };
+  const state = { failure: null, notes: [] };
   const cache = new Map();
   const once = (key, fn) => {
     if (!cache.has(key)) cache.set(key, fn());
@@ -2455,9 +2753,85 @@ function makeCtx(cwd) {
     return null;
   });
 
+  // 3.7.1 (D2 / D3): the work tree's manifest text (no git), or null when there is none.
+  const manifestText = () => once('manifestText', () => {
+    const top = workTreeRoot(cwd);
+    if (top === null) return null;
+    try {
+      return fs.readFileSync(path.join(top, MANIFEST_FILE), 'utf8');
+    } catch (e) {
+      return e && (e.code === 'ENOENT' || e.code === 'ENOTDIR') ? null : '';
+    }
+  });
+  const commit = (ref) => once(`commit:${ref}`, () => {
+    const r = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
+    return r.ok && r.out.trim() ? r.out.trim().toLowerCase() : null;
+  });
+  // origin's trunk for the main-passed route: origin/main, else origin/master (a remote-tracking ref only).
+  const originTrunk = () => once('originTrunk', () => commit(BASE_REFS[0]) || commit(BASE_REFS[1]));
+  // `git diff --quiet a...b`: true when b adds nothing to a, false when it does, null on a failure.
+  const nothingAdded = (a, b) => {
+    const r = git(['diff', ...SAFE_DIFF, '--quiet', `${a}...${b}`]);
+    if (r.ok) return true;
+    return r.status === 1 ? false : null;
+  };
+
   return {
     state,
     cwd,
+    get denyMentioned() {
+      const text = manifestText();
+      return text !== null && text.includes('denyCommands');
+    },
+    get protectedMentioned() {
+      const text = manifestText();
+      return text !== null && text.includes('protectedBranches');
+    },
+    // The declarations of the manifests committed at HEAD and at the trunk (the first of BASE_REFS that exists),
+    // read in one `git cat-file --batch`; null without a manifest in the work tree.
+    get declarations() {
+      return once('declarations', () => {
+        if (manifestText() === null) return null;
+        const names = ['HEAD', ...BASE_REFS];
+        const input = [...names.map((n) => `${n}:${MANIFEST_FILE}`), ...BASE_REFS].join('\n') + '\n';
+        const buf = runGitBatch(input, workTreeRoot(cwd));
+        const objects = buf === null ? null : parseBatch(buf, names.length + BASE_REFS.length);
+        let decl;
+        if (objects === null) {
+          fail('git-error');
+          const why = `git could not read the committed ${MANIFEST_FILE}`;
+          decl = { ...NO_DECLARATIONS, branchesError: why, denyError: why };
+        } else {
+          const trunkAt = BASE_REFS.findIndex((_, i) => objects[names.length + i] !== null);
+          const files = [objects[0], trunkAt === -1 ? null : objects[1 + trunkAt]].filter((o) => o !== null);
+          decl = mergeDeclarations(files.map((o) => {
+            if (o.type !== 'blob') return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is not a file`, denyError: `${MANIFEST_FILE} is not a file` };
+            if (o.size > MAX_MANIFEST_BYTES) return { ...NO_DECLARATIONS, branchesError: `${MANIFEST_FILE} is over 1 MB`, denyError: `${MANIFEST_FILE} is over 1 MB` };
+            return parseDeclarations(o.content.toString('utf8'));
+          }));
+        }
+        for (const why of new Set([decl.branchesError, decl.denyError].filter(Boolean))) state.notes.push(`quality-gate: ${declarationsBroken(why)}`);
+        return decl;
+      });
+    },
+    mainPassed(src) {
+      return once(`mainPassed:${src}`, () => {
+        const trunk = originTrunk();
+        const tip = commit(src);
+        return trunk && tip ? nothingAdded(trunk, tip) : null;
+      });
+    },
+    mergePassed(rev) {
+      return once(`mergePassed:${rev}`, () => {
+        const trunk = originTrunk();
+        const target = commit(rev);
+        const head = commit('HEAD');
+        if (!trunk || !target || !head) return null;
+        const r = git(['merge-base', '--is-ancestor', target, trunk]);
+        if (!r.ok) return r.status === 1 ? false : null;
+        return nothingAdded(trunk, head);
+      });
+    },
     get toplevel() {
       return once('toplevel', () => {
         const top = root();
@@ -2560,10 +2934,7 @@ function makeCtx(cwd) {
     },
     // H-11 / H-13: the commit `ref` names (lower case), or null.
     resolveCommit(ref) {
-      return once(`commit:${ref}`, () => {
-        const r = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
-        return r.ok && r.out.trim() ? r.out.trim().toLowerCase() : null;
-      });
+      return commit(ref);
     },
     // `a` is an ancestor of `b` (both shas): true / false, or null on failure.
     ancestor(a, b) {
@@ -2632,7 +3003,17 @@ function emitBlock(reason) {
   }));
 }
 
+// 3.7.1 (D4): Cursor's beforeShellExecution output - an explicit allow, since Cursor does not read silence as one.
+function emitCursor(reason) {
+  console.log(JSON.stringify(reason === null
+    ? { permission: 'allow' }
+    : { permission: 'deny', user_message: reason, agent_message: reason }));
+}
+
 function main() {
+  const cursor = process.argv[2] === 'cursor';
+  const block = (reason) => (cursor ? emitCursor(reason) : emitBlock(reason));
+  const pass = () => { if (cursor) emitCursor(null); };
   // Buffers, not a string: the cap is in BYTES, and concatenating at the end
   // keeps a multi-byte character that straddles two chunks intact.
   const chunks = [];
@@ -2655,35 +3036,48 @@ function main() {
   process.stdin.on('end', () => {
     if (oversized) {
       process.stderr.write('quality-gate: hook payload over 1 MB; cannot classify, blocking.\n');
-      emitBlock(HUGE_PAYLOAD);
+      block(HUGE_PAYLOAD);
       return;
     }
     let command;
     let shell = null;
     let cwd = process.cwd();
+    let payload;
     try {
       // Windows producers may prefix JSON with a UTF-8 BOM. Strip only that
       // leading marker so valid payloads do not enter the malformed fail-open.
-      const payload = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
-      const raw = payload && payload.tool_input ? payload.tool_input.command : undefined;
-      shell = shellOf(payload && payload.tool_name);
-      if (typeof raw !== 'string' && shell !== null) {
-        // H-52(5) / H-07: a shell call whose command cannot be read is
-        // refused, not waved through.
-        process.stderr.write('quality-gate: shell call without a readable command; blocking.\n');
-        emitBlock(UNREADABLE_COMMAND);
-        return;
-      }
-      if (typeof raw !== 'string') throw new Error('tool_input.command is not a string');
-      command = raw;
-      if (typeof payload.cwd === 'string' && fs.existsSync(payload.cwd)) cwd = payload.cwd;
+      payload = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
     } catch (e) {
       // Rule 5, fail-open #1: never block on a payload the hook cannot read -
       // but say so, or a hook that silently stops gating looks like a hook
       // that is passing everything.
       process.stderr.write(`quality-gate: unreadable hook payload (${e.message}); not gating.\n`);
+      pass();
       return;
     }
+    // Cursor (D4): every beforeShellExecution call is a shell call, with the command at the top level and no tool
+    // name - the shell is unknown, so only forms both shells read alike are accepted.
+    const input = cursor ? payload : (payload && payload.tool_input);
+    const raw = input ? input.command : undefined;
+    shell = cursor ? null : shellOf(payload && payload.tool_name);
+    if (typeof raw !== 'string' && !cursor && shell === 'posix' && String(payload.tool_name || '').replace(/^.*\./, '') === 'Monitor'
+      && input && input.ws !== null && typeof input.ws === 'object') {
+      // D1: a Monitor call with only a WebSocket source runs no shell.
+      return;
+    }
+    if (typeof raw !== 'string' && (cursor || shell !== null)) {
+      // H-52(5) / H-07: a shell call whose command cannot be read is
+      // refused, not waved through.
+      process.stderr.write('quality-gate: shell call without a readable command; blocking.\n');
+      block(UNREADABLE_COMMAND);
+      return;
+    }
+    if (typeof raw !== 'string') {
+      process.stderr.write('quality-gate: unreadable hook payload (tool_input.command is not a string); not gating.\n');
+      return;
+    }
+    command = raw;
+    if (typeof payload.cwd === 'string' && fs.existsSync(payload.cwd)) cwd = payload.cwd;
     const ctx = makeCtx(cwd);
     let verdict;
     try {
@@ -2693,14 +3087,17 @@ function main() {
       process.stderr.write(`quality-gate: classifier error (${e && e.message}); judging on gate words alone.\n`);
       verdict = gateWordFallback(command, UNCLASSIFIABLE);
     }
-    if (verdict.decision !== 'block') return;
+    // 3.7.1: a declaration that cannot be read is reported even when the command goes through.
+    for (const note of ctx.state.notes) process.stderr.write(`${note}\n`);
+    if (verdict.decision !== 'block') { pass(); return; }
     if (ctx.state.failure === 'not-a-repo' && !verdict.elsewhere) {
       // Rule 5, fail-open #2 - for the payload cwd only: a block decided in
       // the directory a `cd` / `-C` moved to stands (#158).
       process.stderr.write('quality-gate: not inside a git repository; skipping\n');
+      pass();
       return;
     }
-    emitBlock(verdict.reason);
+    block(verdict.reason);
   });
 }
 
