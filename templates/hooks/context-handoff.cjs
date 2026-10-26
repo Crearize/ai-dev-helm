@@ -415,14 +415,19 @@ const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
 // The tokens of exec's JavaScript (jsLexer). A string literal, a regex literal and a comment hide the calls written in
 // them. An unterminated literal runs to the end of its line (`...` to the end of the script) and an unterminated
 // comment to the end, so every token matches where it starts and each character is read once. A call inside a
-// template literal's ${...} is not read.
+// template literal's ${...} is not read. A number keeps its decimal point (1./2) and a name may have non-ASCII
+// letters (値 / 2).
+const JS_NAME_START = String.raw`(?:[\w$]|(?![\s\u2028\u2029\ufeff])[\u0080-\uffff])`;
 const JS_TOKEN_RE = new RegExp(String.raw`\s+|"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
-  String.raw`|\/\/[^\r\n]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(|[\w$]+|\+\+|--|[\s\S]`, 'y');
+  String.raw`|\/\/[^\r\n]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(` +
+  String.raw`|\d[\w$]*(?:\.[\w$]*)?|${JS_NAME_START}+|\+\+|--|[\s\S]`, 'y');
+const JS_NAME_TOKEN_RE = new RegExp(`^${JS_NAME_START}`);
 const JS_REGEX_RE = new RegExp(String.raw`\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`, 'y');
 // A "/" is a regex literal (/'/g, /\/*$/, /[{(]/) where an expression starts: at the start, after an operator or
-// punctuation, or after one of these words. After a name, a number, a literal, ")", "]", "}", "++" or "--" it divides
-// (so `if (a) /'/.test(s)` is read as a division).
-const JS_REGEX_AFTER_WORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'await', 'yield']);
+// punctuation, or after one of these words. After a name (of is one), a number, a literal, ")", "]", "}", "++" or
+// "--" it divides (so `if (a) /'/.test(s)` and a regex at the start of a statement after a block's "}" are read as a
+// division).
+const JS_REGEX_AFTER_WORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'await', 'yield']);
 const EXEC_PATCH_ARG_RE = new RegExp(String.raw`\s*` + JS_STRING, 'y');
 const EXEC_OBJECT_START_RE = /\s*\{/y;
 const EXEC_CODE_MAX = 500000;
@@ -513,7 +518,7 @@ function jsLexer(code, pos, last = null) {
   let afterDot = false;
   const regexStarts = () => {
     if (prev === null || prev.endsWith('(')) return true; // also after a call's "tools.name("
-    if (/^[\w$]/.test(prev)) return !afterDot && JS_REGEX_AFTER_WORDS.has(prev);
+    if (JS_NAME_TOKEN_RE.test(prev)) return !afterDot && JS_REGEX_AFTER_WORDS.has(prev);
     if (/^["'`/]/.test(prev) && prev.length > 1) return false; // after a literal
     return !/^(?:[)\]}]|\+\+|--)$/.test(prev);
   };
