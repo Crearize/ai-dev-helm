@@ -289,8 +289,9 @@
 // reading of each kind (protected branches / denied commands) is one of three:
 // none (no manifest, no such key - or a broken text that never names the
 // kind), read, or unreadable (a value that fails the check, a broken text that
-// names the kind, a git failure other than "not a repository", a blob a
-// partial clone lacks). An unreadable kind blocks every command with a gate
+// names the kind, a manifest that is not a regular file - a symbolic link
+// included -, a git failure other than "not a repository", a blob a partial
+// clone lacks and cannot fetch). An unreadable kind blocks every command with a gate
 // word - except a value broken at the trunk while HEAD's manifest reads that
 // kind: then HEAD's is used and the trunk's is reported on stderr, so the
 // change that fixes the trunk can still be pushed and merged
@@ -2665,7 +2666,8 @@ const SAFE_DIFF = ['--no-ext-diff', '--no-textconv', '--no-color'];
 // No network either: in a partial clone a diff that needs a missing blob
 // would fetch it from the promisor remote (a stall, and a request the user
 // never approved), and a credential prompt would wait for input that never
-// comes. A missing object is a git failure, which blocks.
+// comes. A missing object is a git failure, which blocks. (One read may
+// fetch: the declarations' - LAZY_FETCH_ENV.)
 const GIT_ENV = { ...process.env, GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0' };
 
 function runGit(args, cwd) {
@@ -2686,13 +2688,22 @@ function runGit(args, cwd) {
   }
 }
 
-// `git cat-file --batch` with `input` on stdin: the raw stdout as a Buffer, or null on a failure (3.7.1).
-function runGitBatch(input, cwd) {
+// 3.7.1: the one read that may fetch - the declarations' `cat-file --batch`. In a partial clone a manifest the trunk
+// moved to is not in the clone until something fetches it; without the fetch a repository with no declaration would
+// block its pushes after each such fetch, where 3.7.0 let them through. Only git's lazy fetch of the objects asked (a
+// blob, or a tree of a treeless clone), within LAZY_FETCH_MS, and never a prompt: no terminal, no askpass program, no
+// credential manager window - a fetch that needs one fails, and the read is made again without fetching.
+const LAZY_FETCH_MS = 10000;
+const LAZY_FETCH_ENV = { ...GIT_ENV, GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never' };
+delete LAZY_FETCH_ENV.GIT_NO_LAZY_FETCH;
+// `git cat-file --batch` with `input` on stdin: the raw stdout as a Buffer, or null on a failure (3.7.1). `fetch`: let
+// a partial clone fetch the objects it lacks (a failed fetch fails the whole call).
+function runGitBatch(input, cwd, fetch = false) {
   const budget = DEADLINE - Date.now();
   if (budget <= 0) return null;
   try {
     return execFileSync('git', [...SAFE_GIT, 'cat-file', '--batch'], {
-      cwd, env: GIT_ENV, input, stdio: ['pipe', 'pipe', 'pipe'], timeout: Math.min(5000, budget), maxBuffer: MAX_BUFFER,
+      cwd, env: fetch ? LAZY_FETCH_ENV : GIT_ENV, input, stdio: ['pipe', 'pipe', 'pipe'], timeout: Math.min(fetch ? LAZY_FETCH_MS : 5000, budget), maxBuffer: MAX_BUFFER,
     });
   } catch {
     return null;
@@ -2716,9 +2727,9 @@ function parseBatch(buf, count) {
   }
   return out;
 }
-// Whether a tree object (from parseBatch) has an entry `name`: true / false, or null when it cannot be read. An entry
-// is `<mode> <name>\0<oid as raw bytes>`.
-function treeHas(tree, name) {
+// The mode of a tree object's (from parseBatch) entry `name` (`100644`, `120000` for a symbolic link, ...), false when
+// there is no such entry, or null when the tree cannot be read. An entry is `<mode> <name>\0<oid as raw bytes>`.
+function treeMode(tree, name) {
   const oidBytes = tree.oid.length / 2;
   const buf = tree.content;
   let at = 0;
@@ -2726,11 +2737,13 @@ function treeHas(tree, name) {
     const sp = buf.indexOf(0x20, at);
     const nul = sp === -1 ? -1 : buf.indexOf(0x00, sp);
     if (nul === -1 || nul + 1 + oidBytes > buf.length) return null;
-    if (buf.slice(sp + 1, nul).toString('utf8') === name) return true;
+    if (buf.slice(sp + 1, nul).toString('utf8') === name) return buf.slice(at, sp).toString('utf8');
     at = nul + 1 + oidBytes;
   }
   return false;
 }
+// A regular file's mode (git writes 100644 / 100755; 100664 is an old git's).
+const FILE_MODE_RE = /^100(?:644|755|664)$/;
 // The work tree root above `dir` - the first directory holding `.git` (a directory, or a worktree's file) - found
 // without running git, or null.
 const isUncPath = (dir) => typeof dir === 'string' && /^[\\/]{2}/.test(dir);
@@ -2884,8 +2897,10 @@ function makeCtx(cwd) {
     // The declarations of the manifests committed at HEAD and at the trunk (the first of BASE_REFS that exists),
     // read in one `git cat-file --batch` - whether or not the work tree has a manifest (a branch that removed it, or
     // was cut before it, still meets the trunk's). For each version the batch asks the manifest, the commit and its
-    // root tree: a commit whose manifest git calls missing has none only when its tree has no such entry - a partial
-    // clone lacks the blob, or the tree, and then that version is unreadable (GIT_NO_LAZY_FETCH: no fetch here).
+    // root tree: a commit whose manifest git calls missing has none only when its tree has no such entry; an entry
+    // that is not a regular file (a symbolic link, whose blob is the link's target path) is not a file. A partial clone
+    // fetches what it lacks (LAZY_FETCH_ENV); when that fails the batch is asked again without fetching, and a blob or
+    // tree still missing makes that version unreadable.
     // null only where git answers that this is not a repository (then the 3.7.0 route decides, fail-open #2
     // included); any other failure is unreadable, and blocks a command with a gate word.
     get declarations() {
@@ -2893,8 +2908,12 @@ function makeCtx(cwd) {
         const top = declarationRoot();
         let decl;
         const names = ['HEAD', ...BASE_REFS];
-        const buf = top === null ? null : runGitBatch(names.map((n) => `${n}:${MANIFEST_FILE}\n${n}\n${n}^{tree}\n`).join(''), top);
-        const objects = buf === null ? null : parseBatch(buf, names.length * 3);
+        const input = names.map((n) => `${n}:${MANIFEST_FILE}\n${n}\n${n}^{tree}\n`).join('');
+        const ask = (fetch) => {
+          const out = runGitBatch(input, top, fetch);
+          return out === null ? null : parseBatch(out, names.length * 3);
+        };
+        const objects = top === null ? null : ask(true) || ask(false);
         if (objects === null) {
           // Only a failure here asks rev-parse where we are. Not a repository: nothing to read (and nothing recorded -
           // the 3.7.0 route meets the same answer when it asks).
@@ -2906,14 +2925,16 @@ function makeCtx(cwd) {
           const version = (i) => {
             const [blob, ref, tree] = objects.slice(i * 3, i * 3 + 3);
             if (ref === null) return null; // No such ref: an unborn HEAD, or not this trunk.
-            const fetch = `not in this clone - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}`;
-            if (blob === null) {
-              const has = tree && tree.type === 'tree' ? treeHas(tree, MANIFEST_FILE) : null;
-              if (has === false) return null;
-              return { unreadable: has ? `${names[i]}:${MANIFEST_FILE} is ${fetch}` : `the tree of ${names[i]} is ${fetch}` };
+            const fetch = `not in this clone and could not be fetched - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}`;
+            const mode = tree && tree.type === 'tree' ? treeMode(tree, MANIFEST_FILE) : null;
+            if (mode === false) return null;
+            // The mode first: a symbolic link, a directory or a submodule is no file, whatever its object.
+            const notFile = mode !== null && !FILE_MODE_RE.test(mode);
+            if (!notFile && (blob === null || mode === null)) {
+              return { unreadable: blob === null && mode ? `${names[i]}:${MANIFEST_FILE} is ${fetch}` : `the tree of ${names[i]} is ${fetch}` };
             }
-            if (blob.type !== 'blob') {
-              const why = `${MANIFEST_FILE} is not a file`;
+            if (notFile || blob.type !== 'blob') {
+              const why = mode === '120000' ? `${MANIFEST_FILE} is a symbolic link, not a file` : `${MANIFEST_FILE} is not a file`;
               const both = { branches: true, deny: true }; // No text: it may declare either kind.
               return { ...NO_DECLARATIONS, branchesError: why, denyError: why, declared: { branches: false, deny: false }, named: both };
             }
