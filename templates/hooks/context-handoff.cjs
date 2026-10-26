@@ -18,17 +18,19 @@
 // is read from its response_item lines. Codex's SessionEnd cannot tell /clear apart and may run after the new
 // session's start, so /clear works from a marker that every Stop writes:
 //
-//   Stop                     -> mark this project's latest session (its rollout path)
+//   Stop                     -> mark this project's latest interactive session (its rollout path)
 //   PreCompact               -> save the record
 //   SessionStart (compact)   -> rebuild the record and put its key points back (within Codex's 2,500-token limit)
 //   SessionStart (clear)     -> rebuild the marked session's record and put its key points back
 //
-// The store is $CODEX_HOME/context-handoff/<git root> (~/.codex when CODEX_HOME is unset). A missing or unreadable
-// transcript_path, and a compressed (.jsonl.zst) rollout, do nothing.
+// The store is $CODEX_HOME/context-handoff/<git root's name>-<hash> (~/.codex when CODEX_HOME is unset). For Stop,
+// PreCompact and SessionStart (compact), a missing or unreadable transcript_path and a compressed (.jsonl.zst)
+// rollout do nothing; SessionStart (clear) works from the marker.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const readline = require('node:readline');
 const { execFileSync } = require('node:child_process');
 
@@ -401,26 +403,56 @@ async function readTranscript(file) {
 
 const CODEX_SHELL_TOOLS = new Set(['exec_command', 'shell_command', 'shell', 'local_shell', 'container.exec']);
 const PR_URL_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)/g;
-const PATCH_FILE_RE = /^\*\*\* (?:Update File|Add File|Delete File|Move to): (.+?)\s*$/gm;
+// (.*) and a trim instead of (.+?)\s*$: the lazy form takes quadratic time on a line with a long run of spaces.
+const PATCH_FILE_RE = /^\*\*\* (?:Update File|Add File|Delete File|Move to): (.*)$/gm;
 const SNIFF_BYTES = 512;
+const SESSION_META_BYTES = 8192; // session_meta's source sits within the first ~700 bytes of its line
+// Codex 0.163 runs shell commands and patches as calls in the JavaScript its "exec" tool runs:
+// tools.exec_command({cmd:"git push ..."}) and tools.apply_patch("*** Begin Patch\n..."). A string literal ("...",
+// '...' or `...`) has one way to match each character, so these stay linear.
+const JS_STRING = String.raw`("(?:[^"\\\r\n]|\\[\s\S])*"|'(?:[^'\\\r\n]|\\[\s\S])*'|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`)';
+const EXEC_PATCH_RE = new RegExp(String.raw`\btools\.apply_patch\(\s*` + JS_STRING, 'g');
+const EXEC_SHELL_RE = new RegExp(String.raw`\btools\.(?:exec_command|shell_command)\(\s*\{\s*["']?(?:cmd|command)["']?\s*:\s*` + JS_STRING, 'g');
+const EXEC_CODE_MAX = 500000;
+const QUESTION_REPLY_TAG = 'send_user_message_question_reply';
+// Codex's own tags are snake_case (environment_context, turn_aborted, user_shell_command, recommended_plugins ...);
+// these are the ones without an underscore. HTML tag names have no underscore.
+const CODEX_PLAIN_TAGS = new Set(['skill']);
 
 // 'codex' for a Codex rollout (its first line is session_meta), 'codex-compressed' for an archived .jsonl.zst
-// rollout (not read), 'claude' for any other readable file, null when there is no readable file.
+// rollout (not read), 'claude' for any other readable file, null when there is no readable file or it is still
+// empty (Codex creates the rollout before it writes session_meta).
 function transcriptKind(file) {
   if (typeof file !== 'string' || !file) return null;
   if (/\.zst$/i.test(file)) return 'codex-compressed';
+  const head = firstLine(file, SNIFF_BYTES);
+  if (head === null || !head.trim()) return null;
+  return /"type"\s*:\s*"session_meta"/.test(head) ? 'codex' : 'claude';
+}
+
+// The start of a file's first line (up to bytes), or null when it cannot be read.
+function firstLine(file, bytes) {
   let fd;
   try {
     fd = fs.openSync(file, 'r');
-    const buffer = Buffer.alloc(SNIFF_BYTES);
-    const read = fs.readSync(fd, buffer, 0, SNIFF_BYTES, 0);
-    const head = buffer.toString('utf8', 0, read).split(/\r?\n/)[0];
-    return /"type"\s*:\s*"session_meta"/.test(head) ? 'codex' : 'claude';
+    const buffer = Buffer.alloc(bytes);
+    const read = fs.readSync(fd, buffer, 0, bytes, 0);
+    return buffer.toString('utf8', 0, read).split(/\r?\n/)[0];
   } catch {
     return null;
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
   }
+}
+
+// A session the user can /clear: not `codex exec` (source "exec"), Codex as an MCP server ("mcp") or a subagent
+// (source {"subagent": ...}). An older rollout without a source counts as interactive.
+function isInteractiveCodexSession(file) {
+  const head = firstLine(file, SESSION_META_BYTES) || '';
+  const source = /"source"\s*:\s*(?:"([^"\\]*)"|(\{))/.exec(head);
+  if (!source) return true;
+  if (source[2]) return false;
+  return !['exec', 'mcp'].includes(source[1].toLowerCase());
 }
 
 // The copy Codex runs lives in .codex/hooks (Claude Code's in .claude/hooks or ~/.claude/hooks).
@@ -429,14 +461,59 @@ function runsAsCodexCopy() {
 }
 
 // Context Codex itself puts into a user message (AGENTS.md, <environment_context>, <turn_aborted>, a skill, hook
-// output ...): a text that is one tagged block, or the AGENTS.md instructions. Checked with indexOf, not a regex.
+// output ...): a text that is one block of a Codex tag (snake_case, or one of CODEX_PLAIN_TAGS), or the AGENTS.md
+// instructions. A user's own HTML (<details>...</details>) stays.
 function isCodexInjected(text) {
   const t = String(text || '').trim();
   if (!t) return true;
   if (t.startsWith('# AGENTS.md instructions')) return true;
   if (t.startsWith('[context-handoff]')) return true;
   const open = /^<([A-Za-z_][\w-]{0,63})[\s>]/.exec(t);
-  return Boolean(open) && t.endsWith(`</${open[1]}>`);
+  if (!open || !t.endsWith(`</${open[1]}>`)) return false;
+  return open[1].includes('_') || CODEX_PLAIN_TAGS.has(open[1]);
+}
+
+// The value of a JavaScript string literal (JSON.parse for "..." when it can; the common escapes otherwise).
+function jsStringValue(literal) {
+  if (literal[0] === '"') {
+    try {
+      return JSON.parse(literal);
+    } catch {
+      // A JavaScript-only escape (\x41, \', \u{1F600}): decoded below.
+    }
+  }
+  const singles = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', 0: '\0', '\n': '', '\r': '' };
+  return literal.slice(1, -1).replace(/\\(u\{[0-9a-fA-F]{1,6}\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g, (all, e) => {
+    if (e.length > 1) {
+      const code = parseInt(e[1] === '{' ? e.slice(2, -1) : e.slice(1), 16);
+      return code <= 0x10ffff ? String.fromCodePoint(code) : '';
+    }
+    return Object.prototype.hasOwnProperty.call(singles, e) ? singles[e] : e;
+  });
+}
+
+// The answers in a user message that replies to Codex's question (request_user_input):
+// <send_user_message_question_reply>[{"question": ..., "answer": ...}]</send_user_message_question_reply>.
+function codexAnswers(content) {
+  if (!Array.isArray(content)) return [];
+  const open = `<${QUESTION_REPLY_TAG}>`;
+  const close = `</${QUESTION_REPLY_TAG}>`;
+  const answers = [];
+  for (const item of content) {
+    const t = item && item.type === 'input_text' ? String(item.text || '').trim() : '';
+    if (!t.startsWith(open) || !t.endsWith(close)) continue;
+    const inner = t.slice(open.length, -close.length).trim();
+    const list = parseJson(inner);
+    if (!Array.isArray(list)) {
+      if (inner) answers.push(inner);
+      continue;
+    }
+    for (const a of list) {
+      if (!a || typeof a.answer !== 'string' || !a.answer.trim()) continue;
+      answers.push(typeof a.question === 'string' && a.question.trim() ? `${a.question.trim()} → ${a.answer.trim()}` : a.answer.trim());
+    }
+  }
+  return answers;
 }
 
 function codexUserText(content) {
@@ -493,8 +570,10 @@ async function readCodexRollout(file) {
   let current = null;
   const touch = (patch, at) => {
     for (const match of String(patch).matchAll(PATCH_FILE_RE)) {
-      record.files.delete(match[1]);
-      record.files.set(match[1], at);
+      const name = match[1].trim();
+      if (!name) continue;
+      record.files.delete(name);
+      record.files.set(name, at);
     }
   };
   const shell = (command, callId, at) => {
@@ -528,6 +607,8 @@ async function readCodexRollout(file) {
     }
     if (entry.type !== 'response_item') continue;
     if (p.type === 'message' && p.role === 'user') {
+      // An answer to Codex's question is kept as one (its tag block is left out of the instruction below).
+      for (const answer of codexAnswers(p.content)) record.messages.push({ at, kind: '質問への回答', text: capture(answer, MAX_PROMPT_CHARS) });
       const raw = codexUserText(p.content);
       if (!raw) continue;
       record.messages.push({ at, kind: '指示', text: capture(raw, MAX_PROMPT_CHARS) });
@@ -548,8 +629,14 @@ async function readCodexRollout(file) {
     } else if (p.type === 'local_shell_call' && p.action) {
       const command = codexCommand(p.action);
       if (command) shell(command, p.call_id, at);
-    } else if (p.type === 'custom_tool_call') {
-      if (p.name === 'apply_patch' && typeof p.input === 'string') touch(p.input, at);
+    } else if (p.type === 'custom_tool_call' && typeof p.input === 'string') {
+      if (p.name === 'apply_patch') touch(p.input, at);
+      if (p.name === 'exec') {
+        // The script's output is one output for all its calls: a git / gh call in it makes its PR URLs count.
+        const code = cut(p.input, EXEC_CODE_MAX);
+        for (const match of code.matchAll(EXEC_PATCH_RE)) touch(jsStringValue(match[1]), at);
+        for (const match of code.matchAll(EXEC_SHELL_RE)) shell(jsStringValue(match[1]), p.call_id, at);
+      }
     } else if ((p.type === 'function_call_output' || p.type === 'custom_tool_call_output') && prCalls.has(p.call_id)) {
       // A PR URL the output of a git / gh command printed (the rollout has no pr-link entry).
       for (const match of cut(codexOutputText(p.output), 100000).matchAll(PR_URL_RE)) {
@@ -823,7 +910,11 @@ function codexProjectKey(cwd) {
   } catch {
     // Not a repository (or git missing): the cwd itself.
   }
-  return safeName(dir);
+  // safeName alone turns every non-ASCII name into "_" (two projects named in Japanese would share one store and
+  // one /clear marker), so a hash of the whole path follows the readable name.
+  const resolved = path.resolve(dir || '.');
+  const id = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  return `${safeName(resolved)}-${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}`;
 }
 
 async function codexEvent(input, event) {
@@ -846,7 +937,8 @@ async function codexEvent(input, event) {
   const base = { sessionId: input.session_id, transcriptPath: input.transcript_path, cwd: input.cwd };
   if (event === 'Stop') {
     // Nothing on stdout: Codex reads a Stop hook's JSON as a request to continue or stop.
-    if (readable) writePrivate(marker, JSON.stringify({ ...base, at: Date.now() }));
+    // Only a session the user can /clear: `codex exec` and subagent sessions must not replace its marker.
+    if (readable && isInteractiveCodexSession(input.transcript_path)) writePrivate(marker, JSON.stringify({ ...base, at: Date.now() }));
   } else if (event === 'PreCompact') {
     // A subagent's compaction (agent_id set) is not the conversation the user returns to.
     if (!readable || input.agent_id) return;
@@ -891,7 +983,7 @@ async function main() {
   const event = input.hook_event_name;
   // A Codex rollout, or the copy Codex runs (.codex/hooks) - whose transcript_path may be null or not written yet.
   const kind = transcriptKind(input.transcript_path);
-  if (kind === 'codex' || kind === 'codex-compressed' || (kind === null && runsAsCodexCopy())) {
+  if (kind === 'codex' || kind === 'codex-compressed' || runsAsCodexCopy()) {
     agent = 'codex';
     try {
       await codexEvent(input, event);
