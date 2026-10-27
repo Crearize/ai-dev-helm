@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.1](https://github.com/Crearize/ai-dev-helm/compare/v3.7.0...v3.7.1) (2026-10-27)
+
+
+### Fixed
+
+* **harness:** 3.7.1 PR 1 - gate: Monitor, protected branches, denyCommands, Cursor ([#227](https://github.com/Crearize/ai-dev-helm/issues/227)) ([#231](https://github.com/Crearize/ai-dev-helm/issues/231)) ([39a500d](https://github.com/Crearize/ai-dev-helm/commit/39a500d72539cc03fc2db55d6d92d56b64aad9ad))
+* **harness:** 3.7.1 PR 2 - context-handoff for Codex ([#227](https://github.com/Crearize/ai-dev-helm/issues/227)) ([#230](https://github.com/Crearize/ai-dev-helm/issues/230)) ([1c3e343](https://github.com/Crearize/ai-dev-helm/commit/1c3e343dfa5fb975e4d55e2b539f62b2934ab2fb))
+* **harness:** 3.7.1 PR 3 - upgrade, CLI and docs ([#227](https://github.com/Crearize/ai-dev-helm/issues/227)) ([#228](https://github.com/Crearize/ai-dev-helm/issues/228)) ([415ceef](https://github.com/Crearize/ai-dev-helm/commit/415ceef23c54e81bff7cc8e79408f9a818ccff73))
+
 ## [3.7.0](https://github.com/Crearize/ai-dev-helm/compare/v3.6.0...v3.7.0) (2026-10-25)
 
 
