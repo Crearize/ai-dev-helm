@@ -9,7 +9,9 @@
 | Role agents | `.codex/agents/` | Named design, implementation, exploration, and review agents |
 | Project config | `.codex/config.toml` | Project-local subagent defaults; user permission settings are preserved |
 | Hook | `.codex/hooks/quality-gate.cjs` | Merge-gate hook (Node, cross-platform); always overwritten by init |
-| Hook registration | `.codex/hooks.json` | PreToolUse registration for quality-check enforcement |
+| Hook | `.codex/hooks/review-budget.cjs` | Review-round budget (reserves a round before reviewers start) |
+| Hook | `.codex/hooks/context-handoff.cjs` | Saves the conversation record before `/compact` and `/clear` and puts its key points back (3.7.1; see `harness-runtime.md`) |
+| Hook registration | `.codex/hooks.json` | PreToolUse (quality-gate, review-budget), PostToolUse (review-budget), and PreCompact / SessionStart (`compact|clear`) / Stop (context-handoff), each appended at the end of its event's array |
 | AGENTS.md | `AGENTS.md` (project root) | AI configuration file |
 
 ## Directory Structure After Setup
@@ -22,8 +24,10 @@ your-project/
 │   ├── agents/                 # Model-routed named roles
 │   ├── config.toml             # Subagent defaults
 │   ├── hooks/
-│   │   └── quality-gate.cjs    # Merge-gate hook body
-│   └── hooks.json              # PreToolUse hook registration
+│   │   ├── quality-gate.cjs    # Merge-gate hook body
+│   │   ├── review-budget.cjs   # Review-round budget
+│   │   └── context-handoff.cjs # Conversation record across /compact and /clear
+│   └── hooks.json              # Hook registrations
 ├── skills/
 │   ├── superpowers/
 │   └── project/
@@ -63,7 +67,7 @@ Files are merged with closer paths overriding earlier ones (combined size limit:
 
 The registered `PreToolUse` hook runs before every Bash tool invocation and refuses a direct push/merge into main (or master) without a valid `.quality-check-passed` flag (commit-bound JSON written by the quality-check skill); feature-branch pushes are not gated, and harness-only diffs skip the gate. What it gates, the unconditional blocks, what passes, the gate control plane and the fail-open scope are defined once in the `quality-check` skill ("hook の完全な契約" in `references/hook-contract.md`, "ハーネスのみ変更の免除" in `references/harness-exemption.md`) - this README does not restate them.
 
-Project-local hooks only load when Codex marks the project as trusted.
+Project-local hooks only load when Codex marks the project as trusted, and each hook runs only after it is trusted in `/hooks` (new or changed hooks are skipped until then; `codex-trust` checks this).
 
 ## Personal Setup (Global)
 

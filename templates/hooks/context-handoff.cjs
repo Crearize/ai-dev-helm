@@ -13,13 +13,30 @@
 // (exit 2 on PreCompact would stop compaction, and on Stop would keep the turn going). Errors go to errors.log.
 // With --scope=global (registered in ~/.claude/settings.json) it does nothing when the project registers its own copy.
 // AI_DEV_HELM_HANDOFF=off turns the whole hook off.
+//
+// 3.7.1: the same file runs for Codex (.codex/hooks/context-handoff.cjs). A Codex rollout (first line session_meta)
+// is read from its response_item lines. Codex's SessionEnd cannot tell /clear apart and may run after the new
+// session's start, so /clear works from a marker that every Stop writes:
+//
+//   Stop                     -> mark this project's latest interactive session (its rollout path)
+//   PreCompact               -> save the record
+//   SessionStart (compact)   -> rebuild the record and put its key points back (within Codex's 2,500-token limit)
+//   SessionStart (clear)     -> rebuild the marked session's record and put its key points back
+//
+// The store is $CODEX_HOME/context-handoff/<git root's name>-<hash> (~/.codex when CODEX_HOME is unset). For Stop,
+// PreCompact and SessionStart (compact), a missing or unreadable transcript_path and a compressed (.jsonl.zst)
+// rollout do nothing; SessionStart (clear) works from the marker.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const readline = require('node:readline');
+const { execFileSync } = require('node:child_process');
 
 const INJECT_LIMIT = 9000; // Claude Code moves additionalContext over 10,000 characters into a file
+const CODEX_INJECT_BYTES = 9000; // Codex: 2,500 tokens counted as bytes / 4 (codex-utils-string approx_token_count)
+const CODEX_MARKER_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_NOTICE_TOKENS = 300000;
 const NOTICE_STEP = 100000;
 const MARKER_MAX_AGE_MS = 120000;
@@ -126,9 +143,14 @@ function cleanText(text, max, total) {
 
 // ---------- store ----------
 
+// Which agent this run serves: 'claude', or 'codex' once main() has read a Codex rollout.
+let agent = 'claude';
+
 // AI_DEV_HELM_HANDOFF_DIR is for tests. Pruning only removes this hook's own file names, wherever it points.
 function storeRoot() {
-  return path.resolve(process.env.AI_DEV_HELM_HANDOFF_DIR || path.join(os.homedir(), '.claude', 'context-handoff'));
+  if (process.env.AI_DEV_HELM_HANDOFF_DIR) return path.resolve(process.env.AI_DEV_HELM_HANDOFF_DIR);
+  if (agent === 'codex') return path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'context-handoff');
+  return path.resolve(path.join(os.homedir(), '.claude', 'context-handoff'));
 }
 
 // A path segment from outside input: never '', '.' or '..', so files stay inside the store.
@@ -165,6 +187,7 @@ function logError(event, error) {
 // Keep records no longer than Claude Code keeps transcripts (cleanupPeriodDays), and at most 30 days.
 function retentionMs() {
   let days = RETENTION_DAYS;
+  if (agent === 'codex') return days * 24 * 60 * 60 * 1000;
   try {
     const value = Number(JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf8')).cleanupPeriodDays);
     if (Number.isFinite(value) && value > 0) days = Math.min(days, value);
@@ -376,6 +399,405 @@ async function readTranscript(file) {
   return record;
 }
 
+// ---------- Codex rollout ----------
+
+const CODEX_SHELL_TOOLS = new Set(['exec_command', 'shell_command', 'shell', 'local_shell', 'container.exec']);
+const PR_URL_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)/g;
+// (.*) and a trim instead of (.+?)\s*$: the lazy form takes quadratic time on a line with a long run of spaces.
+const PATCH_FILE_RE = /^\*\*\* (?:Update File|Add File|Delete File|Move to): (.*)$/gm;
+const SNIFF_BYTES = 512;
+const SESSION_META_BYTES = 8192; // session_meta's source sits within the first ~700 bytes of its line
+// Codex 0.163 runs shell commands and patches as calls in the JavaScript its "exec" tool runs:
+// tools.exec_command({cmd:"git push ..."}) and tools.apply_patch("*** Begin Patch\n..."). A string literal ("...",
+// '...' or `...`) has one way to match each character, so these stay linear.
+const JS_STRING = String.raw`("(?:[^"\\\r\n]|\\[\s\S])*"|'(?:[^'\\\r\n]|\\[\s\S])*'|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`)';
+const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
+// The tokens of exec's JavaScript (jsLexer). A string literal, a regex literal and a comment hide the calls written in
+// them. An unterminated literal runs to the end of its line (`...` to the end of the script) and an unterminated
+// comment to the end, so every token matches where it starts and each character is read once. A call inside a
+// template literal's ${...} is not read. A number keeps its decimal point (1./2) and a name may have non-ASCII
+// letters (値 / 2).
+const JS_NAME_START = String.raw`(?:[\w$]|(?![\s\u2028\u2029\ufeff])[\u0080-\uffff])`;
+const JS_TOKEN_RE = new RegExp(String.raw`\s+|"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
+  String.raw`|\/\/[^\r\n\u2028\u2029]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(` +
+  String.raw`|\d[\w$]*(?:\.[\w$]*)?|${JS_NAME_START}+|\+\+|--|[\s\S]`, 'y');
+const JS_NAME_TOKEN_RE = new RegExp(`^${JS_NAME_START}`);
+const JS_REGEX_RE = new RegExp(String.raw`\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`, 'y');
+// A "/" is a regex literal (/'/g, /\/*$/, /[{(]/) where an expression starts: at the start, after an operator or
+// punctuation, or after one of these words. After a name (of is one), a number, a literal, ")", "]", "}", "++" or
+// "--" it divides (so `if (a) /'/.test(s)` and a regex at the start of a statement after a block's "}" are read as a
+// division).
+const JS_REGEX_AFTER_WORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'await', 'yield']);
+const EXEC_PATCH_ARG_RE = new RegExp(String.raw`\s*` + JS_STRING, 'y');
+const EXEC_OBJECT_START_RE = /\s*\{/y;
+const EXEC_CODE_MAX = 500000;
+const QUESTION_REPLY_TAG = 'send_user_message_question_reply';
+// Codex's own tags are snake_case (environment_context, turn_aborted, user_shell_command, recommended_plugins ...);
+// these are the ones without an underscore. HTML tag names have no underscore.
+const CODEX_PLAIN_TAGS = new Set(['skill']);
+
+// 'codex' for a Codex rollout (its first line is session_meta), 'codex-compressed' for an archived .jsonl.zst
+// rollout (not read), 'claude' for any other readable file, null when there is no readable file or it is still
+// empty (Codex creates the rollout before it writes session_meta).
+function transcriptKind(file) {
+  if (typeof file !== 'string' || !file) return null;
+  if (/\.zst$/i.test(file)) return 'codex-compressed';
+  const head = firstLine(file, SNIFF_BYTES);
+  if (head === null || !head.trim()) return null;
+  return /"type"\s*:\s*"session_meta"/.test(head) ? 'codex' : 'claude';
+}
+
+// The start of a file's first line (up to bytes), or null when it cannot be read.
+function firstLine(file, bytes) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const buffer = Buffer.alloc(bytes);
+    const read = fs.readSync(fd, buffer, 0, bytes, 0);
+    return buffer.toString('utf8', 0, read).split(/\r?\n/)[0];
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+// A session the user can /clear: not `codex exec` (source "exec"), Codex as an MCP server ("mcp") or a subagent
+// (source {"subagent": ...}). An older rollout without a source counts as interactive.
+function isInteractiveCodexSession(file) {
+  const head = firstLine(file, SESSION_META_BYTES) || '';
+  const source = /"source"\s*:\s*(?:"([^"\\]*)"|(\{))/.exec(head);
+  if (!source) return true;
+  if (source[2]) return false;
+  return !['exec', 'mcp'].includes(source[1].toLowerCase());
+}
+
+// The copy Codex runs lives in .codex/hooks (Claude Code's in .claude/hooks or ~/.claude/hooks).
+function runsAsCodexCopy() {
+  return /[\\/]\.codex[\\/]hooks[\\/][^\\/]+$/.test(__filename);
+}
+
+// Context Codex itself puts into a user message (AGENTS.md, <environment_context>, <turn_aborted>, a skill, hook
+// output ...): a text that is one block of a Codex tag (snake_case, or one of CODEX_PLAIN_TAGS), or the AGENTS.md
+// instructions. A user's own HTML (<details>...</details>) stays.
+function isCodexInjected(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  if (t.startsWith('# AGENTS.md instructions')) return true;
+  if (t.startsWith('[context-handoff]')) return true;
+  const open = /^<([A-Za-z_][\w-]{0,63})[\s>]/.exec(t);
+  if (!open || !t.endsWith(`</${open[1]}>`)) return false;
+  return open[1].includes('_') || CODEX_PLAIN_TAGS.has(open[1]);
+}
+
+// The value of a JavaScript string literal (JSON.parse for "..." when it can; the common escapes otherwise).
+function jsStringValue(literal) {
+  if (literal[0] === '"') {
+    try {
+      return JSON.parse(literal);
+    } catch {
+      // A JavaScript-only escape (\x41, \', \u{1F600}): decoded below.
+    }
+  }
+  const singles = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', 0: '\0', '\n': '', '\r': '' };
+  return literal.slice(1, -1).replace(/\\(u\{[0-9a-fA-F]{1,6}\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g, (all, e) => {
+    if (e.length > 1) {
+      const code = parseInt(e[1] === '{' ? e.slice(2, -1) : e.slice(1), 16);
+      return code <= 0x10ffff ? String.fromCodePoint(code) : '';
+    }
+    return Object.prototype.hasOwnProperty.call(singles, e) ? singles[e] : e;
+  });
+}
+
+// The tokens of exec's JavaScript from pos, telling a regex literal from a division by the last token that is not a
+// space or a comment (a word after "." or "#" is a property name). seek() goes on from another position.
+function jsLexer(code, pos, last = null) {
+  const token = new RegExp(JS_TOKEN_RE.source, 'y');
+  const regex = new RegExp(JS_REGEX_RE.source, 'y');
+  let prev = last;
+  let before = null; // the token before prev
+  let afterDot = false;
+  const regexStarts = () => {
+    if (prev === null || prev.endsWith('(')) return true; // also after a call's "tools.name("
+    // for (const m of /'/g ...): "of" after a name, "]" or "}" is for-of's (a variable named of divides: x = of / 2).
+    if (prev === 'of' && !afterDot && before !== null) {
+      return before === ']' || before === '}' || (JS_NAME_TOKEN_RE.test(before) && !JS_REGEX_AFTER_WORDS.has(before));
+    }
+    if (JS_NAME_TOKEN_RE.test(prev)) return !afterDot && JS_REGEX_AFTER_WORDS.has(prev);
+    if (/^["'`/]/.test(prev) && prev.length > 1) return false; // after a literal
+    return !/^(?:[)\]}]|\+\+|--)$/.test(prev);
+  };
+  return {
+    get pos() {
+      return pos;
+    },
+    seek(at, last) {
+      pos = at;
+      prev = last;
+      before = null;
+      afterDot = false;
+    },
+    // { text, call } or null at the end. call is the tools.* name when the token is a call's "tools.name(".
+    next() {
+      if (pos >= code.length) return null;
+      let match;
+      if (code[pos] === '/' && code[pos + 1] !== '/' && code[pos + 1] !== '*' && regexStarts()) {
+        regex.lastIndex = pos;
+        match = regex.exec(code);
+      } else {
+        token.lastIndex = pos;
+        match = token.exec(code);
+      }
+      const text = match[0];
+      pos += text.length;
+      if (!/^(?:\s|\/\/|\/\*)/.test(text)) {
+        afterDot = prev === '.' || prev === '#';
+        before = prev;
+        prev = text;
+      }
+      return { text, call: match[1] };
+    },
+  };
+}
+
+// The cmd / command string of the object literal whose '{' is at code[start], read at its top level in any order
+// ({workdir: "/w", cmd: "git push"}), and the index after the object.
+function execCommandArg(code, start) {
+  const lexer = jsLexer(code, start + 1, '{');
+  let depth = 1;
+  let key = null;
+  let expect = 'key'; // what comes next at the top level: 'key', 'colon', 'value' or null (the rest of a value)
+  let command = null;
+  let tok;
+  while (depth > 0 && (tok = lexer.next()) !== null) {
+    const t = tok.text;
+    if (/^(?:\s|\/\/|\/\*)/.test(t)) continue;
+    if (depth === 1) {
+      const literal = JS_STRING_FULL.test(t);
+      if (expect === 'key' && (literal || /^[\w$]+$/.test(t))) {
+        key = literal ? jsStringValue(t) : t;
+        expect = 'colon';
+        continue;
+      }
+      if (expect === 'colon' && t === ':') {
+        expect = 'value';
+        continue;
+      }
+      if (expect === 'value' && literal && (key === 'cmd' || key === 'command')) command = jsStringValue(t);
+      expect = t === ',' ? 'key' : null;
+    }
+    if (t === '{' || t === '[' || t === '(' || tok.call) depth += 1;
+    else if (t === '}' || t === ']' || t === ')') depth -= 1;
+  }
+  return { command, end: lexer.pos };
+}
+
+// The patches and commands of the tools.apply_patch / exec_command / shell_command calls in exec's JavaScript, in
+// order. A call written in a string literal (a patch, a heredoc) or a comment is not one the script makes.
+function execCalls(code) {
+  const calls = [];
+  const lexer = jsLexer(code, 0);
+  let tok;
+  while ((tok = lexer.next()) !== null) {
+    if (!tok.call) continue;
+    if (tok.call === 'apply_patch') {
+      const arg = new RegExp(EXEC_PATCH_ARG_RE.source, 'y');
+      arg.lastIndex = lexer.pos;
+      const literal = arg.exec(code);
+      if (!literal) continue;
+      calls.push({ patch: jsStringValue(literal[1]) });
+      lexer.seek(arg.lastIndex, literal[1]);
+      continue;
+    }
+    const open = new RegExp(EXEC_OBJECT_START_RE.source, 'y');
+    open.lastIndex = lexer.pos;
+    if (!open.exec(code)) continue;
+    // The object is read once here, and the scan goes on after it.
+    const { command, end } = execCommandArg(code, open.lastIndex - 1);
+    if (command !== null) calls.push({ command });
+    lexer.seek(end, '}');
+  }
+  return calls;
+}
+
+// The answers in a user message that replies to Codex's question (request_user_input):
+// <send_user_message_question_reply>[{"question": ..., "answer": ...}]</send_user_message_question_reply>.
+function codexAnswers(content) {
+  if (!Array.isArray(content)) return [];
+  const open = `<${QUESTION_REPLY_TAG}>`;
+  const close = `</${QUESTION_REPLY_TAG}>`;
+  const answers = [];
+  for (const item of content) {
+    const t = item && item.type === 'input_text' ? String(item.text || '').trim() : '';
+    if (!t.startsWith(open) || !t.endsWith(close)) continue;
+    const inner = t.slice(open.length, -close.length).trim();
+    const list = parseJson(inner);
+    if (!Array.isArray(list)) {
+      if (inner) answers.push(inner);
+      continue;
+    }
+    for (const a of list) {
+      if (!a || typeof a.answer !== 'string' || !a.answer.trim()) continue;
+      answers.push(typeof a.question === 'string' && a.question.trim() ? `${a.question.trim()} → ${a.answer.trim()}` : a.answer.trim());
+    }
+  }
+  return answers;
+}
+
+function codexUserText(content) {
+  if (!Array.isArray(content)) return '';
+  return content.map((item) => {
+    if (!item || typeof item !== 'object') return '';
+    if (item.type === 'input_text' && !isCodexInjected(item.text)) return String(item.text).trim();
+    if (item.type === 'input_image') return '[画像]';
+    return '';
+  }).filter(Boolean).join('\n');
+}
+
+function codexReplyText(content) {
+  if (!Array.isArray(content)) return '';
+  return content.map((item) => (item && item.type === 'output_text' && typeof item.text === 'string' ? item.text : '')).filter(Boolean).join('\n');
+}
+
+// The command of a shell call: exec_command {cmd}, shell_command {command: "..."}, shell / local_shell
+// {command: ["bash", "-lc", "..."]}.
+function codexCommand(args) {
+  if (!args || typeof args !== 'object') return null;
+  if (typeof args.cmd === 'string') return args.cmd;
+  if (typeof args.command === 'string') return args.command;
+  if (Array.isArray(args.command) && args.command.every((part) => typeof part === 'string')) {
+    const parts = args.command;
+    if (parts.length >= 3 && /^-\w*c$/.test(parts[parts.length - 2])) return parts[parts.length - 1];
+    return parts.join(' ');
+  }
+  return null;
+}
+
+function codexOutputText(output) {
+  if (typeof output === 'string') return output;
+  if (Array.isArray(output)) return output.map((item) => (item && typeof item.text === 'string' ? item.text : '')).join('\n');
+  if (output && typeof output === 'object' && typeof output.content === 'string') return output.content;
+  return '';
+}
+
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+// The lines of a JSONL file, split at "\n" only (a "\r" before it is dropped). readline also ends a line at U+2028 and
+// U+2029, which Codex (serde_json) leaves raw inside a JSON string. The pieces of a long line are joined once.
+async function* jsonlLines(file) {
+  let pending = [];
+  const line = () => {
+    const text = pending.join('');
+    pending = [];
+    return text.endsWith('\r') ? text.slice(0, -1) : text;
+  };
+  for await (const chunk of fs.createReadStream(file, { encoding: 'utf8' })) {
+    let start = 0;
+    let end;
+    while ((end = chunk.indexOf('\n', start)) !== -1) {
+      pending.push(chunk.slice(start, end));
+      yield line();
+      start = end + 1;
+    }
+    if (start < chunk.length) pending.push(chunk.slice(start));
+  }
+  if (pending.length) yield line();
+}
+
+// The same record readTranscript builds, from a Codex rollout ({timestamp, type, payload} per line). Only the
+// response_item lines are read for the conversation: event_msg differs between the Legacy and Paginated history
+// modes, response_item does not.
+async function readCodexRollout(file) {
+  const record = { messages: [], turns: [], files: new Map(), ops: [], prs: new Map(), compactSummary: null, cwd: '', branch: '' };
+  if (transcriptKind(file) !== 'codex') return record;
+  const prCalls = new Set();
+  let current = null;
+  const touch = (patch, at) => {
+    for (const match of String(patch).matchAll(PATCH_FILE_RE)) {
+      const name = match[1].trim();
+      if (!name) continue;
+      record.files.delete(name);
+      record.files.set(name, at);
+    }
+  };
+  const shell = (command, callId, at) => {
+    if (command.includes('*** Begin Patch')) touch(command, at);
+    if (!OP_RE.test(command)) return;
+    if (callId) prCalls.add(callId);
+    const text = capture(command.split(/\r?\n/)[0], 300);
+    const last = record.ops[record.ops.length - 1];
+    if (last && last.text.body === text.body && last.text.length === text.length) last.at = at;
+    else record.ops.push({ at, text });
+  };
+  for await (const line of jsonlLines(file)) {
+    if (!line.includes('"response_item"') && !line.includes('"session_meta"') && !line.includes('"turn_context"') && !line.includes('"compacted"')) continue;
+    const entry = parseJson(line);
+    if (!entry || typeof entry !== 'object' || !entry.payload || typeof entry.payload !== 'object') continue;
+    const at = typeof entry.timestamp === 'string' ? entry.timestamp : '';
+    const p = entry.payload;
+    if (entry.type === 'session_meta') {
+      if (typeof p.cwd === 'string') record.cwd = p.cwd;
+      if (p.git && typeof p.git.branch === 'string') record.branch = p.git.branch;
+      continue;
+    }
+    if (entry.type === 'turn_context') {
+      if (typeof p.cwd === 'string') record.cwd = p.cwd;
+      continue;
+    }
+    if (entry.type === 'compacted') {
+      if (typeof p.message === 'string' && p.message.trim()) record.compactSummary = capture(p.message, MAX_PROMPT_CHARS);
+      continue;
+    }
+    if (entry.type !== 'response_item') continue;
+    if (p.type === 'message' && p.role === 'user') {
+      // An answer to Codex's question is kept as one (its tag block is left out of the instruction below).
+      for (const answer of codexAnswers(p.content)) record.messages.push({ at, kind: '質問への回答', text: capture(answer, MAX_PROMPT_CHARS) });
+      const raw = codexUserText(p.content);
+      if (!raw) continue;
+      record.messages.push({ at, kind: '指示', text: capture(raw, MAX_PROMPT_CHARS) });
+      current = { at, prompt: capture(raw, MAX_REPLY_CHARS), replyText: '', replyLength: 0 };
+      record.turns.push(current);
+      if (record.turns.length > RECENT_TURNS) record.turns.shift();
+    } else if (p.type === 'message' && p.role === 'assistant') {
+      const reply = codexReplyText(p.content);
+      if (!reply || !current) continue;
+      const add = `${current.replyLength ? '\n\n' : ''}${reply}`;
+      current.replyLength += add.length;
+      if (current.replyText.length < MAX_REPLY_CHARS) current.replyText += add;
+    } else if (p.type === 'function_call' && typeof p.name === 'string') {
+      const args = typeof p.arguments === 'string' ? parseJson(p.arguments) : p.arguments;
+      if (p.name === 'apply_patch' && args && typeof args.input === 'string') touch(args.input, at);
+      const command = CODEX_SHELL_TOOLS.has(p.name) ? codexCommand(args) : null;
+      if (command) shell(command, p.call_id, at);
+    } else if (p.type === 'local_shell_call' && p.action) {
+      const command = codexCommand(p.action);
+      if (command) shell(command, p.call_id, at);
+    } else if (p.type === 'custom_tool_call' && typeof p.input === 'string') {
+      if (p.name === 'apply_patch') touch(p.input, at);
+      if (p.name === 'exec') {
+        // The script's output is one output for all its calls: a git / gh call in it makes its PR URLs count.
+        for (const call of execCalls(cut(p.input, EXEC_CODE_MAX))) {
+          if (call.patch !== undefined) touch(call.patch, at);
+          else shell(call.command, p.call_id, at);
+        }
+      }
+    } else if ((p.type === 'function_call_output' || p.type === 'custom_tool_call_output') && prCalls.has(p.call_id)) {
+      // A PR URL the output of a git / gh command printed (the rollout has no pr-link entry).
+      for (const match of cut(codexOutputText(p.output), 100000).matchAll(PR_URL_RE)) {
+        record.prs.delete(match[0]);
+        record.prs.set(match[0], { at, text: capture(`PR #${match[1]} ${match[0]}`, 300) });
+      }
+    }
+  }
+  return record;
+}
+
 // ---------- rendering ----------
 
 function localTime(iso) {
@@ -417,7 +839,7 @@ function renderRecord(record, meta) {
   out.push('## 直近のやり取り（古い順）', '');
   for (const turn of record.turns) {
     out.push(`### ユーザー（${localTime(turn.at)}）`, '', quote(show(turn.prompt, MAX_REPLY_CHARS)), '');
-    out.push('### Claude', '', quote(turn.replyLength ? cleanText(turn.replyText, MAX_REPLY_CHARS, turn.replyLength) : '（文の応答なし）'), '');
+    out.push(`### ${agentName()}`, '', quote(turn.replyLength ? cleanText(turn.replyText, MAX_REPLY_CHARS, turn.replyLength) : '（文の応答なし）'), '');
   }
 
   const files = [...record.files.keys()].reverse().slice(0, MAX_FILES);
@@ -440,11 +862,17 @@ function oneLine(text, max) {
   return clip(String(text).replace(/\s+/g, ' ').trim(), max);
 }
 
-function renderInjection(record, meta, file) {
+const agentName = () => (agent === 'codex' ? 'Codex' : 'Claude');
+
+// limit: characters of the whole context; reply / files / ops: how much of the last reply and how many files and
+// operations go in (Codex gets less, its limit being smaller).
+function renderInjection(record, meta, file, { limit = INJECT_LIMIT, reply = 1500, files: fileCount = 20, ops: opCount = 10 } = {}) {
   const head = [
     `[context-handoff] 直前の${reasonLabel(meta.reason)}の前の会話の記録です（会話記録からプログラムで抜き出したもの。要約ではありません）。`,
     `記録の全文: ${file}`,
-    '細部と古い指示はこのファイルを Read で読んでください。要約と食い違うときは、この記録を優先してください。',
+    agent === 'codex'
+      ? '細部と古い指示はこのファイルを読んでください。要約と食い違うときは、この記録を優先してください。'
+      : '細部と古い指示はこのファイルを Read で読んでください。要約と食い違うときは、この記録を優先してください。',
     `作業ディレクトリ: ${record.cwd || meta.cwd || '-'} / ブランチ: ${record.branch || '-'}`,
     '',
   ].join('\n');
@@ -453,16 +881,16 @@ function renderInjection(record, meta, file) {
   const lastTurn = record.turns[record.turns.length - 1];
   if (lastTurn && lastTurn.replyLength) {
     // Quoted, so text the reply copied from a file cannot pose as a heading of this context.
-    tail.push('## 直前の Claude の応答（途中まで）', quote(cleanText(lastTurn.replyText, 1500, lastTurn.replyLength)), '');
+    tail.push(`## 直前の ${agentName()} の応答（途中まで）`, quote(cleanText(lastTurn.replyText, reply, lastTurn.replyLength)), '');
   }
-  const files = [...record.files.keys()].reverse().slice(0, 20);
+  const files = [...record.files.keys()].reverse().slice(0, fileCount);
   if (files.length) tail.push('## 変更したファイル（新しい順）', ...files.map((f) => `- ${oneLine(f, 200)}`), '');
-  const ops = newestOps(record).slice(0, 10);
+  const ops = newestOps(record).slice(0, opCount);
   if (ops.length) tail.push('## PR と git の操作（新しい順）', ...ops.map((o) => `- ${localTime(o.at)} ${show(o.text, 200, true)}`), '');
   const tailText = tail.join('\n');
 
   const title = '## ユーザーの指示と質問への回答（新しい順・原文。長いものは途中まで）';
-  let budget = INJECT_LIMIT - head.length - tailText.length - title.length - 120;
+  let budget = limit - head.length - tailText.length - title.length - 120;
   const messages = [...record.messages].reverse();
   const prefixOf = (m) => `- ${localTime(m.at)}（${m.kind}） `;
   const chosen = new Map();
@@ -486,7 +914,22 @@ function renderInjection(record, meta, file) {
   if (omitted) lines.push(`- ほか ${omitted} 件は記録の全文にあります。`);
   const body = messages.length ? [title, ...lines, ''].join('\n') : '';
   const text = `${head}${body}\n${tailText}`.trim();
-  return text.length > INJECT_LIMIT ? `${cut(text, INJECT_LIMIT - 1)}…` : text;
+  return text.length > limit ? `${cut(text, limit - 1)}…` : text;
+}
+
+// Codex counts additionalContext as UTF-8 bytes / 4 and moves it into a file over 2,500 tokens. Rendered with a
+// character limit that shrinks until the bytes fit (Japanese text takes 3 bytes a character).
+function renderCodexInjection(record, meta, file) {
+  const options = { limit: CODEX_INJECT_BYTES, reply: 600, files: 10, ops: 5 };
+  let text = '';
+  for (let i = 0; i < 8; i += 1) {
+    text = renderInjection(record, meta, file, options);
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes <= CODEX_INJECT_BYTES) return text;
+    options.limit = Math.max(200, Math.floor(options.limit * (CODEX_INJECT_BYTES / bytes) * 0.95));
+  }
+  while (Buffer.byteLength(text, 'utf8') > CODEX_INJECT_BYTES) text = `${cut(text, Math.floor(text.length * 0.9))}…`;
+  return text;
 }
 
 // ---------- events ----------
@@ -607,6 +1050,79 @@ async function restore(meta) {
   write({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: renderInjection(record, meta, file) } });
 }
 
+// ---------- Codex events ----------
+
+// Codex runs hooks in the session's cwd with no CLAUDE_PROJECT_DIR: the project is the git root of the cwd.
+function codexProjectKey(cwd) {
+  let dir = typeof cwd === 'string' ? cwd : '';
+  try {
+    dir = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir || undefined, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || dir;
+  } catch {
+    // Not a repository (or git missing): the cwd itself.
+  }
+  // safeName alone turns every non-ASCII name into "_" (two projects named in Japanese would share one store and
+  // one /clear marker), so a hash of the whole path follows the readable name. The name is the root's own folder
+  // name cut to 64 characters: the whole path would pass the 255-character limit of one name for a deep root.
+  // Windows paths are compared in lower case (C:\Work and c:\work are one project).
+  const resolved = path.resolve(dir || '.');
+  const id = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  return `${safeName(path.basename(id)).slice(0, 64)}-${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}`;
+}
+
+async function codexEvent(input, event) {
+  const key = codexProjectKey(input.cwd);
+  const fileOf = (sessionId, ext) => path.join(storeRoot(), key, `${safeName(sessionId)}${ext}`);
+  const marker = path.join(storeRoot(), 'clear-markers', `${key}.json`);
+  const readable = transcriptKind(input.transcript_path) === 'codex';
+  const save = async (meta) => {
+    const record = await readCodexRollout(meta.transcriptPath);
+    const file = fileOf(meta.sessionId, '.md');
+    writePrivate(file, renderRecord(record, meta));
+    prune();
+    return { record, file };
+  };
+  const restore = async (meta) => {
+    const { record, file } = await save(meta);
+    if (!record.messages.length && !record.turns.length) return;
+    write({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: renderCodexInjection(record, meta, file) } });
+  };
+  const base = { sessionId: input.session_id, transcriptPath: input.transcript_path, cwd: input.cwd };
+  if (event === 'Stop') {
+    // Nothing on stdout: Codex reads a Stop hook's JSON as a request to continue or stop.
+    // Only a session the user can /clear: `codex exec` and subagent sessions must not replace its marker.
+    if (readable && isInteractiveCodexSession(input.transcript_path)) writePrivate(marker, JSON.stringify({ ...base, at: Date.now() }));
+  } else if (event === 'PreCompact') {
+    // A subagent's compaction (agent_id set) is not the conversation the user returns to.
+    if (!readable || input.agent_id) return;
+    const reason = input.trigger === 'manual' ? 'compact-manual' : 'compact-auto';
+    writePrivate(fileOf(input.session_id, '.compact.json'), JSON.stringify({ reason, at: Date.now() }));
+    await save({ ...base, reason });
+  } else if (event === 'SessionStart' && input.source === 'compact') {
+    if (!readable) return;
+    let saved = {};
+    try {
+      saved = JSON.parse(fs.readFileSync(fileOf(input.session_id, '.compact.json'), 'utf8'));
+      fs.unlinkSync(fileOf(input.session_id, '.compact.json'));
+    } catch {
+      saved = {};
+    }
+    const fresh = Date.now() - Number(saved.at) <= COMPACT_TRIGGER_MAX_AGE_MS;
+    await restore({ ...base, reason: fresh && saved.reason ? saved.reason : 'compact' });
+  } else if (event === 'SessionStart' && input.source === 'clear') {
+    // The new session's own rollout may not be written yet; the marked rollout is the one that is read.
+    let saved = null;
+    try {
+      saved = JSON.parse(fs.readFileSync(marker, 'utf8'));
+    } catch {
+      return;
+    }
+    if (!saved || saved.sessionId === input.session_id || !(Date.now() - Number(saved.at) <= CODEX_MARKER_MAX_AGE_MS)) return;
+    if (transcriptKind(saved.transcriptPath) !== 'codex') return;
+    fs.unlinkSync(marker);
+    await restore({ sessionId: saved.sessionId, transcriptPath: saved.transcriptPath, cwd: saved.cwd, reason: 'clear' });
+  }
+}
+
 async function main() {
   if (String(process.env.AI_DEV_HELM_HANDOFF || '').toLowerCase() === 'off') return;
   let input;
@@ -617,6 +1133,17 @@ async function main() {
   }
   if (!input || typeof input !== 'object') return;
   const event = input.hook_event_name;
+  // A Codex rollout, or the copy Codex runs (.codex/hooks) - whose transcript_path may be null or not written yet.
+  const kind = transcriptKind(input.transcript_path);
+  if (kind === 'codex' || kind === 'codex-compressed' || runsAsCodexCopy()) {
+    agent = 'codex';
+    try {
+      await codexEvent(input, event);
+    } catch (error) {
+      logError(event, error);
+    }
+    return;
+  }
   try {
     if (process.argv.includes('--scope=global') && deferToProject(input)) return;
     const base = { sessionId: input.session_id, transcriptPath: input.transcript_path, cwd: input.cwd };
@@ -661,4 +1188,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { readTranscript, renderRecord, renderInjection, lastContextTokens, redact, cut, prune, INJECT_LIMIT };
+module.exports = { readTranscript, readCodexRollout, transcriptKind, isCodexInjected, codexProjectKey, renderRecord, renderInjection, lastContextTokens, redact, cut, prune, INJECT_LIMIT, CODEX_INJECT_BYTES };
