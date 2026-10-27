@@ -75,7 +75,7 @@ AI が行います。オーナーの作業はありません。
 
 ## Codex の信頼
 
-Codex では、`/hooks` で `.codex/hooks.json` のフックを信頼するまで、quality-gate も review-budget も動かない（警告も出ない）。`upgrade` は、ゲートと review-budget を呼ぶ登録が既にあれば `.codex/hooks.json` に一切触れない（matcher も変えない）。無いときだけ足すので、`hooks.json` が変わったら（matcher・command・timeout・順序）、再び信頼する（`.cjs` の中身だけの更新では信頼は外れない）。信頼は Codex の設定の場所（`CODEX_HOME`）ごとに記録されるので、Codex のアカウント・設定の場所を切り替えたら（orca のアカウントの切り替えなど）、切り替えた先でも信頼する。その端末で Codex を使うなら、`npx @crearize/ai-dev-helm codex-trust --dir <導入先> [--codex-home <設定の場所>]` で、プロジェクトとフックが信頼されているかを読み取りだけで確かめ、終了コード 0 になるまで対応する（Codex を使わない端末では Codex の設定が無く 2 で終わるので、使い始めるときに確かめる）。`tools` に codex が無く、Codex が読む `.codex/hooks.json`（linked worktree では本体側のもの）も無い導入先では、Codex の設定を読まずに `NOT APPLICABLE`（対象外）と出して終了コード 0 で終わる（3.7.0 までは 2）。
+Codex では、`/hooks` で `.codex/hooks.json` のフックを信頼するまで、quality-gate も review-budget も context-handoff も動かない（警告も出ない）。`upgrade` は、ゲートと review-budget を呼ぶ登録が既にあれば `.codex/hooks.json` のその登録に一切触れない（matcher も変えない）。context-handoff（3.7.1 から。`PreCompact`・`SessionStart`・`Stop`）は、それを呼ぶ登録の無いイベントにだけ、その配列の末尾に足す（既存の登録の中身と順番は変えないので、今のフックの信頼は外れない）。足した 3 件は、Codex の起動時の確認（Hooks need review）で利用者が信頼する（信頼するまで context-handoff だけが動かない。MCP の承認には影響しない）。無いときだけ足すので、`hooks.json` が変わったら（matcher・command・timeout・順序）、再び信頼する（`.cjs` の中身だけの更新では信頼は外れない）。信頼は Codex の設定の場所（`CODEX_HOME`）ごとに記録されるので、Codex のアカウント・設定の場所を切り替えたら（orca のアカウントの切り替えなど）、切り替えた先でも信頼する。その端末で Codex を使うなら、`npx @crearize/ai-dev-helm codex-trust --dir <導入先> [--codex-home <設定の場所>]` で、プロジェクトとフックが信頼されているかを読み取りだけで確かめ、終了コード 0 になるまで対応する（Codex を使わない端末では Codex の設定が無く 2 で終わるので、使い始めるときに確かめる）。`tools` に codex が無く、Codex が読む `.codex/hooks.json`（linked worktree では本体側のもの）も無い導入先では、Codex の設定を読まずに `NOT APPLICABLE`（対象外）と出して終了コード 0 で終わる（3.7.0 までは 2）。
 
 ## 診断（`harness-inventory`）
 
