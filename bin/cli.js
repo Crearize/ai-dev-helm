@@ -34,7 +34,7 @@ yargs(hideBin(process.argv))
         .option('yes', {
           alias: 'y',
           type: 'boolean',
-          describe: 'Never prompt; use defaults for anything not given (project name = directory name, tools = claude-code, skills = all)',
+          describe: 'Never prompt; use defaults for anything not given (project name = directory name, tools = claude-code,cursor,codex, skills = all)',
           default: false,
         })
         .option('project-name', { type: 'string', describe: 'Project name (non-interactive)' })
@@ -176,7 +176,7 @@ yargs(hideBin(process.argv))
         })
         .option('check-untracked', {
           type: 'boolean',
-          describe: 'quality-check Step 6: build nothing; check that no file untracked at cycle <N>\'s review is now part of the change (exit 1 if one is)',
+          describe: 'quality-check Step 6: build nothing; check that no file untracked at cycle <N>\'s review is now part of the change (exit 1 if one is), and list the untracked files the change\'s committed files reference (a warning)',
           default: false,
         })
         .option('verbose', {
@@ -207,6 +207,13 @@ yargs(hideBin(process.argv))
       if (argv.checkUntracked) {
         try {
           const gap = checkUntrackedReviewGap({ dir: process.cwd(), cycle: argv.cycle, baseRef: argv.base, outDir: argv.out });
+          // 3.7.1 (D9): untracked files the change's committed files name - reported, never the verdict.
+          if (gap.referenced === null) console.log('WARNING: the change\'s committed files could not be read (git cat-file failed), so references to untracked files were not checked.');
+          if (gap.referenced && gap.referenced.length) {
+            console.log(`WARNING: ${gap.referenced.length} untracked file(s) are referenced from the change's committed files (a checkout without them, such as CI, fails):`);
+            for (const r of gap.referenced) console.log(`  ${r.path} (in ${r.in.slice(0, 3).join(', ')}${r.in.length > 3 ? `, +${r.in.length - 3} more` : ''})`);
+            console.log('For each: if it belongs to the change, add it (git add) and review it as the change; if not, remove the reference. A match by text only - dismiss one that is not a reference.');
+          }
           if (gap.ok) {
             console.log(`untracked-check: OK - none of the ${gap.untrackedAtReview} file(s) untracked at cycle ${argv.cycle}'s review is part of the change`);
           } else {
@@ -325,7 +332,7 @@ yargs(hideBin(process.argv))
       .option('verify', { type: 'boolean', default: false, describe: 'Only classify the install (up to date / merged / pending / declared out / not installed)' })
       .option('record', { type: 'string', describe: 'Also write the record (Markdown) to this file' })
       .option('base-dir', { type: 'string', describe: 'An unpacked package of the release the manifest records (offline)' })
-      .option('resolve', { type: 'string', describe: 'Mark a pending path (or CLAUDE.md#harness) resolved after merging its .ai-dev-helm-new' })
+      .option('resolve', { type: 'string', array: true, describe: 'Mark pending paths (or CLAUDE.md#harness) resolved after merging their .ai-dev-helm-new; several at once (all are checked before anything is written)' })
       .option('project-name', { type: 'string', describe: 'Override the recorded project name' })
       .option('tools', { type: 'string', describe: 'Override the recorded tools (comma-separated)' })
       .option('stacks', { type: 'string', describe: 'Override the recorded stacks (comma-separated)' })
@@ -386,7 +393,7 @@ yargs(hideBin(process.argv))
   )
   .command(
     'codex-trust',
-    'Read-only check that Codex trusts the project and its .codex/hooks.json hooks (exit 0 ok, 1 action required, 2 unreadable)',
+    'Read-only check that Codex trusts the project and its .codex/hooks.json hooks (exit 0 ok - or NOT APPLICABLE: .ai-dev-helm.json tools has no codex and there is no .codex/hooks.json, nor the one Codex reads in a linked worktree; 1 action required, 2 unreadable)',
     (yargs) => yargs
       .option('dir', { type: 'string', describe: 'Project directory', default: process.cwd() })
       .option('codex-home', { type: 'string', describe: 'Codex config location to read (default: CODEX_HOME, then ~/.codex)' }),

@@ -94,7 +94,7 @@ git worktree add "${WORKTREE_PATH}" "${BRANCH_NAME}"
 
 作成後は対象 worktree に移動し、以降の変更はその中だけで行う。
 
-**スキルのリンク**: `.claude/skills` 等は `.gitignore`（`/.claude/skills` など）で追跡対象外にしているリンクのため、worktree には引き継がれない。作成後に worktree の中で `npx -y @crearize/ai-dev-helm@<version> link-skills` を実行する（`<version>` は `.ai-dev-helm.json` の `version`。導入済みの版に固定する。無いリンクだけを作る。Windows は junction）。リンクが無いと配布スキルが読まれない。
+**スキルのリンク**: `.claude/skills` 等は `.gitignore`（`/.claude/skills` など）で追跡対象外にしているリンクのため、worktree には引き継がれない。作成後に worktree の中で `npx -y @crearize/ai-dev-helm@<version> link-skills` を実行する（`<version>` は `.ai-dev-helm.json` の `version`。導入済みの版に固定する。無いリンクだけを作る。Windows は junction）。リンクが無いと配布スキルが読まれない。`.ai-dev-helm.json` の `skillTargets` で置き先を宣言した木は、置き先を git で追跡している実ディレクトリなので worktree に引き継がれ、`link-skills` は要らない（すべての木を宣言していれば実行しなくてよい）。
 
 ---
 
