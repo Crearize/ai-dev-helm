@@ -249,4 +249,5 @@ Register the production dependency audit here too, when `lint-scaffolding` (3-5)
 - **Error codes**: `documents/development/error-codes.md`
 - **Naming conventions**: `documents/development/naming-conventions.md`
 - **Static check standard**: `documents/development/static-check-standard.md` (static check standard catalog)
+- **Runtime major upgrade (Node.js)**: `documents/development/runtime-upgrade.md` (what to check when moving to a new major version)
 <!-- ai-dev-helm:refs:end -->

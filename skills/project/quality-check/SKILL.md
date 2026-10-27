@@ -94,7 +94,7 @@ Step 6: レポートデータ保存 + フラグファイル作成（設計との
 
 **スピードモード**（「スピード優先モード」節）では次を完了条件とする: Step 2〜3 に残存が無い、Step 4-0 の共通コンテキストを作った、Step 5 の判定を終えて後回しの対象を台帳に記録した、後回しの Issue を作り PR にリンクした、レポートに `mode: "speed"` と `deferred_review` を記録した。
 
-**ハーネスの更新の PR**（`upgrade` で配布物を新しい版にした PR）では、加えて `npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> upgrade --verify` が終了コード 0（未導入 0・保留 0）であることを完了条件とする。レビューの対象は、三者マージしたファイル・衝突を直したファイル・宣言（`.ai-dev-helm.json`）の変更・補足ファイル（`documents/development/project/`）に絞り、照合で「新版と一致」のファイルは見ない（対象が無ければ統合レビュアー 1 体が `--record` の記録と宣言だけを確かめる）。`--record` の「宣言で外したものの配布元の変更」の一覧を PR の本文とレビュアーに渡す（`documents/development/harness-upgrade.md`）。
+**ハーネスの更新の PR**（`upgrade` で配布物を新しい版にした PR）では、加えて `npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> upgrade --verify` が終了コード 0（未導入 0・保留 0）であることを完了条件とする。レビューの対象は、三者マージしたファイル・衝突を直したファイル・宣言（`.ai-dev-helm.json`）の変更・補足ファイル（`documents/development/project/`）・記録の `references read as the layout` に出たルート規則（管理ブロックの外の製品の節の差分）に絞り、照合で「新版と一致」のファイルは見ない（対象が無ければ統合レビュアー 1 体が `--record` の記録と宣言だけを確かめる）。`--record` の「宣言で外したものの配布元の変更」の一覧を PR の本文とレビュアーに渡す（`documents/development/harness-upgrade.md`）。
 
 どちらのモードでも、上限到達・停滞で打ち切った場合はユーザー承認（`gate_override`）をもって完了とみなす。完了したとき（確認待ちのときも）は、`documents/development/development-policy.md` §1.0「承認後の進め方」の最後の 1 通で終える。本節が quality-check の完了条件の唯一の定義箇所であり、quality-policy §5.5 等からは本節を参照する。
 

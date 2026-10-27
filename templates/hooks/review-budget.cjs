@@ -326,7 +326,8 @@ function recordAgent(payload) {
       try { collect(JSON.parse(value), depth + 1); } catch { /* Non-JSON tool text isn't a stable identifier. */ }
     } else if (typeof value === 'object') {
       for (const [key, item] of Object.entries(value)) {
-        if (['agent_id', 'agentId', 'task_name', 'agent_name'].includes(key) && typeof item === 'string') aliases.push(item);
+        // resumedAgentId: the reviewer a follow-up resumed (Claude Code), so a further follow-up to it is counted too.
+        if (['agent_id', 'agentId', 'resumedAgentId', 'task_name', 'agent_name'].includes(key) && typeof item === 'string') aliases.push(item);
         else if (['content', 'text', 'result', 'structuredContent'].includes(key) || Array.isArray(value)) collect(item, depth + 1);
       }
     }

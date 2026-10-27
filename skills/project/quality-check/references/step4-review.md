@@ -4,7 +4,7 @@
 
 ## Step 4: 体制レビュー（スピードモードを除き必須）
 
-**レビュー起動前の受付**: `documents/development/harness-runtime.md` を読み、配布済みの `node .claude/hooks/review-budget.cjs begin --phase quality --roles ...`（Codexのみなら `.codex`）で、今回のロール一式を一度だけ予約する。返された各 `markers` の行を対応するレビュアーの prompt / message の先頭に置く。起動名に `reviewer` を含める。再検証・既存レビュアーへの追加依頼も新しい一巡として予約する。上限拒否時は自己延長・名前変更・別CLI起動で回避しない（オーナーの承認後だけ `review-budget extend` を使う）。
+**レビュー起動前の受付**: `documents/development/harness-runtime.md` を読み、配布済みの `node .claude/hooks/review-budget.cjs begin --phase quality --roles ...`（配布の写しを使い Codex のみなら `.codex`）で、今回のロール一式を一度だけ予約する。返された各 `markers` の行を対応するレビュアーの prompt / message の先頭に置く。起動名に `reviewer` を含める。再検証・既存レビュアーへの追加依頼も新しい一巡として予約する。上限拒否時は自己延長・名前変更・別CLI起動で回避しない（オーナーの承認後だけ `review-budget extend` を使う）。
 
 **上限の対象はレビューのみ**: Step 2〜3 の失敗で Step 4 を実施しなかった工程はレビュー回数に数えない。実装・探索・通常テストはこの上限では止めず、原因に基づく修正と再実行を続ける。工程番号 `total_cycles` とレビュー一巡の `round` を区別し、予約の phase / round を該当サイクルの `notes` に記録する。
 

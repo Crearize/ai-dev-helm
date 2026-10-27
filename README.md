@@ -112,9 +112,9 @@ npx @crearize/ai-dev-helm integrate-check --main <main のチェックアウト>
 npx @crearize/ai-dev-helm hook-selftest [--dir .]
 ```
 
-導入先にインストールされている quality-gate・review-budget の hook に、同梱の判定表（約 20 件）を実行します。1 件でも違えば終了コード 1 です。
+導入先にインストールされている quality-gate・review-budget の hook に、同梱の判定表（約 20 件）を実行します。あわせて登録・hook の写し・スキルの写しを照合し、通った項目を `ok install:` の行で出します。1 件でも違えば終了コード 1 です。
 
-### 5. Codex のフックの信頼の確認（Codex を使う場合）
+### 5. Codex のフックの信頼の確認
 
 ```bash
 npx @crearize/ai-dev-helm codex-trust --dir . [--codex-home <Codex の設定の場所>]
@@ -122,7 +122,7 @@ npx @crearize/ai-dev-helm codex-trust --dir . [--codex-home <Codex の設定の�
 
 Codex は、信頼されていないフック（新しいもの、または `.codex/hooks.json` の登録が変わったもの）を警告なしに飛ばします。`/hooks` でフックを信頼するまで、quality-gate も review-budget も動きません。`hooks.json` を変えたら再び信頼し、Codex のアカウント・設定の場所（`CODEX_HOME`）を切り替えたら、切り替えた先でも信頼します。このコマンドは、Codex の `config.toml` とプロジェクトの `.codex/hooks.json` を読み取るだけで、Codex の設定には書き込みません。読む場所は `--codex-home` > `CODEX_HOME` > `~/.codex` の順で、読んだファイルを必ず表示します。
 
-- 終了コード: `0` = 問題なし / `1` = `ACTION REQUIRED`（プロジェクトかフックが信頼されていない、別の綴りのパスでだけ信頼されている、信頼の後に登録が変わった、無効にされている、信頼が今も有効か確かめられない、Codex が `hooks.json` を読み込めない） / `2` = 読めない（読もうとしたパスを表示。空の `--codex-home`、1 MB を超えるファイルも含む）
+- 終了コード: `0` = 問題なし（`.ai-dev-helm.json` の `tools` に codex が無く、Codex が読む `.codex/hooks.json`（linked worktree では本体側のもの）も無いプロジェクトは、Codex の設定を読まずに `NOT APPLICABLE` と出して 0） / `1` = `ACTION REQUIRED`（プロジェクトかフックが信頼されていない、別の綴りのパスでだけ信頼されている、信頼の後に登録が変わった、無効にされている、信頼が今も有効か確かめられない、Codex が `hooks.json` を読み込めない） / `2` = 読めない（読もうとしたパスを表示。空の `--codex-home`、1 MB を超えるファイルも含む）
 - git の linked worktree では、Codex と同じく本体（main checkout）側の `hooks.json` を読み、どれを読んだかを表示します
 - 詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「効く範囲と限界」
 
@@ -161,14 +161,14 @@ Project name: MyApp
 #### Step 2: AI ツールの選択
 
 ```
-Select AI tool(s) (enter numbers separated by spaces, e.g. "1 3"):
+Select AI tool(s) (enter numbers separated by spaces, e.g. "1 3"; Enter for all three):
   1) Claude Code
   2) Cursor
   3) Codex (OpenAI)
-> 1 3
+>
 ```
 
-使用する AI ツールを選びます（複数可、スペース区切り）。例えば Claude Code と Codex を併用したい場合は `1 3` と入力します。
+使用する AI ツールを選びます（複数可、スペース区切り）。何も入力せずに Enter で 3 つすべて（既定）になります。どのツールもプロジェクトで使われうるため、3 つを入れておくのが基本です。使わないツールのルート規則・hook の登録は、そのツールを起動しない限り動かないだけで害はありません。
 
 #### Step 3: スキル範囲の選択
 
@@ -247,7 +247,7 @@ init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成さ
 ```json
 {
   "version": "x.y.z",
-  "tools": ["claude-code", "cursor"],
+  "tools": ["claude-code", "cursor", "codex"],
   "stacks": ["nextjs-react"],
   "skillScope": "all",
   "appliedAt": "2026-06-10T08:00:00.000Z"
@@ -259,7 +259,7 @@ init 完了時、プロジェクトルートに `.ai-dev-helm.json` が生成さ
 質問に答えられない環境（CI・AI エージェント）では、オプションで全部指定します。TTY が無く必須の値（`--project-name`、`--tools`）が欠けていると、質問せずに終了コード 1 で終わります。
 
 ```bash
-npx @crearize/ai-dev-helm init --yes                                   # 既定値: プロジェクト名=ディレクトリ名、ツール=claude-code、スキル=all
+npx @crearize/ai-dev-helm init --yes                                   # 既定値: プロジェクト名=ディレクトリ名、ツール=claude-code,cursor,codex（3 つすべて）、スキル=all
 npx @crearize/ai-dev-helm init --project-name my-app --tools claude-code,codex --stacks <stack> --skills all
 ```
 
