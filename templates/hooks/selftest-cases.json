@@ -14,6 +14,8 @@
     { "name": "merge off main is left alone", "command": "git merge feat/y", "expect": "allow" },
     { "name": "ordinary commands are left alone", "command": "npm test", "expect": "allow" },
     { "name": "git status is left alone", "command": "git status", "expect": "allow" },
+    { "name": "Monitor push to main is gated", "event": { "tool_name": "Monitor", "tool_input": { "command": "git push origin main", "description": "push", "timeout_ms": 60000 } }, "expect": "deny" },
+    { "name": "Monitor with only a WebSocket is left alone", "event": { "tool_name": "Monitor", "tool_input": { "ws": { "url": "wss://example.com/events" }, "description": "events", "timeout_ms": 60000 } }, "expect": "allow" },
     { "name": "unreadable payload fails open", "raw": "not json", "expect": "allow", "declaredAlso": "deny" }
   ],
   "review-budget": [

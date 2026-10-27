@@ -51,6 +51,8 @@ git checkout -b [タイプ]/[作業内容]-[Issue番号]
 
 main への取り込みは quality-check を完走してから行う。quality-gate の hook は、フラグ（`.quality-check-passed`）が**取り込む commit** を指しているかを確かめる（前回のフラグが残っていても、チェックしていないブランチは取り込めない）。
 
+**宣言した保護ブランチ**（`.ai-dev-helm.json` の `workflow.protectedBranches`。例: release）: hook は main と同じくゲート対象にする。main を通った内容だけの反映（release の上で `git merge <main の SHA>` → `git push origin release`）はフラグ無しで通るので、保護ブランチへは main を通してから反映する。判定の詳細は quality-check の「hook の完全な契約」の「宣言した保護ブランチ」。
+
 | 状況 | 手順 |
 |------|------|
 | リモートがある（PR を作る remote（通常は origin）の trunk の remote-tracking ref、例: `origin/main` がある） | feature ブランチを push して PR を作る（`git push -u origin HEAD` → `gh pr create`）。merge は PR で行う |
