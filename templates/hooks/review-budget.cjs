@@ -204,6 +204,17 @@ function validateRoles(phase, roles, round) {
   }
 }
 
+// What to do at the limit (`what` says which). OWNER_STOP_PHASES wait for the owner; plan and mutation record the rest
+// and continue (development-policy §1.0). Shared by begin and by a retake of a round already retaken (3.7.2).
+function limitReached(phase, what) {
+  const extend = `run extend yourself (extend --phase ${phase} --rounds <1-3> --reason "<the owner's approval, quoted>") and then reserve again`;
+  if (OWNER_STOP_PHASES.includes(phase)) {
+    return `${what}; report the remaining findings to the owner. If the owner approves another round, ${extend}`;
+  }
+  const more = phase === 'mutation' ? 'The mutation limit cannot be extended.' : `Only if the owner has already approved another round, ${extend}`;
+  return `${what}; do not stop for the owner: record the remaining findings and how you handle them, and continue. ${more}`;
+}
+
 function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
   if (!PHASES.includes(phase)) throw new Error('Unknown review phase');
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 3)) throw new Error('Review limit must be an integer from 1 to 3');
@@ -220,15 +231,7 @@ function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
     if (limit !== undefined && limit > group.limit) throw new Error('Review limit cannot be raised automatically');
     const effectiveLimit = Math.min(group.limit, limit ?? group.limit);
     const allowed = ceiling({ limit: effectiveLimit }, extensions, phase);
-    if (group.rounds.length >= allowed) {
-      const extend = `run extend yourself (extend --phase ${phase} --rounds <1-3> --reason "<the owner's approval, quoted>") and then reserve again`;
-      // OWNER_STOP_PHASES wait for the owner; plan and mutation record the rest and continue (development-policy §1.0).
-      if (OWNER_STOP_PHASES.includes(phase)) {
-        throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); report the remaining findings to the owner. If the owner approves another round, ${extend}`);
-      }
-      const more = phase === 'mutation' ? 'The mutation limit cannot be extended.' : `Only if the owner has already approved another round, ${extend}`;
-      throw new Error(`Review limit reached (${group.rounds.length}/${allowed}); do not stop for the owner: record the remaining findings and how you handle them, and continue. ${more}`);
-    }
+    if (group.rounds.length >= allowed) throw new Error(limitReached(phase, `Review limit reached (${group.rounds.length}/${allowed})`));
     validateRoles(phase, roles, group.rounds.length + 1);
     group.limit = effectiveLimit;
     const round = { token: crypto.randomBytes(16).toString('hex'), roles, used: {}, reservedAt: new Date().toISOString() };
@@ -256,7 +259,7 @@ function retakeRound({ cwd = process.cwd(), phase, round: number, roles, reason 
     }
     const target = group.rounds[number - 1];
     if ((target.retakes || []).length >= RETAKE_LIMIT) {
-      throw new Error(`Round ${number} of ${phase} was already retaken once; report the lost results to the owner. If the owner approves another round, run extend yourself and then reserve again`);
+      throw new Error(limitReached(phase, `Round ${number} of ${phase} was already retaken once (its results are lost again)`));
     }
     const started = target.roles.filter((role) => own(target.used, role));
     if (!started.length) throw new Error(`No reviewer of round ${number} has started; start them with the round's own markers instead`);
