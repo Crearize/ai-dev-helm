@@ -158,6 +158,15 @@ function safeName(raw) {
   return /^\.*$/.test(name) ? 'unknown' : name;
 }
 
+// A store name for a resolved path: its last segment, cut to 64 characters, then a hash of the whole path. safeName
+// alone turns every non-ASCII name into "_" (two projects named in Japanese would share one store and one /clear
+// marker); the whole path would pass the 255-character limit of one name for a deep folder. Windows paths are
+// compared in lower case (C:\Work and c:\work are one project).
+function pathKey(resolved) {
+  const id = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  return `${safeName(path.basename(id)).slice(0, 64)}-${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}`;
+}
+
 function projectStore(transcriptPath) {
   return path.join(storeRoot(), safeName(transcriptPath ? path.basename(path.dirname(String(transcriptPath))) : ''));
 }
@@ -943,9 +952,12 @@ async function saveRecord(meta) {
 }
 
 // The marker is keyed by the transcript folder (the project Claude Code was started in), which /clear keeps even when
-// the conversation moved to another directory such as a worktree.
+// the conversation moved to another directory such as a worktree. As in codexProjectKey, a hash of the folder's whole
+// path follows its readable name: safeName turns every non-ASCII name into "_", and two Claude Code config folders
+// (CLAUDE_CONFIG_DIR) hold folders of the same name for one project. A marker under the old key (the name alone) is
+// not read; it is past its 120 seconds by the next /clear and pruned within a day.
 function markerFile(transcriptPath) {
-  return path.join(storeRoot(), 'clear-markers', `${safeName(transcriptPath ? path.basename(path.dirname(String(transcriptPath))) : '')}.json`);
+  return path.join(storeRoot(), 'clear-markers', `${pathKey(transcriptPath ? path.resolve(path.dirname(String(transcriptPath))) : '')}.json`);
 }
 
 function writeMarker(input) {
@@ -1060,13 +1072,7 @@ function codexProjectKey(cwd) {
   } catch {
     // Not a repository (or git missing): the cwd itself.
   }
-  // safeName alone turns every non-ASCII name into "_" (two projects named in Japanese would share one store and
-  // one /clear marker), so a hash of the whole path follows the readable name. The name is the root's own folder
-  // name cut to 64 characters: the whole path would pass the 255-character limit of one name for a deep root.
-  // Windows paths are compared in lower case (C:\Work and c:\work are one project).
-  const resolved = path.resolve(dir || '.');
-  const id = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-  return `${safeName(path.basename(id)).slice(0, 64)}-${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}`;
+  return pathKey(path.resolve(dir || '.'));
 }
 
 async function codexEvent(input, event) {
