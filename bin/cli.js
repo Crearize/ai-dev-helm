@@ -172,7 +172,7 @@ yargs(hideBin(process.argv))
         })
         .option('out', {
           type: 'string',
-          describe: 'Output directory (<scratchpad>/quality-check), must be outside the repository. Default: OS temp dir. The pack contains the full diff - protect or delete it',
+          describe: 'Output directory (<scratchpad>/quality-check), must be outside the repository. Default (cycle 1 only): a new private directory under the OS temp dir; a later cycle and --check-untracked need the --out of the earlier cycle. The pack contains the full diff - protect or delete it',
         })
         .option('check-untracked', {
           type: 'boolean',
