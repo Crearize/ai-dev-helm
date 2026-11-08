@@ -16,6 +16,9 @@ const BRANCH_PHASES = ['requirements', 'design', 'plan', 'production']; // reser
 // A first --limit cannot raise them; only extend, after the owner approved, goes past it.
 const REVIEW_LIMIT = { quality: 2, production: 2 };
 const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-engineer'];
+// 3.7.2 (#234): a round whose reviewers' results were lost (the session ended before they returned) may be retaken -
+// its started seats once more, under a new marker, without adding a round. Only the latest round of a phase, once.
+const RETAKE_LIMIT = 1;
 // 3.7.0 (from MovieMarketer's MM-REVIEW-PATCH 1): parallel PreToolUse / PostToolUse calls share the lock, so a caller
 // waits up to 2 s for its owner instead of failing at once. Only EEXIST is waited on; a lock is never deleted.
 const LOCK_WAIT_MS = 2000;
@@ -73,6 +76,16 @@ function validExtensions(list) {
     x.reason.length <= 500 && typeof x.at === 'string');
 }
 
+const validReason = (text) => typeof text === 'string' && text.trim().length >= 10 && text.length <= 500;
+
+// 3.7.2: a round's retakes - at most RETAKE_LIMIT, each a new marker for some of the round's roles, with its reason.
+function validRetakes(round) {
+  return Array.isArray(round.retakes) && round.retakes.length <= RETAKE_LIMIT && round.retakes.every((x) => x && typeof x === 'object' &&
+    /^[a-f0-9]{32}$/.test(x.token) && Array.isArray(x.roles) && x.roles.length > 0 && new Set(x.roles).size === x.roles.length &&
+    x.roles.every((role) => round.roles.includes(role)) && x.used && typeof x.used === 'object' && !Array.isArray(x.used) &&
+    Object.keys(x.used).every((role) => x.roles.includes(role)) && validReason(x.reason) && typeof x.at === 'string');
+}
+
 function validState(state, branch) {
   if (!state || state.version !== 1 || state.branch !== branch || !state.phases || !state.agents || !state.receipts) return false;
   if ([state.phases, state.agents, state.receipts].some((x) => typeof x !== 'object' || Array.isArray(x))) return false;
@@ -87,6 +100,7 @@ function validState(state, branch) {
           !round.used || typeof round.used !== 'object' || Array.isArray(round.used)) return false;
       try { validateRoles(phase, round.roles, index + 1); } catch { return false; }
       if (Object.keys(round.used).some((role) => !round.roles.includes(role))) return false;
+      if (round.retakes !== undefined && !validRetakes(round)) return false;
     }
   }
   return true;
@@ -225,6 +239,40 @@ function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
   });
 }
 
+// 3.7.2 (#234): retake the latest round of a phase whose reviewers' results were lost. The seats already started in
+// that round (all of them, or the `roles` named) get a new marker; the round count, the limit and the extensions stay.
+// Once per round (RETAKE_LIMIT), recorded in the round (`retakes`: roles, reason, time). A seat never started is no
+// loss - it still takes the round's own marker. A round before the latest is not retaken: a later round has begun.
+function retakeRound({ cwd = process.cwd(), phase, round: number, roles, reason }) {
+  if (!PHASES.includes(phase)) throw new Error('Unknown review phase');
+  if (!Number.isInteger(number) || number < 1) throw new Error('--round must be the number of the round to retake');
+  const text = String(reason ?? '').replace(/\s*[\r\n]+\s*/g, ' ').trim();
+  if (!validReason(text)) throw new Error('--reason is required: say in 10 to 500 characters what was lost (which reviewers, and why their results are gone)');
+  return transact(cwd, true, (state, loc) => {
+    const group = state.phases[phase];
+    if (!group || !group.rounds.length) throw new Error(`No ${phase} review is recorded on this branch; there is no round to retake`);
+    if (number !== group.rounds.length) {
+      throw new Error(`Only the latest ${phase} round (${group.rounds.length}) can be retaken; round ${number} is followed by a later round, which reviews what it lost`);
+    }
+    const target = group.rounds[number - 1];
+    if ((target.retakes || []).length >= RETAKE_LIMIT) {
+      throw new Error(`Round ${number} of ${phase} was already retaken once; report the lost results to the owner. If the owner approves another round, run extend yourself and then reserve again`);
+    }
+    const started = target.roles.filter((role) => own(target.used, role));
+    if (!started.length) throw new Error(`No reviewer of round ${number} has started; start them with the round's own markers instead`);
+    const wanted = roles === undefined ? started : roles;
+    if (!Array.isArray(wanted) || !wanted.length || new Set(wanted).size !== wanted.length) throw new Error('A unique list of roles of the round is required');
+    for (const role of wanted) {
+      if (!target.roles.includes(role)) throw new Error(`${role} is not a role of round ${number}`);
+      if (!own(target.used, role)) throw new Error(`${role} of round ${number} has not started; start it with the round's own marker instead`);
+    }
+    const retake = { token: crypto.randomBytes(16).toString('hex'), roles: wanted, used: {}, reason: text, at: new Date().toISOString() };
+    target.retakes = [...(target.retakes || []), retake];
+    return { phase, round: number, retake: target.retakes.length, limit: ceiling(group, state.extensions || [], phase), statePath: loc.file,
+      markers: Object.fromEntries(wanted.map((role) => [role, `HELM_REVIEW:${retake.token}:${role}`])) };
+  });
+}
+
 // Raise the ceiling of a phase after the owner approved exceeding it. Appends to state.extensions; group.limit is never rewritten.
 function extendLimit({ cwd = process.cwd(), phase, rounds, reason }) {
   if (!PHASES.includes(phase) || phase === 'mutation') throw new Error('Only the requirements, design, plan, quality and production limits can be extended');
@@ -296,6 +344,8 @@ function checkReview(payload) {
       for (const group of Object.values(state.phases)) {
         const last = group.rounds.at(-1);
         if (last && last.token === token) round = last;
+        // 3.7.2: a retake of the latest round (closed with the round once a later round is reserved).
+        else if (last && Array.isArray(last.retakes)) round = last.retakes.find((x) => x.token === token) || round;
       }
       if (!round || !round.roles.includes(role)) throw new Error('Unknown or closed review admission');
       if (own(round.used, role)) throw new Error('Review seat already used; another pass requires a new round');
@@ -336,7 +386,8 @@ function recordAgent(payload) {
   if (!aliases.length) return;
   transact(payload.cwd || process.cwd(), true, (state) => {
     const [, token, role] = req.marker;
-    const admitted = Object.values(state.phases).some((g) => g.rounds.some((r) => r.token === token && own(r.used, role)));
+    const admitted = Object.values(state.phases).some((g) => g.rounds.some((r) => [r, ...(Array.isArray(r.retakes) ? r.retakes : [])]
+      .some((x) => x.token === token && own(x.used, role))));
     if (!admitted) throw new Error('No admitted review to record');
     for (const alias of aliases) if (alias !== '__proto__') state.agents[alias] = true;
   });
@@ -350,25 +401,26 @@ function deny(reason) {
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }) + '\n');
 }
 
-const USAGE = 'Usage: review-budget.cjs begin --phase quality --roles integrated-reviewer [--limit 1] | extend --phase quality --rounds 1 --reason "<owner approval>" | status';
+const USAGE = 'Usage: review-budget.cjs begin --phase quality --roles integrated-reviewer [--limit 1] | extend --phase quality --rounds 1 --reason "<owner approval>" | retake --phase quality --round 1 [--roles falsification-qa] --reason "<what was lost>" | status';
 
-// Runs begin / status / extend from command-line words; returns the JSON result. Shared with the package CLI.
+// Runs begin / status / extend / retake from command-line words; returns the JSON result. Shared with the package CLI.
 function runCommand(argv, cwd = process.cwd()) {
   const [action, ...args] = argv;
   const values = {};
   for (let n = 0; n < args.length; n += 2) {
-    if (!['--phase', '--roles', '--limit', '--rounds', '--reason'].includes(args[n]) || args[n + 1] === undefined) throw new Error(USAGE);
+    if (!['--phase', '--roles', '--limit', '--rounds', '--round', '--reason'].includes(args[n]) || args[n + 1] === undefined) throw new Error(USAGE);
     values[args[n].slice(2)] = args[n + 1];
   }
   const number = (x) => (x === undefined ? undefined : Number(x));
   if (action === 'status') return status({ cwd });
   if (action === 'extend') return extendLimit({ cwd, phase: values.phase, rounds: number(values.rounds), reason: values.reason });
   if (action === 'begin') return beginRound({ cwd, phase: values.phase, roles: values.roles?.split(','), limit: number(values.limit) });
+  if (action === 'retake') return retakeRound({ cwd, phase: values.phase, round: number(values.round), roles: values.roles?.split(','), reason: values.reason });
   throw new Error(USAGE);
 }
 
 function main() {
-  if (['begin', 'status', 'extend'].includes(process.argv[2])) {
+  if (['begin', 'status', 'extend', 'retake'].includes(process.argv[2])) {
     try { process.stdout.write(JSON.stringify(runCommand(process.argv.slice(2)), null, 2) + '\n'); }
     catch (error) { process.stderr.write(error.message + '\n'); process.exitCode = 1; }
     return;
@@ -406,5 +458,5 @@ function main() {
   });
 }
 
-module.exports = { beginRound, extendLimit, runCommand, checkReview, recordAgent, status, main };
+module.exports = { beginRound, extendLimit, retakeRound, runCommand, checkReview, recordAgent, status, main };
 if (require.main === module) main();
