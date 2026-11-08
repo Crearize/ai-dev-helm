@@ -18,8 +18,8 @@ write the same `<version>` to `.superpowers-version`, regenerate
 `skills/superpowers` with `scripts/transform-skills.sh`, and run
 `npx vitest run lib/skill-transform.test.js`. The scheduled sync reports such
 drift as an issue instead of failing every day; once `.superpowers-version`
-moves, the sync has nothing left to do and does not close that issue, so close
-it from the PR (`Closes #<issue>`).
+is the latest release, the sync has nothing left to do and does not close that
+issue, so close it from the PR (`Closes #<issue>`).
 
 When upstream moves, removes or adds files (3.7.0, #206):
 

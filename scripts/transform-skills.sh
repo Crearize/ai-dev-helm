@@ -44,6 +44,14 @@ for skill in "${SKILLS[@]}"; do
         echo "::error::Required upstream skill not found: $skill" >&2
         exit 1
     fi
+    # npm does not ship symlinks, so a copied link would be missing in
+    # adopters (and fail the 100755 check on main); following one could copy
+    # whatever it points at outside upstream. Stop and name it instead.
+    links=$(find "$SRC/$skill" -type l)
+    if [ -n "$links" ]; then
+        echo "::error::Upstream symlink not supported (npm does not ship symlinks): $links" >&2
+        exit 1
+    fi
 done
 
 # Check overlay drift before touching the destination: a drift failure must
