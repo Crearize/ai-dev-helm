@@ -244,6 +244,9 @@ yargs(hideBin(process.argv))
         process.exitCode = 1;
         return;
       }
+      // 3.7.2 (#234): without --out the pack goes to a new private directory; a later cycle and --check-untracked
+      // need this path as their --out (quality-check 4-0, an environment without a session scratchpad).
+      console.log(`out: ${result.outDir}${result.outDirDefaulted ? ' (a new private directory: pass it as --out to the later cycles and to --check-untracked; delete its parent when the quality-check ends)' : ''}`);
       console.log(`context: ${result.contextPath}`);
       if (result.measurementPath) console.log(`measurements: ${result.measurementPath} (helper timing and on-disk inventory; not runtime token usage)`);
       console.log(`changed files: ${result.names.length} (untracked, not part of the change: ${result.untracked.length}), diff ${result.diffLines} lines${result.diffInline ? ' (inline)' : ' -> diff.patch'}`);

@@ -90,7 +90,7 @@ npx @crearize/ai-dev-helm quality-context --cycle 1 --out <scratchpad>/quality-c
 npx @crearize/ai-dev-helm quality-context --cycle 2 --out <scratchpad>/quality-check
 ```
 
-quality-check Step 4 のレビュアーに渡す共通コンテキスト（`cycle-<N>/context.md`）の決定的な部分を生成します。変更ファイル一覧・差分（長い場合は `diff.patch`）・完全性の証跡・変更ファイルのスナップショット、サイクル 2 以降は前サイクルの統合指摘一覧（`findings.json`）とスナップショットからの修正差分（`fix-diff.patch`）を出力します。リポジトリ内への出力は拒否します。`--out` を省くと、呼ぶたびに OS の一時ディレクトリ配下に新しい専用のディレクトリ（`ai-dev-helm-qc-<リポジトリ名>-<ランダム>/quality-check`。POSIX では本人だけが読める）を作って書きます。そのため前のサイクルの出力を読むサイクル 2 以降と `--check-untracked` は、前のサイクルと同じ `--out` が必要です（無いとエラーになります）。生成物には差分全文と変更ファイルのコピーが含まれるため、共有マシンでは `--out` を保護されたディレクトリに向け、quality-check 全体の終了・中断後に削除してください。
+quality-check Step 4 のレビュアーに渡す共通コンテキスト（`cycle-<N>/context.md`）の決定的な部分を生成します。変更ファイル一覧・差分（長い場合は `diff.patch`）・完全性の証跡・変更ファイルのスナップショット、サイクル 2 以降は前サイクルの統合指摘一覧（`findings.json`）とスナップショットからの修正差分（`fix-diff.patch`）を出力します。リポジトリ内への出力は拒否します。`--out` を省くと、呼ぶたびに OS の一時ディレクトリ配下に新しい専用のディレクトリ（`ai-dev-helm-qc-<リポジトリ名>-<ランダム>/quality-check`。POSIX では本人だけが読める）を作って書き、そのパスを `out:` の行に出します。そのため前のサイクルの出力を読むサイクル 2 以降と `--check-untracked` は、前のサイクルと同じ `--out` が必要です（無いとエラーになります）。生成物には差分全文と変更ファイルのコピーが含まれるため、共有マシンでは `--out` を保護されたディレクトリに向け、quality-check 全体の終了・中断後に削除してください。
 
 ### 4b. スキルのリンクの作成・確認（clone・worktree の作成後）
 
