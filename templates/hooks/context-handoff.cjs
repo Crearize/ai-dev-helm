@@ -439,7 +439,9 @@ const JS_REGEX_AFTER_WORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'n
 // A "{" opens a block (a statement's body) at the start, after ")" (function, if, for, while, catch ...), "=>", ";",
 // "}", "{", ":" outside an object literal (a label, a case), else, do and any other name (try, finally, a class name).
 // After an operator, "(", "[", ",", "]", a literal or another of JS_REGEX_AFTER_WORDS it opens an object literal or a
-// pattern. A function expression's body is read as a block, so a "/" right after its "}" is a regex.
+// pattern. A function expression's body is read as a block, so a "/" right after its "}" is a regex. A "{" right after
+// a "$" is never a block: a template inside another template's "${...}" (`${xs.map((x) => `${a}/${x}`)}`) is read as
+// code, and its "${a}" is a substitution, so the "/" after it divides as before 3.7.2.
 const EXEC_PATCH_ARG_RE = new RegExp(String.raw`\s*` + JS_STRING, 'y');
 const EXEC_OBJECT_START_RE = /\s*\{/y;
 const EXEC_CODE_MAX = 500000;
@@ -575,7 +577,7 @@ function jsLexer(code, pos, last = null, outer = []) {
       const text = match[0];
       pos += text.length;
       if (!/^(?:\s|\/\/|\/\*)/.test(text)) {
-        if (text === '{') stack.push(blockStarts() ? 'block' : 'object');
+        if (text === '{') stack.push(code[pos - 2] !== '$' && blockStarts() ? 'block' : 'object');
         else if (text === '(' || text === '[' || match[1]) stack.push(text === '[' ? '[' : '(');
         else if (text === ')' || text === ']') stack.pop();
         closedBlock = text === '}' && stack.pop() === 'block';
