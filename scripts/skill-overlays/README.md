@@ -13,8 +13,10 @@ design review before implementation, model-table references).
 If upstream changes a file an overlay owns, the sync fails and names the file.
 Compare that file between the `upstreamVersion` in the manifest and the new
 release, port what matters into the overlay, then run
-`node scripts/apply-skill-overlays.js update <upstream_skills_dir> <version>`
-and `npx vitest run lib/skill-transform.test.js`. The scheduled sync reports such
+`node scripts/apply-skill-overlays.js update <upstream_skills_dir> <version>`,
+write the same `<version>` to `.superpowers-version`, regenerate
+`skills/superpowers` with `scripts/transform-skills.sh`, and run
+`npx vitest run lib/skill-transform.test.js`. The scheduled sync reports such
 drift as an issue instead of failing every day.
 
 When upstream moves, removes or adds files (3.7.0, #206):
