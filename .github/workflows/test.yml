@@ -46,7 +46,15 @@ jobs:
       # legacy-peer-deps: same reason as publish.yml (eslint-plugin-react's
       # published peer range caps below the ESLint major the assets target).
       - name: Install
+        if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.node == '26') }}
         run: npm ci --legacy-peer-deps
+
+      # 3.7.2 (#234): publish.yml's verify job installs with --ignore-scripts on
+      # ubuntu / node 26 and then runs the suite; this leg runs it the same way
+      # on every pull request, so a release is not the first run of that mode.
+      - name: Install without install scripts (as publish.yml's verify)
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '26' }}
+        run: npm ci --ignore-scripts --legacy-peer-deps
 
       - name: Test
         run: npm test
