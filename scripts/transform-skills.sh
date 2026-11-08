@@ -121,4 +121,11 @@ rm -rf "$DEST/executing-plans/scripts" "$DEST/using-superpowers/references/muse-
 # against, so an upstream change fails loudly and names the file.
 node "$SCRIPT_DIR/apply-skill-overlays.js" apply "$SRC" "$DEST"
 
+# npm ships file modes. Keep every shipped file that starts with a shebang
+# executable, so a script upstream adds as 644 (or whose mode it drops) still
+# reaches adopters executable and the sync PR keeps the main build green.
+find "$DEST" -type f -print0 | while IFS= read -r -d '' file; do
+    if [ "$(head -c 2 "$file")" = '#!' ]; then chmod +x "$file"; fi
+done
+
 echo "Done. Transformed ${#SKILLS[@]} skills."
