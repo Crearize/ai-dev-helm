@@ -60,15 +60,20 @@ else
             ;;
     esac
 fi
+# Build the paths by concatenation, not ${SKILLS[@]/#/$SRC/}: since bash 5.2
+# (patsub_replacement) an & in the replacement, here in $SRC, is replaced by
+# the match, so a path such as .../R&D/... would lose its &.
+skill_dirs=()
 for skill in "${SKILLS[@]}"; do
     if [ ! -d "$SRC/$skill" ]; then
         echo "::error::Required upstream skill not found: $skill" >&2
         exit 1
     fi
+    skill_dirs+=("$SRC/$skill")
 done
 # One find and two git calls for all skills (each process start is slow on
 # Windows).
-links=$(find "${SKILLS[@]/#/$SRC/}" -type l)
+links=$(find "${skill_dirs[@]}" -type l)
 if [ "$src_in_git" = true ]; then
     untracked=$(git -C "$SRC" ls-files --others -- "${SKILLS[@]}")
     if [ -n "$untracked" ]; then
