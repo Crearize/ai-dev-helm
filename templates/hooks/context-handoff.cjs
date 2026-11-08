@@ -31,7 +31,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const readline = require('node:readline');
 const { execFileSync } = require('node:child_process');
 
 const INJECT_LIMIT = 9000; // Claude Code moves additionalContext over 10,000 characters into a file
@@ -327,8 +326,8 @@ async function readTranscript(file) {
   if (typeof file !== 'string' || !file || !fs.existsSync(file)) return record;
   const askIds = new Set();
   let current = null;
-  const lines = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
-  for await (const line of lines) {
+  // Claude Code also leaves U+2028 / U+2029 raw inside a JSON string (JSON.stringify), so lines split at "\n" only.
+  for await (const line of jsonlLines(file)) {
     if (!line.includes('"user"') && !line.includes('"assistant"') && !line.includes('"pr-link"')) continue;
     let entry;
     try {
@@ -689,7 +688,8 @@ function parseJson(text) {
 }
 
 // The lines of a JSONL file, split at "\n" only (a "\r" before it is dropped). readline also ends a line at U+2028 and
-// U+2029, which Codex (serde_json) leaves raw inside a JSON string. The pieces of a long line are joined once.
+// U+2029, which Codex (serde_json) and Claude Code (JSON.stringify) leave raw inside a JSON string. The pieces of a
+// long line are joined once. Both readTranscript and readCodexRollout read through it.
 async function* jsonlLines(file) {
   let pending = [];
   const line = () => {
