@@ -328,7 +328,12 @@ const MAX_BUFFER = 32 * 1024 * 1024;
 // Global deadline: Claude Code kills the hook at its configured timeout, and a
 // hook killed before it prints is read as "allowed". Every git call clamps to
 // what is left, so a pathological repo degrades into a block, not a bypass.
-const DEADLINE = Date.now() + 20000;
+// 3.7.2 (C1-M7 of the quality check): the registration's wrapper stops the hook 25 s after its own start, and passes
+// that deadline less the time to answer as AI_DEV_HELM_HOOK_DEADLINE (ms since the epoch). The gate keeps to the
+// earlier of the two, so its own verdict always comes before the wrapper ends it. The value only shortens the 20 s:
+// a stray or forged one makes the gate block sooner (fail-closed), never run longer.
+const HOOK_DEADLINE = Number(process.env.AI_DEV_HELM_HOOK_DEADLINE);
+const DEADLINE = Math.min(Date.now() + 20000, Number.isFinite(HOOK_DEADLINE) && HOOK_DEADLINE > 0 ? HOOK_DEADLINE : Infinity);
 const IS_WIN = process.platform === 'win32';
 
 // --------------------------------------------------------------------------
