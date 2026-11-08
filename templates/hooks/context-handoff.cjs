@@ -428,14 +428,19 @@ const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
 const JS_NAME_START = String.raw`(?:[\w$]|(?![\s\u2028\u2029\ufeff])[\u0080-\uffff])`;
 const JS_TOKEN_RE = new RegExp(String.raw`\s+|"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
   String.raw`|\/\/[^\r\n\u2028\u2029]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(` +
-  String.raw`|\d[\w$]*(?:\.[\w$]*)?|${JS_NAME_START}+|\+\+|--|[\s\S]`, 'y');
+  String.raw`|\d[\w$]*(?:\.[\w$]*)?|${JS_NAME_START}+|\+\+|--|=>|[\s\S]`, 'y');
 const JS_NAME_TOKEN_RE = new RegExp(`^${JS_NAME_START}`);
 const JS_REGEX_RE = new RegExp(String.raw`\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`, 'y');
 // A "/" is a regex literal (/'/g, /\/*$/, /[{(]/) where an expression starts: at the start, after an operator or
-// punctuation, or after one of these words. After a name (of is one), a number, a literal, ")", "]", "}", "++" or
-// "--" it divides (so `if (a) /'/.test(s)` and a regex at the start of a statement after a block's "}" are read as a
+// punctuation, after one of these words, or after the "}" that ends a block. After a name (of is one), a number, a
+// literal, ")", "]", the "}" of an object literal, "++" or "--" it divides (so `if (a) /'/.test(s)` is read as a
 // division).
 const JS_REGEX_AFTER_WORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'await', 'yield']);
+// A "{" opens a block (a statement's body) at the start, after ")" (function, if, for, while, catch ...), "=>", ";",
+// "}", "{", ":" outside an object literal (a label, a case), else and any other name (try, finally, a class name).
+// After an operator, "(", "[", ",", "]", a literal or one of JS_REGEX_AFTER_WORDS but else it opens an object literal
+// or a pattern (do's block is read as one too, which changes nothing: while follows it, not a "/"). A function
+// expression's body is read as a block, so a "/" right after its "}" is a regex.
 const EXEC_PATCH_ARG_RE = new RegExp(String.raw`\s*` + JS_STRING, 'y');
 const EXEC_OBJECT_START_RE = /\s*\{/y;
 const EXEC_CODE_MAX = 500000;
@@ -518,13 +523,23 @@ function jsStringValue(literal) {
 }
 
 // The tokens of exec's JavaScript from pos, telling a regex literal from a division by the last token that is not a
-// space or a comment (a word after "." or "#" is a property name). seek() goes on from another position.
-function jsLexer(code, pos, last = null) {
+// space or a comment (a word after "." or "#" is a property name). The open brackets are kept on a stack, each "{" as
+// a block or an object literal (blockStarts), so a "/" after a block's "}" starts a regex. seek() goes on
+// from another position after a balanced object or a literal (the stack stays). outer: the brackets around pos.
+function jsLexer(code, pos, last = null, outer = []) {
   const token = new RegExp(JS_TOKEN_RE.source, 'y');
   const regex = new RegExp(JS_REGEX_RE.source, 'y');
   let prev = last;
   let before = null; // the token before prev
   let afterDot = false;
+  const stack = [...outer]; // 'block', 'object' or the "(" / "[" that opened
+  let closedBlock = false; // prev is a "}" that ended a block
+  const blockStarts = () => {
+    if (prev === null || prev === ')' || prev === '=>' || prev === ';' || prev === '}' || prev === '{') return true;
+    if (prev === ':') return stack.length === 0 || stack[stack.length - 1] === 'block';
+    if (!JS_NAME_TOKEN_RE.test(prev) || afterDot) return false;
+    return prev === 'else' || !JS_REGEX_AFTER_WORDS.has(prev);
+  };
   const regexStarts = () => {
     if (prev === null || prev.endsWith('(')) return true; // also after a call's "tools.name("
     // for (const m of /'/g ...): "of" after a name, "]" or "}" is for-of's (a variable named of divides: x = of / 2).
@@ -533,7 +548,8 @@ function jsLexer(code, pos, last = null) {
     }
     if (JS_NAME_TOKEN_RE.test(prev)) return !afterDot && JS_REGEX_AFTER_WORDS.has(prev);
     if (/^["'`/]/.test(prev) && prev.length > 1) return false; // after a literal
-    return !/^(?:[)\]}]|\+\+|--)$/.test(prev);
+    if (prev === '}') return closedBlock;
+    return !/^(?:[)\]]|\+\+|--)$/.test(prev);
   };
   return {
     get pos() {
@@ -544,6 +560,7 @@ function jsLexer(code, pos, last = null) {
       prev = last;
       before = null;
       afterDot = false;
+      closedBlock = false;
     },
     // { text, call } or null at the end. call is the tools.* name when the token is a call's "tools.name(".
     next() {
@@ -559,6 +576,10 @@ function jsLexer(code, pos, last = null) {
       const text = match[0];
       pos += text.length;
       if (!/^(?:\s|\/\/|\/\*)/.test(text)) {
+        if (text === '{') stack.push(blockStarts() ? 'block' : 'object');
+        else if (text === '(' || text === '[' || match[1]) stack.push(text === '[' ? '[' : '(');
+        else if (text === ')' || text === ']') stack.pop();
+        closedBlock = text === '}' && stack.pop() === 'block';
         afterDot = prev === '.' || prev === '#';
         before = prev;
         prev = text;
@@ -571,7 +592,7 @@ function jsLexer(code, pos, last = null) {
 // The cmd / command string of the object literal whose '{' is at code[start], read at its top level in any order
 // ({workdir: "/w", cmd: "git push"}), and the index after the object.
 function execCommandArg(code, start) {
-  const lexer = jsLexer(code, start + 1, '{');
+  const lexer = jsLexer(code, start + 1, '{', ['object']);
   let depth = 1;
   let key = null;
   let expect = 'key'; // what comes next at the top level: 'key', 'colon', 'value' or null (the rest of a value)
