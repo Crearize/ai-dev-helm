@@ -422,7 +422,8 @@ const JS_STRING = String.raw`("(?:[^"\\\r\n]|\\[\s\S])*"|'(?:[^'\\\r\n]|\\[\s\S]
 const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
 // The tokens of exec's JavaScript (jsLexer). A string literal, a regex literal and a comment hide the calls written in
 // them. An unterminated literal runs to the end of its line (`...` to the end of the script) and an unterminated
-// comment to the end, so every token matches where it starts and each character is read once. A template literal is
+// comment to the end, so every token matches where it starts and each character is read once (a line scanned for a
+// regex that does not close after a block's "}", once more: see shared.divideUntil). A template literal is
 // one token with its ${...} (templateEnd), so the text of a template inside another one's ${...} is not read as code.
 // A call inside a template literal's ${...} is not read. A number keeps its decimal point (1./2) and a name may have non-ASCII
 // letters (値 / 2).
@@ -531,8 +532,8 @@ function jsStringValue(literal) {
 // space or a comment (a word after "." or "#" is a property name). The open brackets are kept on a stack, each "{" as
 // a block or an object literal (blockStarts), so a "/" after a block's "}" starts a regex. seek() goes on
 // from another position after a balanced object or a literal (the stack stays). outer: the brackets around pos.
-// nesting: how many template literals' ${...} pos is in.
-function jsLexer(code, pos, last = null, outer = [], nesting = 0) {
+// nesting: how many template literals' ${...} pos is in. shared: { divideUntil } for every lexer of one script.
+function jsLexer(code, pos, last = null, outer = [], nesting = 0, shared = { divideUntil: -1 }) {
   const token = new RegExp(JS_TOKEN_RE.source, 'y');
   const regex = new RegExp(JS_REGEX_RE.source, 'y');
   let prev = last;
@@ -575,15 +576,19 @@ function jsLexer(code, pos, last = null, outer = [], nesting = 0) {
       let match;
       let template;
       if (code[pos] === '`') {
-        const end = templateEnd(code, pos, nesting);
+        const end = templateEnd(code, pos, nesting, shared);
         match = [code.slice(pos, end.at)];
         template = end.closed;
-      } else if (code[pos] === '/' && code[pos + 1] !== '/' && code[pos + 1] !== '*' && regexStarts()) {
+      } else if (code[pos] === '/' && code[pos + 1] !== '/' && code[pos + 1] !== '*' && regexStarts() &&
+        !(prev === '}' && pos < shared.divideUntil)) {
         regex.lastIndex = pos;
         match = regex.exec(code);
         // A regex literal closes on its line. One after a block's "}" that does not is a misread "}" (such as the
-        // object of `a ? b : {c: 1} / 2`), so it divides as before 3.7.2.
+        // object of `a ? b : {c: 1} / 2`), so it divides as before 3.7.2. Every lexer of the script then divides
+        // after a block's "}" up to where that scan stopped (the end of the line), as 3.7.1 did, so no line is
+        // scanned again for each "}/" on it (that took time quadratic in the line's length).
         if (prev === '}' && !JS_REGEX_CLOSED_RE.test(match[0])) {
+          shared.divideUntil = pos + match[0].length;
           token.lastIndex = pos;
           match = token.exec(code);
         }
@@ -610,7 +615,7 @@ function jsLexer(code, pos, last = null, outer = [], nesting = 0) {
 // The end of the template literal whose "`" is at code[start] ({ at, closed }; at the end of the script when it does
 // not close). The code of each ${...} is read by jsLexer up to its "}", so a "`", "}" or "/" in a string, a comment, a
 // regex or a template inside it does not end the outer template, and a template inside it is read the same way.
-function templateEnd(code, start, nesting) {
+function templateEnd(code, start, nesting, shared) {
   const text = new RegExp(JS_TEMPLATE_TEXT_RE.source, 'y');
   let at = start + 1;
   for (;;) {
@@ -624,7 +629,7 @@ function templateEnd(code, start, nesting) {
       at += 2;
       continue;
     }
-    const lexer = jsLexer(code, at + 2, null, [], nesting + 1);
+    const lexer = jsLexer(code, at + 2, null, [], nesting + 1, shared);
     let depth = 0;
     let tok;
     while ((tok = lexer.next()) !== null) {
@@ -639,8 +644,8 @@ function templateEnd(code, start, nesting) {
 
 // The cmd / command string of the object literal whose '{' is at code[start], read at its top level in any order
 // ({workdir: "/w", cmd: "git push"}), and the index after the object.
-function execCommandArg(code, start) {
-  const lexer = jsLexer(code, start + 1, '{', ['object']);
+function execCommandArg(code, start, shared) {
+  const lexer = jsLexer(code, start + 1, '{', ['object'], 0, shared);
   let depth = 1;
   let key = null;
   let expect = 'key'; // what comes next at the top level: 'key', 'colon', 'value' or null (the rest of a value)
@@ -673,7 +678,8 @@ function execCommandArg(code, start) {
 // order. A call written in a string literal (a patch, a heredoc) or a comment is not one the script makes.
 function execCalls(code) {
   const calls = [];
-  const lexer = jsLexer(code, 0);
+  const shared = { divideUntil: -1 };
+  const lexer = jsLexer(code, 0, null, [], 0, shared);
   let tok;
   while ((tok = lexer.next()) !== null) {
     if (!tok.call) continue;
@@ -690,7 +696,7 @@ function execCalls(code) {
     open.lastIndex = lexer.pos;
     if (!open.exec(code)) continue;
     // The object is read once here, and the scan goes on after it.
-    const { command, end } = execCommandArg(code, open.lastIndex - 1);
+    const { command, end } = execCommandArg(code, open.lastIndex - 1, shared);
     if (command !== null) calls.push({ command });
     lexer.seek(end, '}');
   }
