@@ -422,22 +422,19 @@ const JS_STRING = String.raw`("(?:[^"\\\r\n]|\\[\s\S])*"|'(?:[^'\\\r\n]|\\[\s\S]
 const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
 // The tokens of exec's JavaScript (jsLexer). A string literal, a regex literal and a comment hide the calls written in
 // them. An unterminated literal runs to the end of its line (`...` to the end of the script) and an unterminated
-// comment to the end, so every token matches where it starts and each character is read once (a line scanned for a
-// regex that does not close after a block's "}", once more: see shared.divideUntil). A template literal is
-// one token with its ${...} (templateEnd), so the text of a template inside another one's ${...} is not read as code.
-// A call inside a template literal's ${...} is not read. A number keeps its decimal point (1./2) and a name may have non-ASCII
-// letters (値 / 2).
+// comment to the end, so every token matches where it starts and each character is read once (and once more to see
+// whether a regex after a block's "}" closes on its line: see regexCloses). A template literal is one token with its
+// ${...} (templateEnd), so the text of a template inside another one's ${...} is not read as code. A call inside a
+// template literal's ${...} is not read. A number keeps its decimal point (1./2) and a name may have non-ASCII letters
+// (値 / 2).
 const JS_NAME_START = String.raw`(?:[\w$]|(?![\s\u2028\u2029\ufeff])[\u0080-\uffff])`;
 const JS_TOKEN_RE = new RegExp(String.raw`\s+|"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?` +
   String.raw`|\/\/[^\r\n\u2028\u2029]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(` +
   String.raw`|\d[\w$]*(?:\.[\w$]*)?|${JS_NAME_START}+|\+\+|--|=>|[\s\S]`, 'y');
 const JS_NAME_TOKEN_RE = new RegExp(`^${JS_NAME_START}`);
 const JS_REGEX_RE = new RegExp(String.raw`\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`, 'y');
-// A JS_REGEX_RE match that is a whole regex literal, closed on its line (its classes closed too).
-const JS_REGEX_CLOSED_RE = new RegExp(String.raw`^\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\])*\/$`);
 // The text of a template literal up to its "`", a "${" or a "\" that ends the script.
 const JS_TEMPLATE_TEXT_RE = /(?:[^`\\$]|\\[\s\S]|\$(?!\{))*/y;
-const JS_TEMPLATE_NESTING = 32; // a "${" nested deeper is read as text (a bound on the recursion)
 // A "/" is a regex literal (/'/g, /\/*$/, /[{(]/) where an expression starts: at the start, after an operator or
 // punctuation, after one of these words, or after the "}" that ends a block. After a name (of is one), a number, a
 // literal, ")", "]", the "}" of an object literal, "++" or "--" it divides (so `if (a) /'/.test(s)` is read as a
@@ -528,26 +525,86 @@ function jsStringValue(literal) {
   });
 }
 
+// The code exec runs and what every lexer of it shares: marks, whether a regex from a place closes on its line
+// (regexCloses fills it as the lexers ask). A lexer reads the code only through its script, so none can miss the marks.
+function execScriptOf(code) {
+  return { code, marks: null };
+}
+
+// Whether the regex literal whose "/" is at script.code[start] closes on its line (its classes closed too), as
+// JS_REGEX_RE reads it. Where the scan goes from a place depends only on the place and on whether it is in a class
+// ([...]), so each (place, in a class) is scanned once for the whole script and its answer kept: a line of many "}/"
+// is read in time linear in its length.
+function regexCloses(script, start) {
+  const { code } = script;
+  if (script.marks === null) script.marks = new Uint8Array(code.length * 2 + 2); // 0 not yet, 1 closes, 2 does not
+  const marks = script.marks;
+  const path = [];
+  let i = start + 1;
+  let inClass = 0;
+  let answer;
+  for (;;) {
+    const node = i * 2 + inClass;
+    if (marks[node] !== 0) {
+      answer = marks[node];
+      break;
+    }
+    path.push(node);
+    const c = code[i];
+    if (i >= code.length || c === '\n' || c === '\r') {
+      answer = 2;
+      break;
+    }
+    if (c === '\\') {
+      const n = code[i + 1];
+      if (i + 1 >= code.length || n === '\n' || n === '\r' || n === ' ' || n === ' ') {
+        answer = 2;
+        break;
+      }
+      i += 2;
+    } else if (inClass === 1) {
+      if (c === ']') inClass = 0;
+      i += 1;
+    } else if (c === '/') {
+      answer = 1;
+      break;
+    } else {
+      if (c === '[') inClass = 1;
+      i += 1;
+    }
+  }
+  for (const node of path) marks[node] = answer;
+  return answer === 1;
+}
+
 // The tokens of exec's JavaScript from pos, telling a regex literal from a division by the last token that is not a
 // space or a comment (a word after "." or "#" is a property name). The open brackets are kept on a stack, each "{" as
 // a block or an object literal (blockStarts), so a "/" after a block's "}" starts a regex. seek() goes on
 // from another position after a balanced object or a literal (the stack stays). outer: the brackets around pos.
-// nesting: how many template literals' ${...} pos is in. shared: { divideUntil } for every lexer of one script.
-function jsLexer(code, pos, last = null, outer = [], nesting = 0, shared = { divideUntil: -1 }) {
-  const token = new RegExp(JS_TOKEN_RE.source, 'y');
-  const regex = new RegExp(JS_REGEX_RE.source, 'y');
-  let prev = last;
-  let before = null; // the token before prev
-  let afterDot = false;
-  const stack = [...outer]; // 'block', 'object' or the "(" / "[" that opened
-  let closedBlock = false; // prev is a "}" that ended a block
-  const blockStarts = () => {
+// In a template's ${...} (inTemplate), a "`" is returned as { open: true } for templateEnd to read the template, and
+// tookTemplate(at) goes on after it. A class, so a lexer for each ${...} of a deep nesting costs only its fields.
+class JsLexer {
+  constructor(script, pos, last = null, outer = [], inTemplate = false) {
+    this.script = script;
+    this.pos = pos;
+    this.prev = last;
+    this.before = null; // the token before prev
+    this.afterDot = false;
+    this.stack = outer.length === 0 ? [] : [...outer]; // 'block', 'object' or the "(" / "[" that opened
+    this.closedBlock = false; // prev is a "}" that ended a block
+    this.inTemplate = inTemplate;
+  }
+
+  blockStarts() {
+    const { prev, stack } = this;
     if (prev === null || prev === ')' || prev === '=>' || prev === ';' || prev === '}' || prev === '{') return true;
     if (prev === ':') return stack.length === 0 || stack[stack.length - 1] === 'block';
-    if (!JS_NAME_TOKEN_RE.test(prev) || afterDot) return false;
+    if (!JS_NAME_TOKEN_RE.test(prev) || this.afterDot) return false;
     return prev === 'else' || prev === 'do' || !JS_REGEX_AFTER_WORDS.has(prev);
-  };
-  const regexStarts = () => {
+  }
+
+  regexStarts() {
+    const { prev, before, afterDot } = this;
     if (prev === null || prev.endsWith('(')) return true; // also after a call's "tools.name("
     // for (const m of /'/g ...): "of" after a name, "]" or "}" is for-of's (a variable named of divides: x = of / 2).
     if (prev === 'of' && !afterDot && before !== null) {
@@ -555,97 +612,117 @@ function jsLexer(code, pos, last = null, outer = [], nesting = 0, shared = { div
     }
     if (JS_NAME_TOKEN_RE.test(prev)) return !afterDot && JS_REGEX_AFTER_WORDS.has(prev);
     if (/^["'`/]/.test(prev) && prev.length > 1) return false; // after a literal
-    if (prev === '}') return closedBlock;
+    if (prev === '}') return this.closedBlock;
     return !/^(?:[)\]]|\+\+|--)$/.test(prev);
-  };
-  return {
-    get pos() {
-      return pos;
-    },
-    seek(at, last) {
-      pos = at;
-      prev = last;
-      before = null;
-      afterDot = false;
-      closedBlock = false;
-    },
-    // { text, call, template } or null at the end. call is the tools.* name when the token is a call's "tools.name(".
-    // template is true for a template literal that closes.
-    next() {
-      if (pos >= code.length) return null;
-      let match;
-      let template;
-      if (code[pos] === '`') {
-        const end = templateEnd(code, pos, nesting, shared);
-        match = [code.slice(pos, end.at)];
-        template = end.closed;
-      } else if (code[pos] === '/' && code[pos + 1] !== '/' && code[pos + 1] !== '*' && regexStarts() &&
-        !(prev === '}' && pos < shared.divideUntil)) {
-        regex.lastIndex = pos;
-        match = regex.exec(code);
-        // A regex literal closes on its line. One after a block's "}" that does not is a misread "}" (such as the
-        // object of `a ? b : {c: 1} / 2`), so it divides as before 3.7.2. Every lexer of the script then divides
-        // after a block's "}" up to where that scan stopped (the end of the line), as 3.7.1 did, so no line is
-        // scanned again for each "}/" on it (that took time quadratic in the line's length).
-        if (prev === '}' && !JS_REGEX_CLOSED_RE.test(match[0])) {
-          shared.divideUntil = pos + match[0].length;
-          token.lastIndex = pos;
-          match = token.exec(code);
-        }
-      } else {
-        token.lastIndex = pos;
-        match = token.exec(code);
-      }
-      const text = match[0];
-      pos += text.length;
-      if (!/^(?:\s|\/\/|\/\*)/.test(text)) {
-        if (text === '{') stack.push(blockStarts() ? 'block' : 'object');
-        else if (text === '(' || text === '[' || match[1]) stack.push(text === '[' ? '[' : '(');
-        else if (text === ')' || text === ']') stack.pop();
-        closedBlock = text === '}' && stack.pop() === 'block';
-        afterDot = prev === '.' || prev === '#';
-        before = prev;
-        prev = text;
-      }
-      return { text, call: match[1], template };
-    },
-  };
+  }
+
+  // Moves past a token that is not a space or a comment.
+  took(text, call) {
+    const { stack } = this;
+    if (text === '{') stack.push(this.blockStarts() ? 'block' : 'object');
+    else if (text === '(' || text === '[' || call) stack.push(text === '[' ? '[' : '(');
+    else if (text === ')' || text === ']') stack.pop();
+    this.closedBlock = text === '}' && stack.pop() === 'block';
+    this.afterDot = this.prev === '.' || this.prev === '#';
+    this.before = this.prev;
+    this.prev = text;
+  }
+
+  seek(at, last) {
+    this.pos = at;
+    this.prev = last;
+    this.before = null;
+    this.afterDot = false;
+    this.closedBlock = false;
+  }
+
+  // After the template literal from pos (a "{ open: true }") that templateEnd read up to at.
+  tookTemplate(at) {
+    const text = this.script.code.slice(this.pos, at);
+    this.pos = at;
+    this.took(text);
+  }
+
+  // { text, call, template, open } or null at the end. call is the tools.* name when the token is a call's
+  // "tools.name(". template is true for a template literal that closes.
+  next() {
+    const { script, pos } = this;
+    const { code } = script;
+    if (pos >= code.length) return null;
+    let match;
+    let template;
+    if (code[pos] === '`') {
+      if (this.inTemplate) return { text: '`', open: true };
+      const end = templateEnd(script, pos);
+      match = [code.slice(pos, end.at)];
+      template = end.closed;
+    } else if (code[pos] === '/' && code[pos + 1] !== '/' && code[pos + 1] !== '*' && this.regexStarts() &&
+      // A regex literal closes on its line. One after a block's "}" that does not is a misread "}" (such as the
+      // object of `a ? b : {c: 1} / 2`), so it divides as before 3.7.2.
+      (this.prev !== '}' || regexCloses(script, pos))) {
+      JS_REGEX_RE.lastIndex = pos;
+      match = JS_REGEX_RE.exec(code);
+    } else {
+      JS_TOKEN_RE.lastIndex = pos;
+      match = JS_TOKEN_RE.exec(code);
+    }
+    const text = match[0];
+    this.pos = pos + text.length;
+    if (!/^(?:\s|\/\/|\/\*)/.test(text)) this.took(text, match[1]);
+    return { text, call: match[1], template };
+  }
 }
 
-// The end of the template literal whose "`" is at code[start] ({ at, closed }; at the end of the script when it does
-// not close). The code of each ${...} is read by jsLexer up to its "}", so a "`", "}" or "/" in a string, a comment, a
-// regex or a template inside it does not end the outer template, and a template inside it is read the same way.
-function templateEnd(code, start, nesting, shared) {
-  const text = new RegExp(JS_TEMPLATE_TEXT_RE.source, 'y');
-  let at = start + 1;
+function jsLexer(script, pos, last = null, outer = [], inTemplate = false) {
+  return new JsLexer(script, pos, last, outer, inTemplate);
+}
+
+// The end of the template literal whose "`" is at script.code[start] ({ at, closed }; at the end of the script when
+// it does not close). The code of each ${...} is read by a jsLexer up to its "}", so a "`", "}" or "/" in a string, a
+// comment, a regex or a template inside it does not end the outer template. A template inside a ${...} is read the
+// same way, on a stack of the ${...} being read rather than by recursion, so any depth of nesting is read.
+function templateEnd(script, start) {
+  const { code } = script;
+  const text = JS_TEMPLATE_TEXT_RE;
+  const frames = []; // the ${...} being read, the innermost last: { lexer, depth }
+  let at = start + 1; // in the text of the innermost template
   for (;;) {
     text.lastIndex = at;
     text.exec(code);
     at = text.lastIndex;
     if (at >= code.length || code[at] === '\\') return { at: code.length, closed: false };
-    if (code[at] === '`') return { at: at + 1, closed: true };
-    // "${"
-    if (nesting >= JS_TEMPLATE_NESTING) {
-      at += 2;
-      continue;
+    if (code[at] === '`') {
+      at += 1;
+      if (frames.length === 0) return { at, closed: true };
+      frames[frames.length - 1].lexer.tookTemplate(at); // a template in a ${...} closed: back to the code around it
+    } else {
+      frames.push({ lexer: jsLexer(script, at + 2, null, [], true), depth: 0 }); // "${"
     }
-    const lexer = jsLexer(code, at + 2, null, [], nesting + 1, shared);
-    let depth = 0;
-    let tok;
-    while ((tok = lexer.next()) !== null) {
+    // The code of the innermost ${...}, up to its "}" (back to the text of its template) or a template in it.
+    for (;;) {
+      const frame = frames[frames.length - 1];
+      const tok = frame.lexer.next();
+      if (tok === null) return { at: code.length, closed: false };
+      if (tok.open) {
+        at = frame.lexer.pos + 1;
+        break;
+      }
       const t = tok.text;
-      if (t === '{' || t === '(' || t === '[' || tok.call) depth += 1;
-      else if (t === ')' || t === ']') depth -= 1;
-      else if (t === '}' && depth-- === 0) break;
+      if (t === '{' || t === '(' || t === '[' || tok.call) frame.depth += 1;
+      else if (t === ')' || t === ']') frame.depth -= 1;
+      else if (t === '}' && frame.depth-- === 0) {
+        frames.pop();
+        at = frame.lexer.pos;
+        break;
+      }
     }
-    at = lexer.pos;
   }
 }
 
-// The cmd / command string of the object literal whose '{' is at code[start], read at its top level in any order
-// ({workdir: "/w", cmd: "git push"}), and the index after the object.
-function execCommandArg(code, start, shared) {
-  const lexer = jsLexer(code, start + 1, '{', ['object'], 0, shared);
+// The cmd / command string of the object literal whose '{' is at script.code[start], read at its top level in any
+// order ({workdir: "/w", cmd: "git push"}), and the index after the object.
+function execCommandArg(script, start) {
+  const lexer = jsLexer(script, start + 1, '{', ['object']);
   let depth = 1;
   let key = null;
   let expect = 'key'; // what comes next at the top level: 'key', 'colon', 'value' or null (the rest of a value)
@@ -678,8 +755,8 @@ function execCommandArg(code, start, shared) {
 // order. A call written in a string literal (a patch, a heredoc) or a comment is not one the script makes.
 function execCalls(code) {
   const calls = [];
-  const shared = { divideUntil: -1 };
-  const lexer = jsLexer(code, 0, null, [], 0, shared);
+  const script = execScriptOf(code);
+  const lexer = jsLexer(script, 0);
   let tok;
   while ((tok = lexer.next()) !== null) {
     if (!tok.call) continue;
@@ -696,7 +773,7 @@ function execCalls(code) {
     open.lastIndex = lexer.pos;
     if (!open.exec(code)) continue;
     // The object is read once here, and the scan goes on after it.
-    const { command, end } = execCommandArg(code, open.lastIndex - 1, shared);
+    const { command, end } = execCommandArg(script, open.lastIndex - 1);
     if (command !== null) calls.push({ command });
     lexer.seek(end, '}');
   }
