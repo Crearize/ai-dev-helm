@@ -422,15 +422,21 @@ const JS_STRING = String.raw`("(?:[^"\\\r\n]|\\[\s\S])*"|'(?:[^'\\\r\n]|\\[\s\S]
 const JS_STRING_FULL = new RegExp(`^${JS_STRING}$`);
 // The tokens of exec's JavaScript (jsLexer). A string literal, a regex literal and a comment hide the calls written in
 // them. An unterminated literal runs to the end of its line (`...` to the end of the script) and an unterminated
-// comment to the end, so every token matches where it starts and each character is read once. A call inside a
-// template literal's ${...} is not read. A number keeps its decimal point (1./2) and a name may have non-ASCII
+// comment to the end, so every token matches where it starts and each character is read once. A template literal is
+// one token with its ${...} (templateEnd), so the text of a template inside another one's ${...} is not read as code.
+// A call inside a template literal's ${...} is not read. A number keeps its decimal point (1./2) and a name may have non-ASCII
 // letters (値 / 2).
 const JS_NAME_START = String.raw`(?:[\w$]|(?![\s\u2028\u2029\ufeff])[\u0080-\uffff])`;
-const JS_TOKEN_RE = new RegExp(String.raw`\s+|"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?|` + '`(?:[^`\\\\]|\\\\[\\s\\S])*`?' +
+const JS_TOKEN_RE = new RegExp(String.raw`\s+|"(?:[^"\\\r\n]|\\[\s\S])*"?|'(?:[^'\\\r\n]|\\[\s\S])*'?` +
   String.raw`|\/\/[^\r\n\u2028\u2029]*|\/\*(?:[^*]|\*(?!\/))*(?:\*\/)?|tools\.(apply_patch|exec_command|shell_command)\(` +
   String.raw`|\d[\w$]*(?:\.[\w$]*)?|${JS_NAME_START}+|\+\+|--|=>|[\s\S]`, 'y');
 const JS_NAME_TOKEN_RE = new RegExp(`^${JS_NAME_START}`);
 const JS_REGEX_RE = new RegExp(String.raw`\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\]?)*\/?`, 'y');
+// A JS_REGEX_RE match that is a whole regex literal, closed on its line (its classes closed too).
+const JS_REGEX_CLOSED_RE = new RegExp(String.raw`^\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|\\.)*\])*\/$`);
+// The text of a template literal up to its "`", a "${" or a "\" that ends the script.
+const JS_TEMPLATE_TEXT_RE = /(?:[^`\\$]|\\[\s\S]|\$(?!\{))*/y;
+const JS_TEMPLATE_NESTING = 32; // a "${" nested deeper is read as text (a bound on the recursion)
 // A "/" is a regex literal (/'/g, /\/*$/, /[{(]/) where an expression starts: at the start, after an operator or
 // punctuation, after one of these words, or after the "}" that ends a block. After a name (of is one), a number, a
 // literal, ")", "]", the "}" of an object literal, "++" or "--" it divides (so `if (a) /'/.test(s)` is read as a
@@ -439,9 +445,7 @@ const JS_REGEX_AFTER_WORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'n
 // A "{" opens a block (a statement's body) at the start, after ")" (function, if, for, while, catch ...), "=>", ";",
 // "}", "{", ":" outside an object literal (a label, a case), else, do and any other name (try, finally, a class name).
 // After an operator, "(", "[", ",", "]", a literal or another of JS_REGEX_AFTER_WORDS it opens an object literal or a
-// pattern. A function expression's body is read as a block, so a "/" right after its "}" is a regex. A "{" right after
-// a "$" is never a block: a template inside another template's "${...}" (`${xs.map((x) => `${a}/${x}`)}`) is read as
-// code, and its "${a}" is a substitution, so the "/" after it divides as before 3.7.2.
+// pattern. A function expression's body is read as a block, so a "/" right after its "}" is a regex.
 const EXEC_PATCH_ARG_RE = new RegExp(String.raw`\s*` + JS_STRING, 'y');
 const EXEC_OBJECT_START_RE = /\s*\{/y;
 const EXEC_CODE_MAX = 500000;
@@ -527,7 +531,8 @@ function jsStringValue(literal) {
 // space or a comment (a word after "." or "#" is a property name). The open brackets are kept on a stack, each "{" as
 // a block or an object literal (blockStarts), so a "/" after a block's "}" starts a regex. seek() goes on
 // from another position after a balanced object or a literal (the stack stays). outer: the brackets around pos.
-function jsLexer(code, pos, last = null, outer = []) {
+// nesting: how many template literals' ${...} pos is in.
+function jsLexer(code, pos, last = null, outer = [], nesting = 0) {
   const token = new RegExp(JS_TOKEN_RE.source, 'y');
   const regex = new RegExp(JS_REGEX_RE.source, 'y');
   let prev = last;
@@ -563,13 +568,25 @@ function jsLexer(code, pos, last = null, outer = []) {
       afterDot = false;
       closedBlock = false;
     },
-    // { text, call } or null at the end. call is the tools.* name when the token is a call's "tools.name(".
+    // { text, call, template } or null at the end. call is the tools.* name when the token is a call's "tools.name(".
+    // template is true for a template literal that closes.
     next() {
       if (pos >= code.length) return null;
       let match;
-      if (code[pos] === '/' && code[pos + 1] !== '/' && code[pos + 1] !== '*' && regexStarts()) {
+      let template;
+      if (code[pos] === '`') {
+        const end = templateEnd(code, pos, nesting);
+        match = [code.slice(pos, end.at)];
+        template = end.closed;
+      } else if (code[pos] === '/' && code[pos + 1] !== '/' && code[pos + 1] !== '*' && regexStarts()) {
         regex.lastIndex = pos;
         match = regex.exec(code);
+        // A regex literal closes on its line. One after a block's "}" that does not is a misread "}" (such as the
+        // object of `a ? b : {c: 1} / 2`), so it divides as before 3.7.2.
+        if (prev === '}' && !JS_REGEX_CLOSED_RE.test(match[0])) {
+          token.lastIndex = pos;
+          match = token.exec(code);
+        }
       } else {
         token.lastIndex = pos;
         match = token.exec(code);
@@ -577,7 +594,7 @@ function jsLexer(code, pos, last = null, outer = []) {
       const text = match[0];
       pos += text.length;
       if (!/^(?:\s|\/\/|\/\*)/.test(text)) {
-        if (text === '{') stack.push(code[pos - 2] !== '$' && blockStarts() ? 'block' : 'object');
+        if (text === '{') stack.push(blockStarts() ? 'block' : 'object');
         else if (text === '(' || text === '[' || match[1]) stack.push(text === '[' ? '[' : '(');
         else if (text === ')' || text === ']') stack.pop();
         closedBlock = text === '}' && stack.pop() === 'block';
@@ -585,9 +602,39 @@ function jsLexer(code, pos, last = null, outer = []) {
         before = prev;
         prev = text;
       }
-      return { text, call: match[1] };
+      return { text, call: match[1], template };
     },
   };
+}
+
+// The end of the template literal whose "`" is at code[start] ({ at, closed }; at the end of the script when it does
+// not close). The code of each ${...} is read by jsLexer up to its "}", so a "`", "}" or "/" in a string, a comment, a
+// regex or a template inside it does not end the outer template, and a template inside it is read the same way.
+function templateEnd(code, start, nesting) {
+  const text = new RegExp(JS_TEMPLATE_TEXT_RE.source, 'y');
+  let at = start + 1;
+  for (;;) {
+    text.lastIndex = at;
+    text.exec(code);
+    at = text.lastIndex;
+    if (at >= code.length || code[at] === '\\') return { at: code.length, closed: false };
+    if (code[at] === '`') return { at: at + 1, closed: true };
+    // "${"
+    if (nesting >= JS_TEMPLATE_NESTING) {
+      at += 2;
+      continue;
+    }
+    const lexer = jsLexer(code, at + 2, null, [], nesting + 1);
+    let depth = 0;
+    let tok;
+    while ((tok = lexer.next()) !== null) {
+      const t = tok.text;
+      if (t === '{' || t === '(' || t === '[' || tok.call) depth += 1;
+      else if (t === ')' || t === ']') depth -= 1;
+      else if (t === '}' && depth-- === 0) break;
+    }
+    at = lexer.pos;
+  }
 }
 
 // The cmd / command string of the object literal whose '{' is at code[start], read at its top level in any order
@@ -603,7 +650,7 @@ function execCommandArg(code, start) {
     const t = tok.text;
     if (/^(?:\s|\/\/|\/\*)/.test(t)) continue;
     if (depth === 1) {
-      const literal = JS_STRING_FULL.test(t);
+      const literal = tok.template === true || JS_STRING_FULL.test(t);
       if (expect === 'key' && (literal || /^[\w$]+$/.test(t))) {
         key = literal ? jsStringValue(t) : t;
         expect = 'colon';
