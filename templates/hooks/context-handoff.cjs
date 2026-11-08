@@ -437,10 +437,9 @@ const JS_REGEX_RE = new RegExp(String.raw`\/(?:[^/\\\r\n[]|\\.|\[(?:[^\]\\\r\n]|
 // division).
 const JS_REGEX_AFTER_WORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'await', 'yield']);
 // A "{" opens a block (a statement's body) at the start, after ")" (function, if, for, while, catch ...), "=>", ";",
-// "}", "{", ":" outside an object literal (a label, a case), else and any other name (try, finally, a class name).
-// After an operator, "(", "[", ",", "]", a literal or one of JS_REGEX_AFTER_WORDS but else it opens an object literal
-// or a pattern (do's block is read as one too, which changes nothing: while follows it, not a "/"). A function
-// expression's body is read as a block, so a "/" right after its "}" is a regex.
+// "}", "{", ":" outside an object literal (a label, a case), else, do and any other name (try, finally, a class name).
+// After an operator, "(", "[", ",", "]", a literal or another of JS_REGEX_AFTER_WORDS it opens an object literal or a
+// pattern. A function expression's body is read as a block, so a "/" right after its "}" is a regex.
 const EXEC_PATCH_ARG_RE = new RegExp(String.raw`\s*` + JS_STRING, 'y');
 const EXEC_OBJECT_START_RE = /\s*\{/y;
 const EXEC_CODE_MAX = 500000;
@@ -538,7 +537,7 @@ function jsLexer(code, pos, last = null, outer = []) {
     if (prev === null || prev === ')' || prev === '=>' || prev === ';' || prev === '}' || prev === '{') return true;
     if (prev === ':') return stack.length === 0 || stack[stack.length - 1] === 'block';
     if (!JS_NAME_TOKEN_RE.test(prev) || afterDot) return false;
-    return prev === 'else' || !JS_REGEX_AFTER_WORDS.has(prev);
+    return prev === 'else' || prev === 'do' || !JS_REGEX_AFTER_WORDS.has(prev);
   };
   const regexStarts = () => {
     if (prev === null || prev.endsWith('(')) return true; // also after a call's "tools.name("
