@@ -163,6 +163,10 @@ JSON を導入先の外へ保存します。Windows PowerShell 5.1 では `> fil
 - hook の拡張点（設計 C3h）: 導入先の独自のゲート・review-budget は `gate.script`・`reviewBudgetScript` で宣言し、制御面・免除・スピードモードの分類に足すパスは `gate.controlPlane`・`gate.exemptDocs`・`gate.harness` に書く（上の表）。hook の写しへのローカルパッチ（パターンを足す・実体を差し替える）は、これに移して消す。`.ai-dev-helm.json` はゲート制御面になったので、マニフェストを変える PR（ハーネスの更新の PR を含む）は免除されない。
 - 導入先のローカルパッチの取り込み（設計 C3i）: quality-gate は `git push --dry-run` / `-n` をゲート対象から外し、同じコマンドの別の行の `git merge` / `git pull` / `git rebase` を、trunk に届く push / merge の前にあれば拒否するようになった。review-budget はロックを最大 2 秒待ち、古さでロックを外さなくなり（自分のロックは名前を変えてから消す）、Codex の `agent_name`・下線区切りの名前・`collaboration` で始まるツール名を読むようになった（配布の Codex の登録では `collaboration` の名前は届かない — `harness-runtime.md`）。同じ趣旨のパッチを hook の写しに当てていた導入先は、`upgrade` で配布物に置き換えて消す。
 
+### 3.7.2 の更新
+
+- `quality-context` で `--out` を省くと、呼ぶたびに OS の一時ディレクトリ配下に新しい専用のディレクトリを作って書く（前は決まった名前のディレクトリを見つけたまま使っていた）。そのため、前のサイクルの出力を読むサイクル 2 以降と `--check-untracked` は、前のサイクルと同じ `--out` が要る（無いとエラーになる）。quality-check の手順はどれも `--out <scratchpad>/quality-check` を渡すので変わらない。CLI を直接使う手順を導入先が独自に書いていれば、`--out` を足す。
+
 ## 計測の範囲
 
 `quality-context --cycle N` は `measurements.json` に生成処理の実測時間と取得時点のファイルハッシュを保存します。並列エージェント時間やタスク全体の時間には換算しません。棚卸し失敗は `inventory_error` に記録し、追加の品質ゲートにしません。
