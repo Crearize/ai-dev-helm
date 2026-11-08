@@ -318,7 +318,6 @@
 // is not judged.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
@@ -2699,45 +2698,61 @@ const LAZY_FETCH_MS = 10000;
 const LAZY_FETCH_ENV = { ...GIT_ENV, GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never' };
 delete LAZY_FETCH_ENV.GIT_NO_LAZY_FETCH;
 // 3.7.2 (C4-M1): a fetch that failed for an object this clone lacks (an unreachable or silent remote) is not tried
-// again for LAZY_FETCH_RETRY_MS in that repository while its git config stays the same - else every read waits up to
-// LAZY_FETCH_MS again (with denyCommands declared: every shell call), and each try may leave a fetch behind. The record
-// is a file in the temp directory named by the work tree root, holding the time and a digest of the repository's
-// config (read as a file, no git), so fixing the remote (git remote set-url) tries again at once. A record only makes a
-// read skip the fetch: the object is then unreadable (a block), never "no declaration" - a stale or forged record
-// cannot let a command through. Writing or reading it may fail; then the read is the 3.7.1 one.
+// again for LAZY_FETCH_RETRY_MS in that repository while its git config and FETCH_HEAD stay the same - else every read
+// waits up to LAZY_FETCH_MS again (with denyCommands declared: every shell call), and each try may leave a fetch
+// behind. The record is a file in the repository's common git directory (beside the review budget's state - not a
+// shared temp directory another user could plant a link in), holding the time and a digest of the repository's config
+// and FETCH_HEAD (read as files, no git), so fixing the remote (git remote set-url) or a git fetch that worked (the
+// network is back) tries again at once (a lazy fetch does not write FETCH_HEAD). A record only makes a read skip the
+// fetch: the object is then unreadable (a block), never "no declaration" - a stale or forged record cannot let a
+// command through. Writing or reading it may fail; then the read is the 3.7.1 one.
 const LAZY_FETCH_RETRY_MS = 10 * 60 * 1000;
-const fetchRecordFile = (top) => path.join(os.tmpdir(), 'ai-dev-helm-gate',
-  `fetch-${crypto.createHash('sha256').update(IS_WIN ? path.resolve(top).toLowerCase() : path.resolve(top)).digest('hex').slice(0, 32)}.json`);
-// The repository's config file: `.git/config`, or a linked worktree's common directory's (`gitdir:` -> `commondir`).
-function gitConfigDigest(top) {
+// The work tree's own git directory and the repository's common one (`gitdir:` -> `commondir` for a linked worktree;
+// both `.git` for the main work tree), or null when `.git` is neither.
+function gitDirs(top) {
   const dotGit = path.join(top, '.git');
-  let dir = dotGit;
-  const head = readHead(dotGit, 4096);
-  const m = head === null ? null : /^gitdir:[ \t]*(.+?)[ \t]*$/m.exec(head);
-  if (m) {
-    dir = path.resolve(top, m[1]);
-    const common = readHead(path.join(dir, 'commondir'));
-    if (common !== null && common.trim()) dir = path.resolve(dir, common.trim());
+  let st;
+  try { st = fs.statSync(dotGit); } catch { return null; }
+  if (st.isDirectory()) return { own: dotGit, common: dotGit };
+  const m = /^gitdir:[ \t]*(.+?)[ \t]*$/m.exec(readHead(dotGit, 4096) || '');
+  if (!m) return null;
+  const own = path.resolve(top, m[1]);
+  const common = readHead(path.join(own, 'commondir'));
+  return { own, common: common !== null && common.trim() ? path.resolve(own, common.trim()) : own };
+}
+const fetchRecordFile = (top) => {
+  const dirs = gitDirs(top);
+  return dirs && path.join(dirs.common, 'ai-dev-helm-gate-fetch.json');
+};
+// The repository's config file and FETCH_HEAD (the work tree's and the common one), as one digest; null without config.
+function gitStateDigest(top) {
+  const dirs = gitDirs(top);
+  if (!dirs) return null;
+  const hash = crypto.createHash('sha256');
+  try { hash.update(fs.readFileSync(path.join(dirs.common, 'config'))); } catch { return null; }
+  for (const dir of [...new Set([dirs.own, dirs.common])]) {
+    hash.update('\0');
+    try { hash.update(fs.readFileSync(path.join(dir, 'FETCH_HEAD'))); } catch { /* no fetch yet */ }
   }
-  let text;
-  try { text = fs.readFileSync(path.join(dir, 'config')); } catch { return null; }
-  return crypto.createHash('sha256').update(text).digest('hex');
+  return hash.digest('hex');
 }
 function fetchRecentlyFailed(top) {
   try {
     const record = JSON.parse(readHead(fetchRecordFile(top), 512) || 'null');
     const age = Date.now() - record.at;
-    return Number.isFinite(age) && age >= 0 && age < LAZY_FETCH_RETRY_MS && record.config === gitConfigDigest(top);
+    const digest = gitStateDigest(top);
+    return Number.isFinite(age) && age >= 0 && age < LAZY_FETCH_RETRY_MS && digest !== null && record.config === digest;
   } catch {
     return false;
   }
 }
 function recordFetch(top, failed) {
   const file = fetchRecordFile(top);
+  if (!file) return;
   try {
     if (!failed) { if (fs.existsSync(file)) fs.unlinkSync(file); return; }
-    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(file, JSON.stringify({ at: Date.now(), config: gitConfigDigest(top) }), { mode: 0o600 });
+    const digest = gitStateDigest(top);
+    if (digest !== null) fs.writeFileSync(file, JSON.stringify({ at: Date.now(), config: digest }), { mode: 0o600 });
   } catch {
     // Best effort: without the record the next read tries the fetch again (3.7.1).
   }
@@ -3005,7 +3020,7 @@ function makeCtx(cwd) {
             const [blob, ref, tree] = objects.slice(i * 3, i * 3 + 3);
             if (ref === null) return null; // No such ref: an unborn HEAD, or not this trunk.
             const fetch = `not in this clone and could not be fetched - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}` +
-              (skipFetch ? ` (after a failed fetch the hook does not fetch for ${LAZY_FETCH_RETRY_MS / 60000} minutes)` : '');
+              (skipFetch ? ` (after a failed fetch the hook does not fetch for ${LAZY_FETCH_RETRY_MS / 60000} minutes, until git fetch works or the git config changes)` : '');
             const mode = tree && tree.type === 'tree' ? treeMode(tree, MANIFEST_FILE) : null;
             if (mode === false) return null;
             // The mode first: a symbolic link, a directory or a submodule is no file, whatever its object.
