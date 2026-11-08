@@ -2701,9 +2701,9 @@ delete LAZY_FETCH_ENV.GIT_NO_LAZY_FETCH;
 // again for LAZY_FETCH_RETRY_MS in that repository while its git config and FETCH_HEAD stay the same - else every read
 // waits up to LAZY_FETCH_MS again (with denyCommands declared: every shell call), and each try may leave a fetch
 // behind. The record is a file in the work tree's git directory (not a shared temp directory another user could plant
-// a link in), holding the time and a digest of the repository's config and FETCH_HEAD (read as files, no git), so
-// fixing the remote (git remote set-url) or a git fetch that worked (the network is back) tries again at once (a lazy
-// fetch does not write FETCH_HEAD). A record only makes a read skip the
+// a link in), holding the time and a digest of the repository's config and FETCH_HEAD content (read as files, no git),
+// so fixing the remote (git remote set-url) or a git fetch that brought something (the network is back) tries again
+// at once (a lazy fetch does not write FETCH_HEAD). A record only makes a read skip the
 // fetch: the object is then unreadable (a block), never "no declaration" - a stale or forged record cannot let a
 // command through. Writing or reading it may fail; then the read is the 3.7.1 one.
 const LAZY_FETCH_RETRY_MS = 10 * 60 * 1000;
@@ -2726,9 +2726,10 @@ const fetchRecordFile = (top) => {
   const dirs = gitDirs(top);
   return dirs && path.join(dirs.own, 'ai-dev-helm-gate-fetch.json');
 };
-// The repository's config file and FETCH_HEAD (the work tree's and the common one: content, and the time of a non-empty
-// one - a fetch that worked but brought nothing new writes the same bytes again; a failed git fetch empties the file and
-// sets its time each try, so an empty one counts by content alone), as one digest; null without config.
+// The repository's config file and FETCH_HEAD (the work tree's and the common one), by content only, as one digest; null
+// without config. Not FETCH_HEAD's time: a git fetch that fails rewrites the file and its time on each try (empty, or
+// with the lines of the remotes it reached - git fetch --all), so the time would lift the pause on every failed fetch.
+// A fetch that works but brings nothing new writes the same bytes: that one waits out the pause (or git cat-file -p).
 function gitStateDigest(top) {
   const dirs = gitDirs(top);
   if (!dirs) return null;
@@ -2737,11 +2738,7 @@ function gitStateDigest(top) {
   for (const dir of [...new Set([dirs.own, dirs.common])]) {
     const file = path.join(dir, 'FETCH_HEAD');
     hash.update('\0');
-    try {
-      const body = fs.readFileSync(file);
-      if (body.length) hash.update(`${fs.statSync(file).mtimeMs}\0`);
-      hash.update(body);
-    } catch { /* no fetch yet */ }
+    try { hash.update(fs.readFileSync(file)); } catch { /* no fetch yet */ }
   }
   return hash.digest('hex');
 }
@@ -3029,7 +3026,7 @@ function makeCtx(cwd) {
             const [blob, ref, tree] = objects.slice(i * 3, i * 3 + 3);
             if (ref === null) return null; // No such ref: an unborn HEAD, or not this trunk.
             const fetch = `not in this clone and could not be fetched - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}` +
-              (skipFetch ? ` (after a failed fetch the hook does not fetch for ${LAZY_FETCH_RETRY_MS / 60000} minutes, until git fetch works or the git config changes)` : '');
+              (skipFetch ? ` (after a failed fetch the hook does not fetch for ${LAZY_FETCH_RETRY_MS / 60000} minutes, until a git fetch brings something new or the git config changes)` : '');
             const mode = tree && tree.type === 'tree' ? treeMode(tree, MANIFEST_FILE) : null;
             if (mode === false) return null;
             // The mode first: a symbolic link, a directory or a submodule is no file, whatever its object.
