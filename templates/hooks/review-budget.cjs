@@ -259,7 +259,12 @@ function retakeRound({ cwd = process.cwd(), phase, round: number, roles, reason 
     }
     const target = group.rounds[number - 1];
     if ((target.retakes || []).length >= RETAKE_LIMIT) {
-      throw new Error(limitReached(phase, `Round ${number} of ${phase} was already retaken once (its results are lost again)`));
+      const lost = `Round ${number} of ${phase} was already retaken once (its results are lost again)`;
+      // Below the limit the next round is the way (begin; it reviews the lost scope); at the limit, the limit's rule.
+      if (number < ceiling(group, state.extensions || [], phase)) {
+        throw new Error(`${lost}; reserve the next round with begin (it is within the limit) and give it the scope whose results were lost`);
+      }
+      throw new Error(limitReached(phase, lost));
     }
     const started = target.roles.filter((role) => own(target.used, role));
     if (!started.length) throw new Error(`No reviewer of round ${number} has started; start them with the round's own markers instead`);

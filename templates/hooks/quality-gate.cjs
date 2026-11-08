@@ -2700,10 +2700,10 @@ delete LAZY_FETCH_ENV.GIT_NO_LAZY_FETCH;
 // 3.7.2 (C4-M1): a fetch that failed for an object this clone lacks (an unreachable or silent remote) is not tried
 // again for LAZY_FETCH_RETRY_MS in that repository while its git config and FETCH_HEAD stay the same - else every read
 // waits up to LAZY_FETCH_MS again (with denyCommands declared: every shell call), and each try may leave a fetch
-// behind. The record is a file in the repository's common git directory (beside the review budget's state - not a
-// shared temp directory another user could plant a link in), holding the time and a digest of the repository's config
-// and FETCH_HEAD (read as files, no git), so fixing the remote (git remote set-url) or a git fetch that worked (the
-// network is back) tries again at once (a lazy fetch does not write FETCH_HEAD). A record only makes a read skip the
+// behind. The record is a file in the work tree's git directory (not a shared temp directory another user could plant
+// a link in), holding the time and a digest of the repository's config and FETCH_HEAD (read as files, no git), so
+// fixing the remote (git remote set-url) or a git fetch that worked (the network is back) tries again at once (a lazy
+// fetch does not write FETCH_HEAD). A record only makes a read skip the
 // fetch: the object is then unreadable (a block), never "no declaration" - a stale or forged record cannot let a
 // command through. Writing or reading it may fail; then the read is the 3.7.1 one.
 const LAZY_FETCH_RETRY_MS = 10 * 60 * 1000;
@@ -2720,19 +2720,23 @@ function gitDirs(top) {
   const common = readHead(path.join(own, 'commondir'));
   return { own, common: common !== null && common.trim() ? path.resolve(own, common.trim()) : own };
 }
+// One record per work tree, in its own git directory: the digest below differs between the main work tree and a linked
+// one, so a shared record would be rewritten by each in turn and never skip a fetch.
 const fetchRecordFile = (top) => {
   const dirs = gitDirs(top);
-  return dirs && path.join(dirs.common, 'ai-dev-helm-gate-fetch.json');
+  return dirs && path.join(dirs.own, 'ai-dev-helm-gate-fetch.json');
 };
-// The repository's config file and FETCH_HEAD (the work tree's and the common one), as one digest; null without config.
+// The repository's config file and FETCH_HEAD (the work tree's and the common one: content and time, since a fetch that
+// brings nothing new writes the same bytes again), as one digest; null without config.
 function gitStateDigest(top) {
   const dirs = gitDirs(top);
   if (!dirs) return null;
   const hash = crypto.createHash('sha256');
   try { hash.update(fs.readFileSync(path.join(dirs.common, 'config'))); } catch { return null; }
   for (const dir of [...new Set([dirs.own, dirs.common])]) {
+    const file = path.join(dir, 'FETCH_HEAD');
     hash.update('\0');
-    try { hash.update(fs.readFileSync(path.join(dir, 'FETCH_HEAD'))); } catch { /* no fetch yet */ }
+    try { hash.update(`${fs.statSync(file).mtimeMs}\0`); hash.update(fs.readFileSync(file)); } catch { /* no fetch yet */ }
   }
   return hash.digest('hex');
 }
