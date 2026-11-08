@@ -291,7 +291,7 @@
 // kind), read, or unreadable (a value that fails the check, a broken text that
 // names the kind, a manifest that is not a regular file - a symbolic link
 // included -, a git failure other than "not a repository", a blob a partial
-// clone lacks and cannot fetch). An unreadable kind blocks every command with a gate
+// clone lacks and cannot fetch, a trunk ref whose object is not there - 3.7.2). An unreadable kind blocks every command with a gate
 // word - except a value broken at the trunk while HEAD's manifest reads that
 // kind: then HEAD's is used and the trunk's is reported on stderr, so the
 // change that fixes the trunk can still be pushed and merged
@@ -318,7 +318,9 @@
 // is not judged.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const FLAG_FILE = '.quality-check-passed';
@@ -2696,6 +2698,50 @@ function runGit(args, cwd) {
 const LAZY_FETCH_MS = 10000;
 const LAZY_FETCH_ENV = { ...GIT_ENV, GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never' };
 delete LAZY_FETCH_ENV.GIT_NO_LAZY_FETCH;
+// 3.7.2 (C4-M1): a fetch that failed for an object this clone lacks (an unreachable or silent remote) is not tried
+// again for LAZY_FETCH_RETRY_MS in that repository while its git config stays the same - else every read waits up to
+// LAZY_FETCH_MS again (with denyCommands declared: every shell call), and each try may leave a fetch behind. The record
+// is a file in the temp directory named by the work tree root, holding the time and a digest of the repository's
+// config (read as a file, no git), so fixing the remote (git remote set-url) tries again at once. A record only makes a
+// read skip the fetch: the object is then unreadable (a block), never "no declaration" - a stale or forged record
+// cannot let a command through. Writing or reading it may fail; then the read is the 3.7.1 one.
+const LAZY_FETCH_RETRY_MS = 10 * 60 * 1000;
+const fetchRecordFile = (top) => path.join(os.tmpdir(), 'ai-dev-helm-gate',
+  `fetch-${crypto.createHash('sha256').update(IS_WIN ? path.resolve(top).toLowerCase() : path.resolve(top)).digest('hex').slice(0, 32)}.json`);
+// The repository's config file: `.git/config`, or a linked worktree's common directory's (`gitdir:` -> `commondir`).
+function gitConfigDigest(top) {
+  const dotGit = path.join(top, '.git');
+  let dir = dotGit;
+  const head = readHead(dotGit, 4096);
+  const m = head === null ? null : /^gitdir:[ \t]*(.+?)[ \t]*$/m.exec(head);
+  if (m) {
+    dir = path.resolve(top, m[1]);
+    const common = readHead(path.join(dir, 'commondir'));
+    if (common !== null && common.trim()) dir = path.resolve(dir, common.trim());
+  }
+  let text;
+  try { text = fs.readFileSync(path.join(dir, 'config')); } catch { return null; }
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
+function fetchRecentlyFailed(top) {
+  try {
+    const record = JSON.parse(readHead(fetchRecordFile(top), 512) || 'null');
+    const age = Date.now() - record.at;
+    return Number.isFinite(age) && age >= 0 && age < LAZY_FETCH_RETRY_MS && record.config === gitConfigDigest(top);
+  } catch {
+    return false;
+  }
+}
+function recordFetch(top, failed) {
+  const file = fetchRecordFile(top);
+  try {
+    if (!failed) { if (fs.existsSync(file)) fs.unlinkSync(file); return; }
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(file, JSON.stringify({ at: Date.now(), config: gitConfigDigest(top) }), { mode: 0o600 });
+  } catch {
+    // Best effort: without the record the next read tries the fetch again (3.7.1).
+  }
+}
 // `git cat-file --batch` with `input` on stdin: the raw stdout as a Buffer, or null on a failure (3.7.1). `fetch`: let
 // a partial clone fetch the objects it lacks (a failed fetch fails the whole call).
 function runGitBatch(input, cwd, fetch = false) {
@@ -2744,6 +2790,27 @@ function treeMode(tree, name) {
 }
 // A regular file's mode (git writes 100644 / 100755; 100664 is an old git's).
 const FILE_MODE_RE = /^100(?:644|755|664)$/;
+// The first bytes of a small file, or null.
+function readHead(file, bytes = 1024) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(bytes);
+    return buf.slice(0, fs.readSync(fd, buf, 0, bytes, 0)).toString('utf8');
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ }
+  }
+}
+// 3.7.2 (C3-M2): `.git` as git reads it - a directory holding HEAD, or a worktree's file starting `gitdir:`. An empty
+// `.git` directory (or any other `.git`) is no repository, and the walk goes on to the parent.
+function isGitEntry(entry) {
+  let st;
+  try { st = fs.statSync(entry); } catch { return false; }
+  if (st.isDirectory()) return fs.existsSync(path.join(entry, 'HEAD'));
+  return st.isFile() && /^gitdir:/.test(readHead(entry, 16) || '');
+}
 // The work tree root above `dir` - the first directory holding `.git` (a directory, or a worktree's file) - found
 // without running git, or null.
 const isUncPath = (dir) => typeof dir === 'string' && /^[\\/]{2}/.test(dir);
@@ -2751,7 +2818,7 @@ function workTreeRoot(dir) {
   if (typeof dir !== 'string' || dir === '' || isUncPath(dir)) return null;
   let cur = path.resolve(dir);
   for (;;) {
-    if (fs.existsSync(path.join(cur, '.git'))) return cur;
+    if (isGitEntry(path.join(cur, '.git'))) return cur;
     const up = path.dirname(cur);
     if (up === cur) return null;
     cur = up;
@@ -2913,7 +2980,19 @@ function makeCtx(cwd) {
           const out = runGitBatch(input, top, fetch);
           return out === null ? null : parseBatch(out, names.length * 3);
         };
-        const objects = top === null ? null : ask(true) || ask(false);
+        // C4-M1: no fetch for a while after one failed (fetchRecentlyFailed); `fetched` - false when the fetching read
+        // failed, null when it was not made.
+        const skipFetch = top !== null && fetchRecentlyFailed(top);
+        let fetched = null;
+        let objects = null;
+        if (top !== null) {
+          if (!skipFetch) {
+            objects = ask(true);
+            fetched = objects !== null;
+          }
+          if (objects === null) objects = ask(false);
+        }
+        let lacking = false; // a version's manifest or tree this clone does not have
         if (objects === null) {
           // Only a failure here asks rev-parse where we are. Not a repository: nothing to read (and nothing recorded -
           // the 3.7.0 route meets the same answer when it asks).
@@ -2925,12 +3004,14 @@ function makeCtx(cwd) {
           const version = (i) => {
             const [blob, ref, tree] = objects.slice(i * 3, i * 3 + 3);
             if (ref === null) return null; // No such ref: an unborn HEAD, or not this trunk.
-            const fetch = `not in this clone and could not be fetched - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}`;
+            const fetch = `not in this clone and could not be fetched - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}` +
+              (skipFetch ? ` (after a failed fetch the hook does not fetch for ${LAZY_FETCH_RETRY_MS / 60000} minutes)` : '');
             const mode = tree && tree.type === 'tree' ? treeMode(tree, MANIFEST_FILE) : null;
             if (mode === false) return null;
             // The mode first: a symbolic link, a directory or a submodule is no file, whatever its object.
             const notFile = mode !== null && !FILE_MODE_RE.test(mode);
             if (!notFile && (blob === null || mode === null)) {
+              lacking = true;
               return { unreadable: blob === null && mode ? `${names[i]}:${MANIFEST_FILE} is ${fetch}` : `the tree of ${names[i]} is ${fetch}` };
             }
             if (notFile || blob.type !== 'blob') {
@@ -2946,9 +3027,25 @@ function makeCtx(cwd) {
             return parseDeclarations(text);
           };
           const trunkAt = BASE_REFS.findIndex((_, i) => objects[(i + 1) * 3 + 1] !== null);
-          const combined = combineDeclarations(version(0), trunkAt === -1 ? null : version(trunkAt + 1));
+          // 3.7.2 (C3-M1): the batch answers `missing` for a ref that is not there and for one whose object is not in
+          // the repository alike. When a ref before the trunk found is missing, git lists which of them exist (one
+          // more call, only where origin/main is not the trunk); one that exists is broken, and the trunk is
+          // unreadable - not the next of BASE_REFS, whose declarations may be older.
+          const before = BASE_REFS.slice(0, trunkAt === -1 ? BASE_REFS.length : trunkAt);
+          let broken = null;
+          if (before.length) {
+            const listed = runGit(['for-each-ref', '--format=%(refname)', ...before], top);
+            if (!listed.ok) broken = { unreadable: 'git failed or timed out while it listed the trunk refs' };
+            else {
+              const ref = String(listed.out).split(/\r?\n/).map((s) => s.trim()).find((name) => before.includes(name));
+              if (ref) broken = { unreadable: `${ref} names an object that is not in this repository (a broken ref) - fetch it again, or remove the ref with git update-ref -d ${ref}` };
+            }
+          }
+          const combined = combineDeclarations(version(0), broken || (trunkAt === -1 ? null : version(trunkAt + 1)));
           decl = combined.decl;
           for (const why of combined.skipped) state.notes.push(trunkDeclarationSkipped(why));
+          if (fetched === false && lacking) recordFetch(top, true);
+          else if (fetched === true) recordFetch(top, false);
         }
         const reasons = decl.gitError ? [declarationsUnreadable(decl.gitError)] : [...new Set([decl.branchesError, decl.denyError].filter(Boolean))].map(declarationsBroken);
         for (const reason of reasons) state.notes.push(`quality-gate: ${reason}`);
