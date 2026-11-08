@@ -262,7 +262,11 @@ function retakeRound({ cwd = process.cwd(), phase, round: number, roles, reason 
       const lost = `Round ${number} of ${phase} was already retaken once (its results are lost again)`;
       // Below the limit the next round is the way (begin; it reviews the lost scope); at the limit, the limit's rule.
       if (number < ceiling(group, state.extensions || [], phase)) {
-        throw new Error(`${lost}; reserve the next round with begin (it is within the limit) and give it the scope whose results were lost`);
+        // Rounds after the first take only verification-reviewer (+ falsification-qa) in quality and production.
+        const seats = number === 1 && ['quality', 'production'].includes(phase)
+          ? " - its roster is verification-reviewer and optional falsification-qa: have them review the whole change from the lost seats' viewpoints"
+          : '';
+        throw new Error(`${lost}; reserve the next round with begin (it is within the limit) and give it the scope whose results were lost${seats}`);
       }
       throw new Error(limitReached(phase, lost));
     }

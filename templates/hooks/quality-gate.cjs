@@ -2726,8 +2726,9 @@ const fetchRecordFile = (top) => {
   const dirs = gitDirs(top);
   return dirs && path.join(dirs.own, 'ai-dev-helm-gate-fetch.json');
 };
-// The repository's config file and FETCH_HEAD (the work tree's and the common one: content and time, since a fetch that
-// brings nothing new writes the same bytes again), as one digest; null without config.
+// The repository's config file and FETCH_HEAD (the work tree's and the common one: content, and the time of a non-empty
+// one - a fetch that worked but brought nothing new writes the same bytes again; a failed git fetch empties the file and
+// sets its time each try, so an empty one counts by content alone), as one digest; null without config.
 function gitStateDigest(top) {
   const dirs = gitDirs(top);
   if (!dirs) return null;
@@ -2736,7 +2737,11 @@ function gitStateDigest(top) {
   for (const dir of [...new Set([dirs.own, dirs.common])]) {
     const file = path.join(dir, 'FETCH_HEAD');
     hash.update('\0');
-    try { hash.update(`${fs.statSync(file).mtimeMs}\0`); hash.update(fs.readFileSync(file)); } catch { /* no fetch yet */ }
+    try {
+      const body = fs.readFileSync(file);
+      if (body.length) hash.update(`${fs.statSync(file).mtimeMs}\0`);
+      hash.update(body);
+    } catch { /* no fetch yet */ }
   }
   return hash.digest('hex');
 }
