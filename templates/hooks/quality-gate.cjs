@@ -330,10 +330,17 @@ const MAX_BUFFER = 32 * 1024 * 1024;
 // what is left, so a pathological repo degrades into a block, not a bypass.
 // 3.7.2 (C1-M7 of the quality check): the registration's wrapper stops the hook 25 s after its own start, and passes
 // that deadline less the time to answer as AI_DEV_HELM_HOOK_DEADLINE (ms since the epoch). The gate keeps to the
-// earlier of the two, so its own verdict always comes before the wrapper ends it. The value only shortens the 20 s:
-// a stray or forged one makes the gate block sooner (fail-closed), never run longer.
-const HOOK_DEADLINE = Number(process.env.AI_DEV_HELM_HOOK_DEADLINE);
-const DEADLINE = Math.min(Date.now() + 20000, Number.isFinite(HOOK_DEADLINE) && HOOK_DEADLINE > 0 ? HOOK_DEADLINE : Infinity);
+// earlier of the two, so its own verdict always comes before the wrapper ends it. The value only shortens the 20 s,
+// never lengthens it (an unreadable or later one is ignored). A stray or forged early one makes every git read time out
+// sooner: a command that needs a read blocks as it does on any timeout - and, as on any timeout, a command without a
+// gate word goes through even where denyCommands are declared (their read failing, as with a broken declaration above).
+const OWN_DEADLINE_MS = 20000;
+// The gate's deadline (ms since the epoch) from its start `now` and the wrapper's AI_DEV_HELM_HOOK_DEADLINE `value`.
+function hookDeadline(now, value) {
+  const wrapper = Number(value);
+  return Math.min(now + OWN_DEADLINE_MS, Number.isFinite(wrapper) && wrapper > 0 ? wrapper : Infinity);
+}
+const DEADLINE = hookDeadline(Date.now(), process.env.AI_DEV_HELM_HOOK_DEADLINE);
 const IS_WIN = process.platform === 'win32';
 
 // --------------------------------------------------------------------------
@@ -2703,12 +2710,14 @@ const LAZY_FETCH_MS = 10000;
 const LAZY_FETCH_ENV = { ...GIT_ENV, GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never' };
 delete LAZY_FETCH_ENV.GIT_NO_LAZY_FETCH;
 // 3.7.2 (C4-M1): a fetch that failed for an object this clone lacks (an unreachable or silent remote) is not tried
-// again for LAZY_FETCH_RETRY_MS in that repository while its git config and FETCH_HEAD stay the same - else every read
-// waits up to LAZY_FETCH_MS again (with denyCommands declared: every shell call), and each try may leave a fetch
-// behind. The record is a file in the work tree's git directory (not a shared temp directory another user could plant
-// a link in), holding the time and a digest of the repository's config and FETCH_HEAD content (read as files, no git),
-// so fixing the remote (git remote set-url) or a git fetch that brought something (the network is back) tries again
-// at once (a lazy fetch does not write FETCH_HEAD). A record only makes a read skip the
+// again for LAZY_FETCH_RETRY_MS in that work tree while its git config stays the same - else every read waits up to
+// LAZY_FETCH_MS again (with denyCommands declared: every shell call), and each try may leave a fetch behind. The record
+// is a file in the work tree's git directory (not a shared temp directory another user could plant a link in), holding
+// the time and a digest of the repository's config file (read as a file, no git), so fixing the remote (git remote
+// set-url) tries again at once. Nothing else lifts the pause (round 6 of the quality check): FETCH_HEAD is not read,
+// since every kind of git fetch - failed or not, of one remote or of all - rewrites it, so neither its time, its size
+// nor its content tells whether the remote this clone fetches from came back. After a git fetch that works, wait out
+// the pause or fetch the object with the git cat-file -p the reason names. A record only makes a read skip the
 // fetch: the object is then unreadable (a block), never "no declaration" - a stale or forged record cannot let a
 // command through. Writing or reading it may fail; then the read is the 3.7.1 one.
 const LAZY_FETCH_RETRY_MS = 10 * 60 * 1000;
@@ -2725,27 +2734,22 @@ function gitDirs(top) {
   const common = readHead(path.join(own, 'commondir'));
   return { own, common: common !== null && common.trim() ? path.resolve(own, common.trim()) : own };
 }
-// One record per work tree, in its own git directory: the digest below differs between the main work tree and a linked
-// one, so a shared record would be rewritten by each in turn and never skip a fetch.
+// One record per work tree, in its own git directory (a linked worktree's `.git/worktrees/<name>`): each work tree
+// pauses after its own failed fetch, and none rewrites another's record.
 const fetchRecordFile = (top) => {
   const dirs = gitDirs(top);
   return dirs && path.join(dirs.own, 'ai-dev-helm-gate-fetch.json');
 };
-// The repository's config file and FETCH_HEAD (the work tree's and the common one), by content only, as one digest; null
-// without config. Not FETCH_HEAD's time: a git fetch that fails rewrites the file and its time on each try (empty, or
-// with the lines of the remotes it reached - git fetch --all), so the time would lift the pause on every failed fetch.
-// A fetch that works but brings nothing new writes the same bytes: that one waits out the pause (or git cat-file -p).
+// A digest of the repository's config file (the common one: a linked worktree's remotes are the main one's); null
+// without it. Only the config: see LAZY_FETCH_RETRY_MS for why FETCH_HEAD is not read.
 function gitStateDigest(top) {
   const dirs = gitDirs(top);
   if (!dirs) return null;
-  const hash = crypto.createHash('sha256');
-  try { hash.update(fs.readFileSync(path.join(dirs.common, 'config'))); } catch { return null; }
-  for (const dir of [...new Set([dirs.own, dirs.common])]) {
-    const file = path.join(dir, 'FETCH_HEAD');
-    hash.update('\0');
-    try { hash.update(fs.readFileSync(file)); } catch { /* no fetch yet */ }
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(path.join(dirs.common, 'config'))).digest('hex');
+  } catch {
+    return null;
   }
-  return hash.digest('hex');
 }
 function fetchRecentlyFailed(top) {
   try {
@@ -3031,7 +3035,7 @@ function makeCtx(cwd) {
             const [blob, ref, tree] = objects.slice(i * 3, i * 3 + 3);
             if (ref === null) return null; // No such ref: an unborn HEAD, or not this trunk.
             const fetch = `not in this clone and could not be fetched - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}` +
-              (skipFetch ? ` (after a failed fetch the hook does not fetch for ${LAZY_FETCH_RETRY_MS / 60000} minutes, until a git fetch brings something new or the git config changes)` : '');
+              (skipFetch ? ` (after a failed fetch the hook does not fetch for ${LAZY_FETCH_RETRY_MS / 60000} minutes, or until the git config changes)` : '');
             const mode = tree && tree.type === 'tree' ? treeMode(tree, MANIFEST_FILE) : null;
             if (mode === false) return null;
             // The mode first: a symbolic link, a directory or a submodule is no file, whatever its object.
