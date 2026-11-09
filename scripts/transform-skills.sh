@@ -39,12 +39,54 @@ EXCLUDE_PATTERNS=(
 )
 
 # Validate the upstream before touching the destination.
+#
+# Upstream symlinks: npm does not ship them, so a copied link would be missing
+# in adopters (and fail the 100755 check on main); following one could copy
+# whatever it points at outside upstream. Stop and name it instead. On Windows
+# a link checked out with core.symlinks=false (Git for Windows' default) is a
+# plain file holding the target path, and MSYS copies links as files, so only
+# git's index (mode 120000) still shows it there. Read upstream from a git work
+# tree whenever there is one: refuse any link the index records and any file
+# it does not track (so the index describes everything that is copied). A
+# plain directory is accepted only off Windows, where find sees links.
+if [ "$(git -C "$SRC" rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
+    src_in_git=true
+else
+    src_in_git=false
+    case "$(uname -s)" in
+        MINGW* | MSYS* | CYGWIN*)
+            echo "::error::On Windows, regenerate from a git clone of upstream: a symlink there is checked out as a plain file, and only git's index records it ($SRC is not in a git work tree)" >&2
+            exit 1
+            ;;
+    esac
+fi
+# Build the paths by concatenation, not ${SKILLS[@]/#/$SRC/}: since bash 5.2
+# (patsub_replacement) an & in the replacement, here in $SRC, is replaced by
+# the match, so a path such as .../R&D/... would lose its &.
+skill_dirs=()
 for skill in "${SKILLS[@]}"; do
     if [ ! -d "$SRC/$skill" ]; then
         echo "::error::Required upstream skill not found: $skill" >&2
         exit 1
     fi
+    skill_dirs+=("$SRC/$skill")
 done
+# One find and two git calls for all skills (each process start is slow on
+# Windows).
+links=$(find "${skill_dirs[@]}" -type l)
+if [ "$src_in_git" = true ]; then
+    untracked=$(git -C "$SRC" ls-files --others -- "${SKILLS[@]}")
+    if [ -n "$untracked" ]; then
+        echo "::error::Upstream file not tracked by git (regenerate from a clean clone of upstream): $untracked" >&2
+        exit 1
+    fi
+    indexed=$(git -C "$SRC" ls-files -s -- "${SKILLS[@]}" | awk '$1 == "120000"' | cut -f2-)
+    links=$(printf '%s\n' "$links" "$indexed" | sed '/^$/d')
+fi
+if [ -n "$links" ]; then
+    echo "::error::Upstream symlink not supported (npm does not ship symlinks): $links" >&2
+    exit 1
+fi
 
 # Check overlay drift before touching the destination: a drift failure must
 # leave it exactly as it was.
@@ -120,5 +162,12 @@ rm -rf "$DEST/executing-plans/scripts" "$DEST/using-superpowers/references/muse-
 # patches: each overlay records the hash of the upstream file it was written
 # against, so an upstream change fails loudly and names the file.
 node "$SCRIPT_DIR/apply-skill-overlays.js" apply "$SRC" "$DEST"
+
+# npm ships file modes. Keep every shipped file that starts with a shebang
+# executable, so a script upstream adds as 644 (or whose mode it drops) still
+# reaches adopters executable and the sync PR keeps the main build green.
+find "$DEST" -type f -print0 | while IFS= read -r -d '' file; do
+    if [ "$(head -c 2 "$file")" = '#!' ]; then chmod +x "$file"; fi
+done
 
 echo "Done. Transformed ${#SKILLS[@]} skills."

@@ -10,7 +10,7 @@ Development policies, standards, and processes for this project.
 
 - 前提: 各種 AI モデル・AI ツール上で動作し、単一モデルに依存しない。品質は構造で担保する。テストは根拠を添えれば信用してよい（ミューテーションはそのための道具で必須ではない）。
 - 1 Issue とブランチ。
-- 2 設計（brainstorming）: 設計が完了したら、実装に入る前に必ず「設計レビュー → ユーザーへのレビュー依頼と承認」を行う（brainstorming の Design Gate）。設計レビューは専任レビュアー（`document-reviewer`）による基本 1 回で、よほどの問題や大規模のときだけ複数回。ユーザーへは設計・レビュー指摘とその対応を 1 通で示し、明示の承認を得るまで実装しない。小さな変更も対象。指示に「スピード優先」とある作業（会話の中のユーザー本人の発言に限る。quality-check「スピード優先モード」）では設計・計画の文書レビューを省き、設計を示して承認を受ける 1 通だけを残す。免除（正本）: 設計上の選択を含まない誤字の修正と、明らかに正しい数行の修正。承認済みの設計の範囲内の修正（quality-check の指摘への対応など。承認済みの設計を変えないもの）は、新しい設計ゲートを要しない。設計が存在する前の「実装して」は設計の承認ではない。ここのレビューがタスク単位レビューを不要にする。ユーザーへの確認は纏める — 質問は 1 通に纏めて聞き、重要な設計判断は一括提示する。一問一答・節ごとの承認はしない。承認の後は再確認しない（下の「承認後の進め方」）[^batch]。
+- 2 設計（brainstorming）: 設計が完了したら、実装に入る前に必ず「設計レビュー → ユーザーへのレビュー依頼と承認」を行う（brainstorming の Design Gate）。設計レビューは専任レビュアー（`document-reviewer`）による基本 1 回で、よほどの問題や大規模のときだけ複数回。ユーザーへは設計・レビュー指摘とその対応を 1 通で示し、明示の承認を得るまで実装しない。小さな変更も対象。指示に「スピード優先」とある作業（会話の中のユーザー本人の発言に限る。quality-check「スピード優先モード」）では設計・計画の文書レビューを省き、設計を示して承認を受ける 1 通だけを残す。免除（正本）: 設計上の選択を含まない誤字の修正と、明らかに正しい数行の修正。承認済みの設計の範囲内の修正（quality-check の指摘への対応など。承認済みの設計を変えないもの）は、新しい設計ゲートを要しない。設計が存在する前の「実装して」は設計の承認ではない。ここのレビューがタスク単位レビューを不要にする。ユーザーへの確認は纏める — 質問は 1 通に纏めて聞き（質問機能かテキストかは下の「承認後の進め方」の 9）、重要な設計判断は一括提示する。一問一答・節ごとの承認はしない。承認の後は再確認しない（下の「承認後の進め方」）[^batch]。
 - 3 計画（writing-plans）: 設計済みが前提。計画のレビューはしてよいが、その後のユーザー確認は不要。
 - 4〜6 実装: 親が直接実装するか、独立した課題を委譲するかを、計画・引き継ぎ・再探索・統合・手戻りを含む総労力で選ぶ。親モデルの直接実装を禁止しない。計画は影響範囲・契約・検証に必要な深さとし、コードの二重執筆を求めない。開発中のレビューループはしない（設計意図との合致は 7 で見る）。
 - 7 quality-check: まず機械的チェック（ビルド、テスト、Lint / CheckStyle 等の静的チェック）。通ってから体制レビュー（体制・巡の数・優先度の基準・完了条件は quality-check スキルが正本）。実装内容に応じて体制を絞り、不要なレビュアーは動かさない。指示に「スピード優先」とあれば（会話の中のユーザー本人の発言に限る）、レビューと追加テストの実行を後回しの Issue にする。認証・認可、課金・決済、DB マイグレーション、ハーネス自体の変更には使わない（条件の全文は quality-check「スピード優先モード」）。
@@ -49,7 +49,7 @@ Development policies, standards, and processes for this project.
    設計との差異: なし
      （ある場合は 1 件ずつ: 何を → どうしたか / 理由 / 影響）
    判断が必要なこと: なし
-     （ある場合: 確認が必要な追加テスト、設計との差異を認めてマージしてよいか、X2 のマージ承認、self-improvement の候補の採否 等。選択肢を添える）
+     （ある場合: 確認が必要な追加テスト、設計との差異を認めてマージしてよいか、X2 のマージ承認、self-improvement の候補の採否 等。選択肢を添える。質問機能でも出すかは下の 9）
    ```
 
    テスト結果・レビューの指摘と対応・自動で実施した追加テストの結果は PR 本文に書き、チャットでは繰り返さない。ただし生存ミュータントを持ち越した場合・E2E の失敗を直した場合は、その事実を 1 行書く。返答の後の操作は AI が行う。
@@ -62,6 +62,11 @@ Development policies, standards, and processes for this project.
    - この PR がまだマージされていない時点で聞くときは、一覧に「この PR（マージ後）」を加える。マージの後、`<聞いたときの SHA>..<この PR のマージコミット>` の first-parent がこの PR だけなら、そのマージコミットを終点にする。ほかの PR が入っていたら、一覧を作り直して聞き直す。
    - OK の後のマージ・反映は AI が行う（オーナーに操作を頼まない）。
    - 具体的なコマンドはマージ方式で変わる。ここは原則と例であり、プロジェクトの手順書（そのプロジェクトの development-policy 等）に具体の手順を書く。
+9. **質問の聞き方（質問機能かテキストか）**: 設計の承認前の質問（1.0 の「2 設計（brainstorming）」の「質問は 1 通に纏めて聞き」）と、最後の 1 通の「判断が必要なこと」の両方に当てる。
+   - 質問・確認の依頼・決めてほしいこと（承認、マージしてよいか、追加テストを実施するか、A／B のどちらにするか等）は、質問機能で聞く（Claude Code は `AskUserQuestion`）。纏めて聞くものは 1 回の呼び出しに纏める。
+   - 選択式で答えられないもの、ひとつの問いに様々な判断が絡むもの（前提や範囲から決め直す必要がある等）は、テキストで聞く。
+   - 最後の 1 通の本文（完了・設計との差異・判断が必要なこと）はこれまでどおり書き、そのうえで、選択式で答えられる項目を質問機能でも出す。質問機能でその項目に答えたものは、その項目への返答（4 の X2 の OK を含む）として扱う。そのため選択肢の文には操作と範囲（SHA・PR の一覧など）を入れる。
+   - ツールごとの違い: Codex は、Default モードでは組み込みの指示がテキストで聞くよう求めるので、テキストで聞く（Plan モードなどで `request_user_input` が使えるときは使う）。Cursor は、Agent の「Ask questions」のツール（[Cursor の Agent のツール](https://cursor.com/docs/agent/tools)）が使えるときは使い、モード・クライアントによって使えないときはテキストで聞く。どのツールでも、質問機能が使えなければテキストで聞く。
 
 [^8]: 後半（ミューテーション / E2E の判定・自動実施・確認）は hook ではなく quality-check Step 5 → `test-recommendation` スキルが担う。hook はコマンド行の静的分類のみで、提案機能を持たない。
 [^report]: quality-check スキル の「実装 Agent の自己申告を Quality Gate にしない」は、「実装に合わせて期待値を修正した」型の申告を根拠と認めない規定であり、本項と両立する。
@@ -174,7 +179,7 @@ A project that does not use GitHub Issues keeps the rest of this policy unchange
 - The default `branch-naming` lint pattern does not require an Issue number. A project that wants one overrides `pattern` (see `lint-scaffolding`).
 - The "Create GitHub Issue" and "Issue number required" rules in the three entry files apply only to projects that use Issues.
 
-A project records its shape in `.ai-dev-helm.json` `workflow`: `"issues": "none"` applies the list above, and `"remote": "none"` applies the no-remote path of the final report (no push or PR; `branch-workflow`'s local integration). Either one also rules out the speed-first mode. `workflow.protectedBranches` lists the branches beyond main / master that must not be force-pushed (platform: `["main", "release"]`); `init` and `upgrade` turn it into the `.claude/settings.json` denials and the Codex safety rules.
+A project records its shape in `.ai-dev-helm.json` `workflow`: `"issues": "none"` applies the list above, and `"remote": "none"` applies the no-remote path of the final report (no push or PR; `branch-workflow`'s local integration). Either one also rules out the speed-first mode. `workflow.protectedBranches` lists the branches beyond main / master that must not be force-pushed (e.g. `["main", "release"]`); `init` and `upgrade` turn it into the `.claude/settings.json` denials and the Codex safety rules.
 
 ### PR Creation and Review
 1. Meaningful commit units

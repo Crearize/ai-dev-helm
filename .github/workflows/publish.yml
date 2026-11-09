@@ -3,14 +3,27 @@ name: Publish to npm
 # Single source of truth for both automated and manual npm releases.
 #
 # Automated path: push to main -> release-please job opens / merges
-#   release PR -> publish job runs in the same workflow.
+#   release PR -> verify and publish jobs run in the same workflow.
 # Manual path:    'gh workflow run publish.yml -f publish_tag=vX.Y.Z'
-#   skips release-please and publishes the existing tag directly.
+#   skips the release-please step and publishes the existing tag directly.
 #
 # Why one file: npm Trusted Publishing allows only one trusted publisher
 # per package, and the OIDC subject claim must match the workflow filename.
 # Inlining publish here avoids reusable-workflow incompatibility and keeps
 # manual recoveries on the same trusted-publisher path.
+#
+# Hardening (3.7.2, #234):
+# - No permission at the top level; each job states its own. Only publish
+#   holds id-token: write.
+# - The tests (and every third-party package they load) run in verify, which
+#   has no id-token. publish installs no dependency: npm publish needs none.
+# - Actions are pinned to full commit SHAs (the version in the comment), npm
+#   to an exact version, and every npm command runs with --ignore-scripts.
+# - There is no publish without provenance. A failed publish whose Sigstore
+#   tlog entry already exists ends successfully only when the version is
+#   already on npm; otherwise it stops: release the next patch version.
+# - Expressions reach run: scripts only through env:, and the tag must be
+#   v<semver>.
 
 on:
   push:
@@ -23,59 +36,73 @@ on:
         required: false
         type: string
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+permissions: {}
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v5
+      # The job always runs (so verify's needs is met on the manual path too);
+      # only the step is skipped when a tag is given.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         if: ${{ inputs.publish_tag == '' || inputs.publish_tag == null }}
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  publish:
+  verify:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' || inputs.publish_tag != '' }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' || (github.event_name == 'workflow_dispatch' && inputs.publish_tag != '') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+    outputs:
+      tag: ${{ steps.target.outputs.tag }}
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - name: Resolve target tag
         id: target
+        env:
+          INPUT_TAG: ${{ inputs.publish_tag }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          TAG="${{ inputs.publish_tag || needs.release-please.outputs.tag_name }}"
+          TAG="${INPUT_TAG:-$RELEASE_TAG}"
+          SEMVER_TAG='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
           if [ -z "$TAG" ]; then
             echo "::error::No tag resolved"
             exit 1
           fi
+          if ! [[ "$TAG" =~ $SEMVER_TAG ]]; then
+            echo "::error::The tag is not v<semver>"
+            exit 1
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: ${{ steps.target.outputs.tag }}
+          ref: refs/tags/${{ steps.target.outputs.tag }}
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - name: Record the tested commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '26'
           check-latest: true
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Ensure npm 11.5.1+ for Trusted Publishing
-        run: npm install -g npm@latest
 
       - name: Verify version matches tag
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
         run: |
-          TAG="${{ steps.target.outputs.tag }}"
           TAG_VERSION="${TAG#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
@@ -85,20 +112,68 @@ jobs:
           echo "Verified: $TAG matches package.json $PKG_VERSION"
 
       - name: Install dependencies
+        # --ignore-scripts: no dependency's install script runs. The only one in
+        # the lock is @ast-grep/cli's postinstall (it swaps its JS shim for the
+        # native binary); the tests resolve the platform package's binary first.
         # legacy-peer-deps: eslint-plugin-react's published peer range caps at
         # eslint@<=9.7 while dev tooling pins eslint@^10 (works under flat config;
         # npm's strict resolver refuses regardless). Kept as an explicit flag so
         # recovery publishes of tags cut before the repo .npmrc landed still
         # install. eslint* are devDependencies; runtime deps are unaffected.
-        run: npm ci --legacy-peer-deps
+        run: npm ci --ignore-scripts --legacy-peer-deps
 
       - name: Run tests
         run: npm test
 
-      - name: Publish to npm (Trusted Publishing / OIDC)
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check the tag
+        env:
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          SEMVER_TAG='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if ! [[ "$TAG" =~ $SEMVER_TAG ]]; then
+            echo "::error::The tag is not v<semver>"
+            exit 1
+          fi
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: refs/tags/${{ needs.verify.outputs.tag }}
+          persist-credentials: false
+
+      - name: Check the commit is the one verify tested
+        env:
+          TESTED: ${{ needs.verify.outputs.sha }}
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          if [ "$HEAD_SHA" != "$TESTED" ]; then
+            echo "::error::The tag moved after verify ($TESTED -> $HEAD_SHA)"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '26'
+          check-latest: true
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted Publishing needs npm 11.5.1+. 12.2.1 is the version that
+      # published 3.7.1; change it on purpose, not through @latest.
+      - name: Install a fixed npm for Trusted Publishing
+        run: |
+          npm install -g npm@12.2.1 --ignore-scripts
+          npm --version
+
+      - name: Publish to npm (Trusted Publishing / OIDC, with provenance)
         run: |
           set +e
-          npm publish --access public --provenance 2>&1 | tee publish.log
+          npm publish --access public --provenance --ignore-scripts 2>&1 | tee publish.log
           status=${PIPESTATUS[0]}
           set -e
 
@@ -107,9 +182,9 @@ jobs:
           fi
 
           # npm can create the Sigstore tlog entry before the registry publish
-          # fails. Retrying with --provenance then hits the immutable tlog entry.
-          # Only use the non-provenance recovery path for that exact failure and
-          # only when the target package version is still absent from npm.
+          # fails, and a retry with --provenance then hits the immutable tlog
+          # entry. A version without provenance is never published: if the
+          # version is already on npm the publish is complete; otherwise stop.
           if ! grep -q 'TLOG_CREATE_ENTRY_ERROR' publish.log; then
             exit "$status"
           fi
@@ -120,5 +195,5 @@ jobs:
             exit 0
           fi
 
-          echo "Recovering from npm provenance tlog conflict by publishing $VERSION without provenance."
-          npm publish --access public
+          echo "::error::The provenance tlog entry for $VERSION exists but $VERSION is not on npm. Do not publish it without provenance: release the next patch version instead."
+          exit "$status"

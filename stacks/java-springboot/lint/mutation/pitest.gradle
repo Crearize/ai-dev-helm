@@ -40,7 +40,7 @@ pitest {
     // regardless of the plugin version the product happens to resolve.
     // 1.25.9 reads Java 25 class files (major 69); the earlier pin 1.16.1 failed
     // with "Unsupported class file major version 69". Execution-verified on
-    // Java 25 in a real Spring Boot project (OlbaDataMatching).
+    // Java 25 in a real Spring Boot project.
     pitestVersion = '1.25.9'
 
     // JUnit 5 support. Spring Boot tests run on JUnit 5 (Jupiter), so PIT needs
