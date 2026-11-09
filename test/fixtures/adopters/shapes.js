@@ -9,7 +9,7 @@ const path = require('node:path');
 const NOTICE_EN = 'Reinstall it with npx @crearize/ai-dev-helm init.';
 const PACKAGE_ROOT = path.resolve(__dirname, '..', '..', '..');
 const LOCAL_ANCHOR = '- The "Create GitHub Issue" and "Issue number required" rules in the three entry files apply only to projects that use Issues.';
-const LOCAL_BLOCK = '<!-- ai-dev-helm:local:start -->\n##### Our Issue rules\n\nWe track work in the client portal, not GitHub Issues.\n<!-- ai-dev-helm:local:end -->';
+const LOCAL_BLOCK = '<!-- ai-dev-helm:local:start -->\n##### Our Issue rules\n\nWe track work in our own tracker, not GitHub Issues.\n<!-- ai-dev-helm:local:end -->';
 const NOTICE_JA = '導入し直してください（npx @crearize/ai-dev-helm init）。';
 
 const move = (dir, from, to) => {
@@ -33,7 +33,7 @@ function copySkills(dir, targets) {
   dropIgnore(dir, ['/.claude/skills', '/.codex/skills', '/.cursor/skills']);
 }
 
-/** Add a statusMessage to the Claude gate registration (MovieMarketer, platform, MasterPlan). */
+/** Add a statusMessage to the Claude gate registration (adopters C, D and G). */
 function statusMessage(dir, calls = /quality-gate\.cjs/) {
   const settings = readJson(dir, '.claude/settings.json');
   for (const group of settings.hooks.PreToolUse) {
@@ -43,13 +43,13 @@ function statusMessage(dir, calls = /quality-gate\.cjs/) {
 }
 
 const SHAPES = {
-  // eLPi, client-massmedian-ai-data-checker, OlbaDataMatching, auFinancialPromotions: skills/ with links.
-  // eLPi, client-massmedian-ai-data-checker: skills/ with links; a product section kept in a distributed document
+  // adopter-a, adopter-b, adopter-f, adopter-h: skills/ with links.
+  // adopter-a, adopter-b: skills/ with links; a product section kept in a distributed document
   // (ai-dev-helm:local) right where the release adds a paragraph.
   standard: {
     tools: 'claude-code,codex',
     stacks: '',
-    models: 'eLPi / massmedian',
+    models: 'adopter-a / adopter-b',
     shape(dir) {
       const file = path.join(dir, 'documents/development/development-policy.md');
       const text = fs.readFileSync(file, 'utf8');
@@ -58,27 +58,27 @@ const SHAPES = {
     },
   },
 
-  // MovieMarketer: .claude/skills holds the project skills flat and superpowers/ under it; the product's own skill
+  // adopter-c: .claude/skills holds the project skills flat and superpowers/ under it; the product's own skill
   // next to them; a statusMessage on the gate.
   flat: {
     tools: 'claude-code,codex',
     stacks: 'java-springboot,nextjs-react',
-    models: 'MovieMarketer',
+    models: 'adopter-c',
     manifest: { skillTargets: { project: ['.claude/skills'], superpowers: ['.claude/skills/superpowers'] } },
     shape(dir) {
       copySkills(dir, this.manifest.skillTargets);
-      fs.mkdirSync(path.join(dir, '.claude/skills/staging-log-investigation'), { recursive: true });
-      fs.writeFileSync(path.join(dir, '.claude/skills/staging-log-investigation/SKILL.md'), '---\nname: staging-log-investigation\n---\n\n# product skill\n');
+      fs.mkdirSync(path.join(dir, '.claude/skills/product-log-investigation'), { recursive: true });
+      fs.writeFileSync(path.join(dir, '.claude/skills/product-log-investigation/SKILL.md'), '---\nname: product-log-investigation\n---\n\n# product skill\n');
       statusMessage(dir);
     },
   },
 
-  // MasterPlan: three real copies (project/ and superpowers/ under each runtime), a custom-* stack next to the
+  // adopter-d: three real copies (project/ and superpowers/ under each runtime), a custom-* stack next to the
   // known one, the external superpowers plugin switched on.
   copies: {
     tools: 'claude-code,codex,cursor',
     stacks: 'nextjs-react',
-    models: 'MasterPlan',
+    models: 'adopter-d',
     manifest: {
       stacks: ['custom-hono-react', 'nextjs-react'],
       skillTargets: {
@@ -93,25 +93,25 @@ const SHAPES = {
     },
   },
 
-  // Kakaseru, OlbaDataMatching: a CRLF working tree, apps in their own directory.
+  // adopter-e, adopter-f: a CRLF working tree, apps in their own directory.
   crlf: {
     tools: 'claude-code,cursor',
     stacks: 'nextjs-react',
-    models: 'Kakaseru / OlbaDataMatching',
+    models: 'adopter-e / adopter-f',
     manifest: { apps: { frontend: 'apps/web' } },
     crlf: true,
     shape() {},
   },
 
-  // platform: three flat copies without superpowers, its own gate and review-budget under scripts/ registered by
+  // adopter-g: three flat copies without superpowers, its own gate and review-budget under scripts/ registered by
   // hand (Claude and Codex), release protected too, its own deny list.
   gate: {
     tools: 'claude-code,codex,cursor',
     stacks: 'java-springboot,nextjs-react',
-    models: 'platform',
+    models: 'adopter-g',
     manifest: {
       skillTargets: { project: ['.claude/skills', '.codex/skills', '.cursor/skills'] },
-      exclude: [{ part: 'superpowers', reason: 'platform uses the external superpowers plugin' }],
+      exclude: [{ part: 'superpowers', reason: 'the product uses the external superpowers plugin' }],
       gate: { script: 'scripts/gate.cjs' },
       reviewBudgetScript: 'scripts/review-budget.cjs',
       workflow: { protectedBranches: ['main', 'release'] },
@@ -133,12 +133,12 @@ const SHAPES = {
     },
   },
 
-  // auFinancialPromotions: the "not found" notice of the gate wrapper rewritten by hand, the external superpowers
+  // adopter-h: the "not found" notice of the gate wrapper rewritten by hand, the external superpowers
   // plugin switched off.
   notice: {
     tools: 'claude-code,cursor',
     stacks: 'nextjs-react',
-    models: 'auFinancialPromotions',
+    models: 'adopter-h',
     manifest: { settings: { enabledPlugins: { 'superpowers@superpowers-marketplace': false, 'superpowers@claude-plugins-official': false } } },
     shape(dir) {
       const settings = readJson(dir, '.claude/settings.json');
