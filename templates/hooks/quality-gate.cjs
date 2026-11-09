@@ -267,7 +267,7 @@
 // array - no shell is ever involved.
 //
 // DECLARED PROTECTED BRANCHES (3.7.1, D2). `workflow.protectedBranches` in
-// `.ai-dev-helm.json` adds branches (P, platform's `release`) that are judged
+// `.ai-dev-helm.json` adds branches (P, e.g. `release`) that are judged
 // like main / master: before a command with a gate word is judged, the set of
 // branches it must not reach unchecked - T = main / master + P - is read, and
 // every rule above that names "the trunk" as the branch being protected uses
@@ -900,7 +900,7 @@ function trunkWrite(inv) {
 // back and folded in at the end; the indices are re-sorted in that case so
 // the reason still names the first offending refspec in ARGUMENT order.
 // Returns the rule-1 candidate, or null when there is none.
-// 3.7.0 (from MovieMarketer's MM-PATCH 3): `--dry-run` / `-n` publishes nothing, so such a push is no candidate -
+// 3.7.0 (from an adopter's local gate patch 3): `--dry-run` / `-n` publishes nothing, so such a push is no candidate -
 // exact spellings only (a bundle such as `-nv` is not read as a dry run), before `--` only, and a `--no-dry-run`
 // anywhere in the options cancels it - abbreviated as git reads it too (`--no-dry`, `--no-dr`; 3.7.0 cycle 1): any
 // option starting `--no-d` counts, so a word git would reject as ambiguous also keeps the push a candidate.
@@ -1085,7 +1085,7 @@ function moverOf(invocations, scope) {
   }
   return null;
 }
-// 3.7.0 (from MovieMarketer's MM-PATCH 11, design decision 4): a merge / pull / rebase is itself a gated candidate,
+// 3.7.0 (from an adopter's local gate patch 11, design decision 4): a merge / pull / rebase is itself a gated candidate,
 // so moverName() leaves it out - but on ANOTHER line of the same command it moves HEAD before this line's push or
 // merge runs, so it counts as a mover there. Applied (outside a deferral plan) to a line whose gated call reaches the
 // trunk on any branch (a push to main, `gh pr merge`, a trunk rewrite) in staticRules, and to a trunk-only candidate
@@ -1909,7 +1909,7 @@ function reachesExtra(cand, branch, ctx, plan) {
   if (!cand.upstream) return false;
   return isMainBranch(branch) ? isExtraProtected(branch) : isExtraProtected(pushTargetBranch(ctx, plan));
 }
-// 3.7.1 (D2, platform's former gate #2): a push whose every branch of T is a P, and whose every source tip adds
+// 3.7.1 (D2, from an adopter's former gate): a push whose every branch of T is a P, and whose every source tip adds
 // nothing to `origin/<trunk>` (`ctx.mainPassed`), needs no flag - main to release, once main had its check. A push
 // that reaches main / master too is judged as usual.
 function mainPassedPush(cand, branch, ctx, plan) {
