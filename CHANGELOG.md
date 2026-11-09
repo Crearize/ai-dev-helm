@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.2](https://github.com/Crearize/ai-dev-helm/compare/v3.7.1...v3.7.2) (2026-11-09)
+
+
+### Fixed
+
+* **harness:** 3.7.2 PR 1 - security hardening ([#234](https://github.com/Crearize/ai-dev-helm/issues/234)) ([#238](https://github.com/Crearize/ai-dev-helm/issues/238)) ([0412bc3](https://github.com/Crearize/ai-dev-helm/commit/0412bc381402c415188a2bfe7338c01ab29e5573))
+* **harness:** 3.7.2 PR 2 - superpowers sync to v7.0.2 ([#234](https://github.com/Crearize/ai-dev-helm/issues/234)) ([#235](https://github.com/Crearize/ai-dev-helm/issues/235)) ([ac2adc6](https://github.com/Crearize/ai-dev-helm/commit/ac2adc6a8e55e8f3c77bc9748f17a7a3a5b29537))
+* **harness:** 3.7.2 PR 3 - gate and hook registration ([#234](https://github.com/Crearize/ai-dev-helm/issues/234)) ([#239](https://github.com/Crearize/ai-dev-helm/issues/239)) ([b097b90](https://github.com/Crearize/ai-dev-helm/commit/b097b90c6fefb5ca3995334800c567c1fc04a68d))
+* **harness:** 3.7.2 PR 4 - upgrade and render fixes ([#234](https://github.com/Crearize/ai-dev-helm/issues/234)) ([#237](https://github.com/Crearize/ai-dev-helm/issues/237)) ([0c88837](https://github.com/Crearize/ai-dev-helm/commit/0c88837a5d385ee833e1f4af83f488bbcb0d3f87))
+* **harness:** 3.7.2 PR 5 - context-handoff and question-tool rule ([#234](https://github.com/Crearize/ai-dev-helm/issues/234)) ([#236](https://github.com/Crearize/ai-dev-helm/issues/236)) ([1dc519c](https://github.com/Crearize/ai-dev-helm/commit/1dc519cff6a49f753e718809dd6c5d85ec7f859c))
+
 ## [3.7.1](https://github.com/Crearize/ai-dev-helm/compare/v3.7.0...v3.7.1) (2026-10-27)
 
 
