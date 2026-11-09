@@ -432,24 +432,38 @@ yargs(hideBin(process.argv))
   )
   .command(
     'review-budget <action>',
-    'Reserve, extend or inspect review-only round budgets (shared by Claude Code and Codex)',
+    'Reserve, extend, retake or inspect review-only round budgets (shared by Claude Code and Codex)',
     (yargs) => yargs
-      .positional('action', { choices: ['begin', 'status', 'extend'], type: 'string' })
+      .positional('action', { choices: ['begin', 'status', 'extend', 'retake'], type: 'string' })
       .option('phase', { choices: ['requirements', 'design', 'plan', 'quality', 'production', 'mutation'], type: 'string' })
       .option('roles', { type: 'string', describe: 'Comma-separated review roster' })
       .option('limit', { type: 'number', describe: 'Lower review ceiling (1-3); cannot raise an existing ceiling' })
       .option('rounds', { type: 'number', describe: 'extend: rounds to add after the owner approved exceeding the limit (1-3)' })
-      .option('reason', { type: 'string', describe: 'extend: the owner approval, quoted (10-500 characters)' }),
+      .option('full', { type: 'boolean', describe: 'extend: the owner\'s approval names the first added round a full review (round 1\'s roster; quality and production)' })
+      .option('round', { type: 'number', describe: 'retake: the latest round, whose reviewers\' results were lost' })
+      .option('reason', { type: 'string', describe: 'extend: the owner approval, quoted; retake: what was lost (10-500 characters)' }),
     (argv) => {
       try {
+        // --full is only ever the bare word, once. yargs reads --full=TRUE, --full=1, --no-full ... as false, which would
+        // record the owner's full round as a plain extension that cannot be redone; so any other form is refused here
+        // from the raw words, before anything runs (3.7.2 C9-H1).
+        const raw = process.argv.slice(2);
+        const fullWords = raw.filter((word) => /^--(?:no-)?full(?:=|$)/i.test(word));
+        const fullAt = raw.indexOf('--full');
+        if (fullWords.length > 1 || fullWords.some((word) => word !== '--full') || (fullAt >= 0 && /^(?:true|false)$/i.test(raw[fullAt + 1] || ''))) {
+          throw new Error('--full takes no value: write it once, as the bare word --full');
+        }
         const words = [argv.action]; // rebuilt from parsed values so --phase=design works too
-        for (const key of ['phase', 'roles', 'limit', 'rounds', 'reason']) if (argv[key] !== undefined) words.push(`--${key}`, String(argv[key]));
+        for (const key of ['phase', 'roles', 'limit', 'rounds', 'round', 'reason']) if (argv[key] !== undefined) words.push(`--${key}`, String(argv[key]));
+        if (fullAt >= 0) words.push('--full'); // a flag; the hook refuses it outside extend
         // Prefer the project's own copy of the hook (same state, same rules as the hook that gates reviews).
         const script = findProjectReviewBudget(process.cwd());
         if (script) {
           // A project hook from 3.2.x has no extend; it would read stdin as a hook event instead of failing.
-          if (argv.action === 'extend' && !/function extendLimit/.test(require('node:fs').readFileSync(script, 'utf8'))) {
-            console.error('Error: the project review-budget hook is older and does not support extend; run harness-upgrade to update it.');
+          // ...and one before 3.7.2 has no retake, nor extend --full.
+          const needs = { extend: fullAt >= 0 ? /FULL_ROUND_PHASES/ : /function extendLimit/, retake: /function retakeRound/ }[argv.action];
+          if (needs && !needs.test(require('node:fs').readFileSync(script, 'utf8'))) {
+            console.error(`Error: the project review-budget hook is older and does not support ${argv.action}${argv.action === 'extend' && fullAt >= 0 ? ' --full' : ''}; run harness-upgrade to update it.`);
             process.exitCode = 1;
             return;
           }

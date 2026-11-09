@@ -291,7 +291,7 @@
 // kind), read, or unreadable (a value that fails the check, a broken text that
 // names the kind, a manifest that is not a regular file - a symbolic link
 // included -, a git failure other than "not a repository", a blob a partial
-// clone lacks and cannot fetch). An unreadable kind blocks every command with a gate
+// clone lacks and cannot fetch, a trunk ref whose object is not there - 3.7.2). An unreadable kind blocks every command with a gate
 // word - except a value broken at the trunk while HEAD's manifest reads that
 // kind: then HEAD's is used and the trunk's is reported on stderr, so the
 // change that fixes the trunk can still be pushed and merged
@@ -319,6 +319,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const FLAG_FILE = '.quality-check-passed';
@@ -327,7 +328,19 @@ const MAX_BUFFER = 32 * 1024 * 1024;
 // Global deadline: Claude Code kills the hook at its configured timeout, and a
 // hook killed before it prints is read as "allowed". Every git call clamps to
 // what is left, so a pathological repo degrades into a block, not a bypass.
-const DEADLINE = Date.now() + 20000;
+// 3.7.2 (C1-M7 of the quality check): the registration's wrapper stops the hook 25 s after its own start, and passes
+// that deadline less the time to answer as AI_DEV_HELM_HOOK_DEADLINE (ms since the epoch). The gate keeps to the
+// earlier of the two, so its own verdict always comes before the wrapper ends it. The value only shortens the 20 s,
+// never lengthens it (an unreadable or later one is ignored). A stray or forged early one makes every git read time out
+// sooner: a command that needs a read blocks as it does on any timeout - and, as on any timeout, a command without a
+// gate word goes through even where denyCommands are declared (their read failing, as with a broken declaration above).
+const OWN_DEADLINE_MS = 20000;
+// The gate's deadline (ms since the epoch) from its start `now` and the wrapper's AI_DEV_HELM_HOOK_DEADLINE `value`.
+function hookDeadline(now, value) {
+  const wrapper = Number(value);
+  return Math.min(now + OWN_DEADLINE_MS, Number.isFinite(wrapper) && wrapper > 0 ? wrapper : Infinity);
+}
+const DEADLINE = hookDeadline(Date.now(), process.env.AI_DEV_HELM_HOOK_DEADLINE);
 const IS_WIN = process.platform === 'win32';
 
 // --------------------------------------------------------------------------
@@ -2696,6 +2709,69 @@ function runGit(args, cwd) {
 const LAZY_FETCH_MS = 10000;
 const LAZY_FETCH_ENV = { ...GIT_ENV, GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never' };
 delete LAZY_FETCH_ENV.GIT_NO_LAZY_FETCH;
+// 3.7.2 (C4-M1): a fetch that failed for an object this clone lacks (an unreachable or silent remote) is not tried
+// again for LAZY_FETCH_RETRY_MS in that work tree while its git config stays the same - else every read waits up to
+// LAZY_FETCH_MS again (with denyCommands declared: every shell call), and each try may leave a fetch behind. The record
+// is a file in the work tree's git directory (not a shared temp directory another user could plant a link in), holding
+// the time and a digest of the repository's config file (read as a file, no git), so fixing the remote (git remote
+// set-url) tries again at once. Nothing else lifts the pause (round 6 of the quality check): FETCH_HEAD is not read,
+// since every kind of git fetch - failed or not, of one remote or of all - rewrites it, so neither its time, its size
+// nor its content tells whether the remote this clone fetches from came back. After a git fetch that works, wait out
+// the pause or fetch the object with the git cat-file -p the reason names. A record only makes a read skip the
+// fetch: the object is then unreadable (a block), never "no declaration" - a stale or forged record cannot let a
+// command through. Writing or reading it may fail; then the read is the 3.7.1 one.
+const LAZY_FETCH_RETRY_MS = 10 * 60 * 1000;
+// The work tree's own git directory and the repository's common one (`gitdir:` -> `commondir` for a linked worktree;
+// both `.git` for the main work tree), or null when `.git` is neither.
+function gitDirs(top) {
+  const dotGit = path.join(top, '.git');
+  let st;
+  try { st = fs.statSync(dotGit); } catch { return null; }
+  if (st.isDirectory()) return { own: dotGit, common: dotGit };
+  const m = /^gitdir:[ \t]*(.+?)[ \t]*$/m.exec(readHead(dotGit, 4096) || '');
+  if (!m) return null;
+  const own = path.resolve(top, m[1]);
+  const common = readHead(path.join(own, 'commondir'));
+  return { own, common: common !== null && common.trim() ? path.resolve(own, common.trim()) : own };
+}
+// One record per work tree, in its own git directory (a linked worktree's `.git/worktrees/<name>`): each work tree
+// pauses after its own failed fetch, and none rewrites another's record.
+const fetchRecordFile = (top) => {
+  const dirs = gitDirs(top);
+  return dirs && path.join(dirs.own, 'ai-dev-helm-gate-fetch.json');
+};
+// A digest of the repository's config file (the common one: a linked worktree's remotes are the main one's); null
+// without it. Only the config: see LAZY_FETCH_RETRY_MS for why FETCH_HEAD is not read.
+function gitStateDigest(top) {
+  const dirs = gitDirs(top);
+  if (!dirs) return null;
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(path.join(dirs.common, 'config'))).digest('hex');
+  } catch {
+    return null;
+  }
+}
+function fetchRecentlyFailed(top) {
+  try {
+    const record = JSON.parse(readHead(fetchRecordFile(top), 512) || 'null');
+    const age = Date.now() - record.at;
+    const digest = gitStateDigest(top);
+    return Number.isFinite(age) && age >= 0 && age < LAZY_FETCH_RETRY_MS && digest !== null && record.config === digest;
+  } catch {
+    return false;
+  }
+}
+function recordFetch(top, failed) {
+  const file = fetchRecordFile(top);
+  if (!file) return;
+  try {
+    if (!failed) { if (fs.existsSync(file)) fs.unlinkSync(file); return; }
+    const digest = gitStateDigest(top);
+    if (digest !== null) fs.writeFileSync(file, JSON.stringify({ at: Date.now(), config: digest }), { mode: 0o600 });
+  } catch {
+    // Best effort: without the record the next read tries the fetch again (3.7.1).
+  }
+}
 // `git cat-file --batch` with `input` on stdin: the raw stdout as a Buffer, or null on a failure (3.7.1). `fetch`: let
 // a partial clone fetch the objects it lacks (a failed fetch fails the whole call).
 function runGitBatch(input, cwd, fetch = false) {
@@ -2744,6 +2820,27 @@ function treeMode(tree, name) {
 }
 // A regular file's mode (git writes 100644 / 100755; 100664 is an old git's).
 const FILE_MODE_RE = /^100(?:644|755|664)$/;
+// The first bytes of a small file, or null.
+function readHead(file, bytes = 1024) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(bytes);
+    return buf.slice(0, fs.readSync(fd, buf, 0, bytes, 0)).toString('utf8');
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ }
+  }
+}
+// 3.7.2 (C3-M2): `.git` as git reads it - a directory holding HEAD, or a worktree's file starting `gitdir:`. An empty
+// `.git` directory (or any other `.git`) is no repository, and the walk goes on to the parent.
+function isGitEntry(entry) {
+  let st;
+  try { st = fs.statSync(entry); } catch { return false; }
+  if (st.isDirectory()) return fs.existsSync(path.join(entry, 'HEAD'));
+  return st.isFile() && /^gitdir:/.test(readHead(entry, 16) || '');
+}
 // The work tree root above `dir` - the first directory holding `.git` (a directory, or a worktree's file) - found
 // without running git, or null.
 const isUncPath = (dir) => typeof dir === 'string' && /^[\\/]{2}/.test(dir);
@@ -2751,7 +2848,7 @@ function workTreeRoot(dir) {
   if (typeof dir !== 'string' || dir === '' || isUncPath(dir)) return null;
   let cur = path.resolve(dir);
   for (;;) {
-    if (fs.existsSync(path.join(cur, '.git'))) return cur;
+    if (isGitEntry(path.join(cur, '.git'))) return cur;
     const up = path.dirname(cur);
     if (up === cur) return null;
     cur = up;
@@ -2913,7 +3010,19 @@ function makeCtx(cwd) {
           const out = runGitBatch(input, top, fetch);
           return out === null ? null : parseBatch(out, names.length * 3);
         };
-        const objects = top === null ? null : ask(true) || ask(false);
+        // C4-M1: no fetch for a while after one failed (fetchRecentlyFailed); `fetched` - false when the fetching read
+        // failed, null when it was not made.
+        const skipFetch = top !== null && fetchRecentlyFailed(top);
+        let fetched = null;
+        let objects = null;
+        if (top !== null) {
+          if (!skipFetch) {
+            objects = ask(true);
+            fetched = objects !== null;
+          }
+          if (objects === null) objects = ask(false);
+        }
+        let lacking = false; // a version's manifest or tree this clone does not have
         if (objects === null) {
           // Only a failure here asks rev-parse where we are. Not a repository: nothing to read (and nothing recorded -
           // the 3.7.0 route meets the same answer when it asks).
@@ -2925,12 +3034,14 @@ function makeCtx(cwd) {
           const version = (i) => {
             const [blob, ref, tree] = objects.slice(i * 3, i * 3 + 3);
             if (ref === null) return null; // No such ref: an unborn HEAD, or not this trunk.
-            const fetch = `not in this clone and could not be fetched - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}`;
+            const fetch = `not in this clone and could not be fetched - fetch it with git cat-file -p ${names[i]}:${MANIFEST_FILE}` +
+              (skipFetch ? ` (after a failed fetch the hook does not fetch for ${LAZY_FETCH_RETRY_MS / 60000} minutes, or until the git config changes)` : '');
             const mode = tree && tree.type === 'tree' ? treeMode(tree, MANIFEST_FILE) : null;
             if (mode === false) return null;
             // The mode first: a symbolic link, a directory or a submodule is no file, whatever its object.
             const notFile = mode !== null && !FILE_MODE_RE.test(mode);
             if (!notFile && (blob === null || mode === null)) {
+              lacking = true;
               return { unreadable: blob === null && mode ? `${names[i]}:${MANIFEST_FILE} is ${fetch}` : `the tree of ${names[i]} is ${fetch}` };
             }
             if (notFile || blob.type !== 'blob') {
@@ -2946,9 +3057,25 @@ function makeCtx(cwd) {
             return parseDeclarations(text);
           };
           const trunkAt = BASE_REFS.findIndex((_, i) => objects[(i + 1) * 3 + 1] !== null);
-          const combined = combineDeclarations(version(0), trunkAt === -1 ? null : version(trunkAt + 1));
+          // 3.7.2 (C3-M1): the batch answers `missing` for a ref that is not there and for one whose object is not in
+          // the repository alike. When a ref before the trunk found is missing, git lists which of them exist (one
+          // more call, only where origin/main is not the trunk); one that exists is broken, and the trunk is
+          // unreadable - not the next of BASE_REFS, whose declarations may be older.
+          const before = BASE_REFS.slice(0, trunkAt === -1 ? BASE_REFS.length : trunkAt);
+          let broken = null;
+          if (before.length) {
+            const listed = runGit(['for-each-ref', '--format=%(refname)', ...before], top);
+            if (!listed.ok) broken = { unreadable: 'git failed or timed out while it listed the trunk refs' };
+            else {
+              const ref = String(listed.out).split(/\r?\n/).map((s) => s.trim()).find((name) => before.includes(name));
+              if (ref) broken = { unreadable: `${ref} names an object that is not in this repository (a broken ref) - fetch it again, or remove the ref with git update-ref -d ${ref}` };
+            }
+          }
+          const combined = combineDeclarations(version(0), broken || (trunkAt === -1 ? null : version(trunkAt + 1)));
           decl = combined.decl;
           for (const why of combined.skipped) state.notes.push(trunkDeclarationSkipped(why));
+          if (fetched === false && lacking) recordFetch(top, true);
+          else if (fetched === true) recordFetch(top, false);
         }
         const reasons = decl.gitError ? [declarationsUnreadable(decl.gitError)] : [...new Set([decl.branchesError, decl.denyError].filter(Boolean))].map(declarationsBroken);
         for (const reason of reasons) state.notes.push(`quality-gate: ${reason}`);

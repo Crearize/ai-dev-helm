@@ -60,7 +60,7 @@
 | `adjudication` | `"confirmed" \| "false_positive" \| "unknown"` | 任意 | 根拠に照らした裁定。未判定・旧記録の欠落は `unknown`。確認した根拠は既存の `detail` に短く記す |
 | `recurrence` | `"new" \| "repeated" \| "unknown"` | 任意 | 新規検出か既出の再掲か。同じ `id` の既出指摘は `repeated`、履歴が不明なら `unknown`。件数だけから推定しない |
 | `description` | `string` | 必須 | 指摘内容の概要 |
-| `action` | `"対応済" \| "未対応" \| "対象外" \| "PR に記録"` | 必須 | 対応状況。`PR に記録`: 中と既存（`preexisting`）の高を、直さずに PR の本文の「レビューの中の指摘（直していないもの）」に書いた（3.6.0） |
+| `action` | `"対応済" \| "未対応" \| "対象外" \| "PR に記録"` | 必須 | 対応状況。`PR に記録`: 中と既存（`preexisting`）の高を、直さずに PR の本文の「レビューの中の指摘（直していないもの）」に書いた（3.6.0）。`対象外` には、ハーネス自身のゲートへの指摘で普通の操作では踏まない形として受け入れたものを含む（導入先の製品への指摘には使わない）（`quality-check` スキル references/step4-review.md 4-2 の 4） |
 | `detail` | `string` | 任意 | 対応の詳細説明 |
 | `id` | `string` | 任意 | 指摘の追跡 ID。検証レビュー（`review_mode: "verification"`）で前サイクルの指摘を参照する際に用いる |
 | `concern` | `"design" \| "security" \| "performance" \| "requirements" \| "docs" \| "falsification"` | 必須（レビュアー由来の指摘） | 指摘の観点。`source` がレビュアー名の指摘では必須（`source` が `lint` / `test` / `test_design` の指摘では省略する）。統合レビュアーの指摘では観点別セクションから決まる（`design`: 設計・保守性 / `security` / `performance` / `requirements`: 要件整合 / `docs`: 文書整合）。QAエンジニア（ファルシフィケーション型）の指摘は `falsification`、専門家の指摘は各自の観点、検証レビュアーの指摘は元の指摘の観点を引き継ぐ。旧レポートには存在しない |
@@ -200,6 +200,7 @@ quality-policy.md §2「上書きの契約」に基づき、プロダクトの�
 | `after_cycle` | `number` | 必須 | 打ち切り時点のサイクル番号（この番号の次から追加サイクルが始まる） |
 | `abort_reason` | `"cycle_limit" \| "stagnation"` | 必須 | 打ち切りの事由 |
 | `approach_change` | `string` | 必須 | 追加サイクルで変更する方針（ユーザーが示した内容をそのまま記録する。例: 「生存ミュータントのうち境界値系は accepted に分類し、状態遷移のテストに集中する」） |
+| `full` | `boolean` | 任意 | 承認の文が追加の最初の 1 巡を全員のレビュー（1 巡目と同じ形）と指定し、`review-budget extend --full` で延長した（`quality-check` Step 4-3）。省略は `false`（追加の巡はすべて検証の巡）。旧レポートに無いことは不正ではない |
 
 ### RiskLevelDowngrade オブジェクト
 
