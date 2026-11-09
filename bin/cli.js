@@ -436,20 +436,22 @@ yargs(hideBin(process.argv))
       .option('roles', { type: 'string', describe: 'Comma-separated review roster' })
       .option('limit', { type: 'number', describe: 'Lower review ceiling (1-3); cannot raise an existing ceiling' })
       .option('rounds', { type: 'number', describe: 'extend: rounds to add after the owner approved exceeding the limit (1-3)' })
+      .option('full', { type: 'boolean', describe: 'extend: the owner\'s approval names the first added round a full review (round 1\'s roster; quality and production)' })
       .option('round', { type: 'number', describe: 'retake: the latest round, whose reviewers\' results were lost' })
       .option('reason', { type: 'string', describe: 'extend: the owner approval, quoted; retake: what was lost (10-500 characters)' }),
     (argv) => {
       try {
         const words = [argv.action]; // rebuilt from parsed values so --phase=design works too
         for (const key of ['phase', 'roles', 'limit', 'rounds', 'round', 'reason']) if (argv[key] !== undefined) words.push(`--${key}`, String(argv[key]));
+        if (argv.full === true) words.push('--full'); // a flag; the hook refuses it outside extend
         // Prefer the project's own copy of the hook (same state, same rules as the hook that gates reviews).
         const script = findProjectReviewBudget(process.cwd());
         if (script) {
           // A project hook from 3.2.x has no extend; it would read stdin as a hook event instead of failing.
-          // ...and one before 3.7.2 has no retake.
-          const needs = { extend: /function extendLimit/, retake: /function retakeRound/ }[argv.action];
+          // ...and one before 3.7.2 has no retake, nor extend --full.
+          const needs = { extend: argv.full === true ? /FULL_ROUND_PHASES/ : /function extendLimit/, retake: /function retakeRound/ }[argv.action];
           if (needs && !needs.test(require('node:fs').readFileSync(script, 'utf8'))) {
-            console.error(`Error: the project review-budget hook is older and does not support ${argv.action}; run harness-upgrade to update it.`);
+            console.error(`Error: the project review-budget hook is older and does not support ${argv.action}${argv.action === 'extend' && argv.full === true ? ' --full' : ''}; run harness-upgrade to update it.`);
             process.exitCode = 1;
             return;
           }

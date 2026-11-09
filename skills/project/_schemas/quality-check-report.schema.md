@@ -200,6 +200,7 @@ quality-policy.md §2「上書きの契約」に基づき、プロダクトの�
 | `after_cycle` | `number` | 必須 | 打ち切り時点のサイクル番号（この番号の次から追加サイクルが始まる） |
 | `abort_reason` | `"cycle_limit" \| "stagnation"` | 必須 | 打ち切りの事由 |
 | `approach_change` | `string` | 必須 | 追加サイクルで変更する方針（ユーザーが示した内容をそのまま記録する。例: 「生存ミュータントのうち境界値系は accepted に分類し、状態遷移のテストに集中する」） |
+| `full` | `boolean` | 任意 | 承認の文が追加の最初の 1 巡を全員のレビュー（1 巡目と同じ形）と指定し、`review-budget extend --full` で延長した（`quality-check` Step 4-3）。省略は `false`（追加の巡はすべて検証の巡）。旧レポートに無いことは不正ではない |
 
 ### RiskLevelDowngrade オブジェクト
 

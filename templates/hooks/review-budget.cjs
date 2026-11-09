@@ -19,6 +19,12 @@ const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-e
 // 3.7.2 (#234): a round whose reviewers' results were lost (the session ended before they returned) may be retaken -
 // its started seats once more, under a new marker, without adding a round. Only the latest round of a phase, once.
 const RETAKE_LIMIT = 1;
+// 3.7.2 (#234, decided 2026-11-09): an extend the owner approved may name its first added round a full round
+// (extend --full): that one round takes round 1's roster (integrated-reviewer, optional falsification-qa, at most one
+// specialist in quality; integrated-reviewer and optional falsification-qa in production). The other rounds keep the
+// verification roster. Only quality and production have a different first-round roster; the document phases take one
+// document-reviewer in every round, and mutation is never extended.
+const FULL_ROUND_PHASES = ['quality', 'production'];
 // 3.7.0 (from MovieMarketer's MM-REVIEW-PATCH 1): parallel PreToolUse / PostToolUse calls share the lock, so a caller
 // waits up to 2 s for its owner instead of failing at once. Only EEXIST is waited on; a lock is never deleted.
 const LOCK_WAIT_MS = 2000;
@@ -73,8 +79,12 @@ function ceiling(group, extensions, phase) {
 function validExtensions(list) {
   return Array.isArray(list) && list.every((x) => x && typeof x === 'object' && PHASES.includes(x.phase) && x.phase !== 'mutation' &&
     Number.isInteger(x.rounds) && x.rounds >= 1 && x.rounds <= 3 && typeof x.reason === 'string' && x.reason.trim().length >= 10 &&
-    x.reason.length <= 500 && typeof x.at === 'string');
+    x.reason.length <= 500 && typeof x.at === 'string' &&
+    (x.fullRound === undefined || (FULL_ROUND_PHASES.includes(x.phase) && Number.isInteger(x.fullRound) && x.fullRound >= 2)));
 }
+
+// Round 1, and the first round an extend --full added (3.7.2), take the first-round roster.
+const isFullRound = (extensions, phase, number) => number === 1 || extensions.some((x) => x.phase === phase && x.fullRound === number);
 
 const validReason = (text) => typeof text === 'string' && text.trim().length >= 10 && text.length <= 500;
 
@@ -95,10 +105,13 @@ function validState(state, branch) {
     if (!PHASES.includes(phase) || !group || !Number.isInteger(group.limit) || group.limit < 1 || group.limit > 3 ||
         (phase === 'mutation' && group.limit !== 1) ||
         !Array.isArray(group.rounds) || group.rounds.length > ceiling(group, extensions, phase)) return false;
+    // A full round lies past the phase's own limit and within its ceiling (it is the first round its extend added).
+    if (extensions.some((x) => x.phase === phase && x.fullRound !== undefined &&
+        (x.fullRound <= group.limit || x.fullRound > ceiling(group, extensions, phase)))) return false;
     for (const [index, round] of group.rounds.entries()) {
       if (!round || !/^[a-f0-9]{32}$/.test(round.token) || !Array.isArray(round.roles) ||
           !round.used || typeof round.used !== 'object' || Array.isArray(round.used)) return false;
-      try { validateRoles(phase, round.roles, index + 1); } catch { return false; }
+      try { validateRoles(phase, round.roles, index + 1, isFullRound(extensions, phase, index + 1)); } catch { return false; }
       if (Object.keys(round.used).some((role) => !round.roles.includes(role))) return false;
       if (round.retakes !== undefined && !validRetakes(round)) return false;
     }
@@ -184,23 +197,28 @@ function transact(cwd, mutate, fn) {
   }
 }
 
-function validateRoles(phase, roles, round) {
+// `full`: round 1, or the full round an owner-approved extend --full added (3.7.2) - quality and production only.
+function validateRoles(phase, roles, round, full = round === 1) {
   if (!Array.isArray(roles) || !roles.length || new Set(roles).size !== roles.length) throw new Error('A unique review role roster is required');
+  const again = ' (a full round again only after the owner approves it: extend --full)';
   if (phase === 'mutation') {
     if (roles.length !== 1 || roles[0] !== 'falsification-qa') throw new Error('Mutation review role must be falsification-qa');
   } else if (phase === 'production') {
     // Same shape as quality, without specialist seats.
-    const required = round === 1 ? 'integrated-reviewer' : 'verification-reviewer';
+    const required = full ? 'integrated-reviewer' : 'verification-reviewer';
     if (!roles.includes(required) || roles.some((r) => ![required, 'falsification-qa'].includes(r))) {
-      throw new Error('Production review roles must be integrated-reviewer (first round) or verification-reviewer (later rounds), plus optional falsification-qa');
+      throw new Error('Production review roles must be integrated-reviewer (first round, or the full round of an extend --full) or ' +
+        `verification-reviewer (later rounds), plus optional falsification-qa${full ? '' : again}`);
     }
   } else if (phase !== 'quality') {
     if (roles.length !== 1 || roles[0] !== 'document-reviewer') throw new Error('Document review role must be document-reviewer');
-  } else if (round === 1) {
+  } else if (full) {
     if (!roles.includes('integrated-reviewer') || roles.some((r) => !['integrated-reviewer', 'falsification-qa', ...SPECIALISTS].includes(r)) ||
-        roles.filter((r) => SPECIALISTS.includes(r)).length > 1) throw new Error('Invalid first-round review role roster');
+        roles.filter((r) => SPECIALISTS.includes(r)).length > 1) {
+      throw new Error(`Invalid ${round === 1 ? 'first-round' : 'full-round'} review role roster (integrated-reviewer, optional falsification-qa, at most one specialist)`);
+    }
   } else if (!roles.includes('verification-reviewer') || roles.some((r) => !['verification-reviewer', 'falsification-qa'].includes(r))) {
-    throw new Error('Later review roles must be verification-reviewer and optional falsification-qa');
+    throw new Error(`Later review roles must be verification-reviewer and optional falsification-qa${again}`);
   }
 }
 
@@ -232,12 +250,14 @@ function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
     const effectiveLimit = Math.min(group.limit, limit ?? group.limit);
     const allowed = ceiling({ limit: effectiveLimit }, extensions, phase);
     if (group.rounds.length >= allowed) throw new Error(limitReached(phase, `Review limit reached (${group.rounds.length}/${allowed})`));
-    validateRoles(phase, roles, group.rounds.length + 1);
+    const number = group.rounds.length + 1;
+    const full = isFullRound(extensions, phase, number);
+    validateRoles(phase, roles, number, full);
     group.limit = effectiveLimit;
     const round = { token: crypto.randomBytes(16).toString('hex'), roles, used: {}, reservedAt: new Date().toISOString() };
     group.rounds.push(round);
     state.phases[phase] = group;
-    return { phase, round: group.rounds.length, limit: allowed, statePath: loc.file,
+    return { phase, round: number, limit: allowed, ...(full && number > 1 ? { full: true } : {}), statePath: loc.file,
       markers: Object.fromEntries(roles.map((role) => [role, `HELM_REVIEW:${round.token}:${role}`])) };
   });
 }
@@ -261,9 +281,11 @@ function retakeRound({ cwd = process.cwd(), phase, round: number, roles, reason 
     if ((target.retakes || []).length >= RETAKE_LIMIT) {
       const lost = `Round ${number} of ${phase} was already retaken once (its results are lost again)`;
       // Below the limit the next round is the way (begin; it reviews the lost scope); at the limit, the limit's rule.
-      if (number < ceiling(group, state.extensions || [], phase)) {
-        // Rounds after the first take only verification-reviewer (+ falsification-qa) in quality and production.
-        const seats = number === 1 && ['quality', 'production'].includes(phase)
+      const extensions = state.extensions || [];
+      if (number < ceiling(group, extensions, phase)) {
+        // After a full round (round 1, or an extend --full's), the next round takes only verification-reviewer
+        // (+ falsification-qa) in quality and production - unless that next round is itself a full round.
+        const seats = FULL_ROUND_PHASES.includes(phase) && isFullRound(extensions, phase, number) && !isFullRound(extensions, phase, number + 1)
           ? " - its roster is verification-reviewer and optional falsification-qa: have them review the whole change from the lost seats' viewpoints"
           : '';
         throw new Error(`${lost}; reserve the next round with begin (it is within the limit) and give it the scope whose results were lost${seats}`);
@@ -286,19 +308,28 @@ function retakeRound({ cwd = process.cwd(), phase, round: number, roles, reason 
 }
 
 // Raise the ceiling of a phase after the owner approved exceeding it. Appends to state.extensions; group.limit is never rewritten.
-function extendLimit({ cwd = process.cwd(), phase, rounds, reason }) {
+// full (3.7.2): the approval quoted in --reason names the next round a full review - the first round this extend adds (fullRound).
+function extendLimit({ cwd = process.cwd(), phase, rounds, reason, full = false }) {
   if (!PHASES.includes(phase) || phase === 'mutation') throw new Error('Only the requirements, design, plan, quality and production limits can be extended');
   if (!Number.isInteger(rounds) || rounds < 1 || rounds > 3) throw new Error('--rounds must be an integer from 1 to 3');
+  if (typeof full !== 'boolean') throw new Error('--full takes no value');
+  if (full && !FULL_ROUND_PHASES.includes(phase)) {
+    throw new Error(`--full is only for the quality and production reviews; every ${phase} round already takes the same roster`);
+  }
   const text = String(reason ?? '').replace(/\s*[\r\n]+\s*/g, ' ').trim();
-  if (text.length < 10 || text.length > 500) throw new Error("--reason is required: quote the owner's approval in 10 to 500 characters");
+  if (text.length < 10 || text.length > 500) {
+    throw new Error(`--reason is required: quote the owner's approval in 10 to 500 characters${full ? ' (for --full, the approval that names the next round a full review)' : ''}`);
+  }
   return transact(cwd, true, (state, loc) => {
     const group = state.phases[phase];
     if (!group) throw new Error(`No ${phase} review is recorded on this branch; extend only after its limit is reached`);
     state.extensions = state.extensions || [];
     const before = ceiling(group, state.extensions, phase);
     if (group.rounds.length < before) throw new Error(`The ${phase} limit is not reached yet (${group.rounds.length}/${before}); extend only after reaching it and getting the owner's approval`);
-    state.extensions.push({ phase, rounds, reason: text, at: new Date().toISOString() });
-    return { phase, used: group.rounds.length, limit: before + rounds, statePath: loc.file };
+    const record = { phase, rounds, reason: text, at: new Date().toISOString() };
+    if (full) record.fullRound = before + 1;
+    state.extensions.push(record);
+    return { phase, used: group.rounds.length, limit: before + rounds, ...(full ? { fullRound: before + 1 } : {}), statePath: loc.file };
   });
 }
 
@@ -413,19 +444,23 @@ function deny(reason) {
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }) + '\n');
 }
 
-const USAGE = 'Usage: review-budget.cjs begin --phase quality --roles integrated-reviewer [--limit 1] | extend --phase quality --rounds 1 --reason "<owner approval>" | retake --phase quality --round 1 [--roles falsification-qa] --reason "<what was lost>" | status';
+const USAGE = 'Usage: review-budget.cjs begin --phase quality --roles integrated-reviewer [--limit 1] | extend --phase quality --rounds 1 [--full] --reason "<owner approval>" | retake --phase quality --round 1 [--roles falsification-qa] --reason "<what was lost>" | status';
 
 // Runs begin / status / extend / retake from command-line words; returns the JSON result. Shared with the package CLI.
 function runCommand(argv, cwd = process.cwd()) {
   const [action, ...args] = argv;
   const values = {};
-  for (let n = 0; n < args.length; n += 2) {
+  let full = false;
+  for (let n = 0; n < args.length;) {
+    // --full is a flag (no value), and only extend takes it, once.
+    if (args[n] === '--full' && action === 'extend' && !full) { full = true; n += 1; continue; }
     if (!['--phase', '--roles', '--limit', '--rounds', '--round', '--reason'].includes(args[n]) || args[n + 1] === undefined) throw new Error(USAGE);
     values[args[n].slice(2)] = args[n + 1];
+    n += 2;
   }
   const number = (x) => (x === undefined ? undefined : Number(x));
   if (action === 'status') return status({ cwd });
-  if (action === 'extend') return extendLimit({ cwd, phase: values.phase, rounds: number(values.rounds), reason: values.reason });
+  if (action === 'extend') return extendLimit({ cwd, phase: values.phase, rounds: number(values.rounds), reason: values.reason, full });
   if (action === 'begin') return beginRound({ cwd, phase: values.phase, roles: values.roles?.split(','), limit: number(values.limit) });
   if (action === 'retake') return retakeRound({ cwd, phase: values.phase, round: number(values.round), roles: values.roles?.split(','), reason: values.reason });
   throw new Error(USAGE);
