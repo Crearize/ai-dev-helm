@@ -5,16 +5,22 @@ on:
     - cron: '0 9 * * *'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+permissions: {}
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
-      - uses: actions/checkout@v5
+      # No token in .git/config while npm ci runs (3.7.2, #234). create-pull-request
+      # sets its own credential (its `token` input, github.token by default) for
+      # the push and removes it afterwards, so it needs none persisted here.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Get current synced version
         id: current
@@ -64,7 +70,7 @@ jobs:
         env:
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         if: steps.check.outputs.needed == 'true'
         with:
           node-version: '26'
@@ -113,8 +119,10 @@ jobs:
 
       - name: Verify overlay reproduction and drift detection
         if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'success'
+        # --ignore-scripts: no dependency's install script runs (legacy-peer-deps
+        # comes from the repository's .npmrc).
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npx vitest run lib/skill-transform.test.js
 
       - name: Verify transformed skills
@@ -148,7 +156,7 @@ jobs:
       - name: Create Pull Request
         if: steps.check.outputs.needed == 'true' && steps.transform.outcome == 'success'
         id: create-pr
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           title: "fix(superpowers): sync skills v${{ steps.current.outputs.version }} → v${{ steps.latest.outputs.version }}"
           body: |

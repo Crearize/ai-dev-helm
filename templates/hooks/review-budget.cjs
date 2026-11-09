@@ -16,7 +16,7 @@ const BRANCH_PHASES = ['requirements', 'design', 'plan', 'production']; // reser
 // A first --limit cannot raise them; only extend, after the owner approved, goes past it.
 const REVIEW_LIMIT = { quality: 2, production: 2 };
 const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-engineer'];
-// 3.7.0 (from MovieMarketer's MM-REVIEW-PATCH 1): parallel PreToolUse / PostToolUse calls share the lock, so a caller
+// 3.7.0 (from an adopter's local review patch 1): parallel PreToolUse / PostToolUse calls share the lock, so a caller
 // waits up to 2 s for its owner instead of failing at once. Only EEXIST is waited on; a lock is never deleted.
 const LOCK_WAIT_MS = 2000;
 const KEEP_ENTRIES = 500; // receipts / agents kept per branch state
@@ -31,7 +31,7 @@ const REVIEW_ARTIFACT = /^(?:review(?:[-_]|(?=[A-Z]))(?:budget|feature|hook|tool
 const FIX_LEAD = /^(?:fix(?:es|ed)?|address(?:ed|ing)?|apply|resolve[sd]?|handle|incorporate)\b/i; // acting on review output, not dispatching a reviewer
 const REVIEW_START = /^(?:(?:code|design|plan|requirements|verification|visual|integrated)[ -])?(?:review(?:er|ing)?\b|レビュ[ーア])|^(?:コード|設計|計画|要件|検証|デザイン|統合)レビュー/i;
 const REVIEW_END = /(?:\breview(?:er|ing)?|レビュー|レビュア)[\s.。]*$/i;
-// 3.7.0 (from MM-REVIEW-PATCH 3): Codex names agents with underscores (integrated_reviewer); read them like hyphens.
+// 3.7.0 (from the adopter's review patch 3): Codex names agents with underscores (integrated_reviewer); read them like hyphens.
 const isReviewName = (name) => {
   const separated = name.replace(/_/g, '-');
   return REVIEW_ROLE_NAME.test(separated) || REVIEW_WORD.test(separated);
@@ -92,9 +92,9 @@ function validState(state, branch) {
   return true;
 }
 
-// 3.7.0 (from MM-REVIEW-PATCH 5, MovieMarketer #2027): a lock is never reclaimed by its age. A timestamp cannot prove
+// 3.7.0 (from an adopter's local review patch 5): a lock is never reclaimed by its age. A timestamp cannot prove
 // that a lock is abandoned, and stat -> rename can remove a successor's fresh lock. A held lock is waited on for up to
-// LOCK_WAIT_MS (MM-REVIEW-PATCH 1), then the call fails closed.
+// LOCK_WAIT_MS (review patch 1), then the call fails closed.
 function acquireLock(lock) {
   const deadline = performance.now() + LOCK_WAIT_MS;
   const signal = new Int32Array(new SharedArrayBuffer(4));
@@ -154,7 +154,7 @@ function transact(cwd, mutate, fn) {
     }
     return result;
   } finally {
-    // 3.7.0 (MM-REVIEW-PATCH 5): the owned lock is renamed to a private name before its file is deleted, so a
+    // 3.7.0 (review patch 5): the owned lock is renamed to a private name before its file is deleted, so a
     // delete-pending name on Windows cannot deny the next owner, and the deletion never reaches the next owner's lock.
     try {
       if (temp) fs.unlinkSync(temp);
@@ -242,7 +242,7 @@ function extendLimit({ cwd = process.cwd(), phase, rounds, reason }) {
   });
 }
 
-// 3.7.0 (from MovieMarketer's MM-REVIEW-PATCH 3): Codex builds read `agent_name` as well as `task_name`, and the
+// 3.7.0 (from an adopter's local review patch 3): Codex builds read `agent_name` as well as `task_name`, and the
 // code-mode bridge names its tools `collaboration<tool>` (collaborationspawn_agent ...) and may hide `message` from
 // hooks; there the reserved token / role ride in task_name as helm_review_<token>_<role_with_underscores> - the same
 // marker, no new grant. When both forms are visible they must agree. The distributed Codex matcher does not reach the
