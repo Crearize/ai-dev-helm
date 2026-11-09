@@ -1,17 +1,17 @@
 {
-  "upstreamVersion": "7.0.1",
+  "upstreamVersion": "7.0.2",
   "files": {
-    "brainstorming/SKILL.md": "61a7ef918652108c76a3fd01e02dd92d39996c6b46d4cb2819cbd03f6c45e46a",
+    "brainstorming/SKILL.md": "2c9ca71f94886f9ca9f4aef055f7cafb3e1a9bdf3aeebf8f4cb547c69405d207",
     "brainstorming/spec-document-reviewer-prompt.md": null,
     "dispatching-parallel-agents/SKILL.md": "1968923066f3b707eb01d1992cdf4c42284c3855f70253b9cd5000ff45fca13c",
-    "executing-plans/SKILL.md": "e4649e59880ef2643d1da128e3d607e87e3f969410d72095a5bf65811b6036dc",
+    "executing-plans/SKILL.md": "deaf176fa179827e80f2ea3101db3ea90fdf562ebef340eba761e4687940f5f5",
     "finishing-a-development-branch/SKILL.md": "8db5a922b242dd4e1bf824cb91c13b3e8d8e8a86d6ceaf7f0774eb9cce909d65",
     "receiving-code-review/SKILL.md": "091df1629510af1b92fc4abd6f96732ebedb4cb2c0f3457e8f2740b0504a2438",
     "requesting-code-review/SKILL.md": "2180e14a448e9410bec88e6646a2d1f0ce7fdd58de27388c1e052e929679d2bc",
-    "subagent-driven-development/SKILL.md": "ba41f697136cba88a7962d60c8e2f97488ba04a8688b1d0fbeb27f6953808e75",
+    "subagent-driven-development/SKILL.md": "1baf70e307bde682c462513c86116333f1f066168c6710f45145bf5f0b00828d",
     "subagent-driven-development/implementer-prompt.md": "81dd9d5a3fb0b09b96b5829f03b9796842f3199ef7591d1ba1c2db2a515f64d0",
-    "subagent-driven-development/re-review-prompt.md": "0828a5e9cbb12ba49f14621dd8c3953c48c0fc383e75bb5494f055ed0d6d824f",
-    "subagent-driven-development/task-reviewer-prompt.md": "bfed55c8f19d0ff6ed57b0fe09127c92890e9311c6c73917129598826bf9ebe8",
+    "subagent-driven-development/re-review-prompt.md": "ad54d0a10f1c2c8e656456e0a46e654af5dfe5ee6bcef63428cfd69b8dcd9311",
+    "subagent-driven-development/task-reviewer-prompt.md": "61a04c2fb29907887d8babee1594f5e35ae26d461e7e584f5b7c283215165e08",
     "systematic-debugging/SKILL.md": "51c6435d98c83c42c96ba7c35725a0b2c376cd487fb1a4e6bd0ddbe7e33ef202",
     "test-driven-development/SKILL.md": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d",
     "using-git-worktrees/SKILL.md": "8cfb86f121269e8f7f12361e6795c4f6738828340e28964c9229d365666c9edd",
@@ -64,22 +64,18 @@
       "references/preflight.md",
       "references/resuming.md",
       "scripts/review-package",
+      "scripts/sdd-repo",
       "scripts/sdd-workspace",
       "scripts/task-brief",
       "task-reviewer-prompt.md"
     ],
     "systematic-debugging": [
-      "CREATION-LOG.md",
       "SKILL.md",
       "condition-based-waiting-example.ts",
       "condition-based-waiting.md",
       "defense-in-depth.md",
       "find-polluter.sh",
-      "root-cause-tracing.md",
-      "test-academic.md",
-      "test-pressure-1.md",
-      "test-pressure-2.md",
-      "test-pressure-3.md"
+      "root-cause-tracing.md"
     ],
     "test-driven-development": [
       "SKILL.md",
