@@ -62,7 +62,7 @@ AI が行います。オーナーの作業はありません。
 | `skillTargets` | スキルの木ごとの置き先（例 `{ "project": [".claude/skills"] }`）。文書とルート規則の `skills/<木>/`、ルート規則の `.codex/skills/<木>/`・`.cursor/skills/<木>/` は置き先に読み替えて入れる。置き先、または git で追跡しているファイルがあるスキルのディレクトリ（`/.claude/skills`・`/.codex/skills`・`/.cursor/skills`）は `.gitignore` に足さない（既に足された行は消さないので、要らなければ更新の PR で消す） |
 | `settings.mergeDeny` | `false` で `permissions.deny` をマージしない（下の保護ブランチの拒否も足さない。無い `permissions` / `allow` も作らない） |
 | `gate.script` / `reviewBudgetScript` | 配布の `quality-gate.cjs` / `review-budget.cjs` の代わりに登録する導入先のゲート・review-budget の実体（リポジトリ直下からの相対パス。`.cjs` / `.mjs` / `.js`）。登録は配布と同じ形のラッパーで宣言のパスを呼び、配布の本体は写さない（どれかの登録（Codex など）が配布の写しを呼び続けていれば、その写しは普通の hook 本体として更新・照合する。どの登録も呼ばない写しは更新しないので、宣言した実体が配布の本体を `require` するなら、宣言をやめるか、その実体の側で版をそろえる）。`hook-selftest` は配布の判定表をこの実体に当てる（判定表の一時リポジトリは main が origin/main より 1 コミット進んでいるので、送るものを見て判定するゲートでも「main への push」が意味を持つ。読めないペイロードは、配布の hook では通す（fail-open）が、宣言した実体では拒否も合格にする）。配布の文書・スキルで `.claude/hooks/review-budget.cjs`（`.codex` も）を `node` で呼ぶ箇所は、宣言した実体の呼び出し（`node <reviewBudgetScript>`）に読み替えて入れる（`init --force` の再実行では、その実行で書いた配布の文書・スキルに当てる） |
-| `gate.denyCommands` | フラグ・ゲート語によらず hook が拒否するコマンドの形（`[{ "all": ["<正規表現>", …], "reason": "…" }]`）。例: platform の Render の `PUT /env-vars`（全置換）の拒否。形・上限・例の全文は `quality-check`「hook の完全な契約」の「拒否するコマンドの宣言」。3.7.1 |
+| `gate.denyCommands` | フラグ・ゲート語によらず hook が拒否するコマンドの形（`[{ "all": ["<正規表現>", …], "reason": "…" }]`）。例: Render の `PUT /env-vars`（全置換）の拒否。形・上限・例の全文は `quality-check`「hook の完全な契約」の「拒否するコマンドの宣言」。3.7.1 |
 | `gate.controlPlane` / `gate.exemptDocs` / `gate.harness` | ゲート制御面・ハーネスのみの免除（文書だけ）・スピードモードのハーネスの分類に足すパスの glob の配列。hook が判定するリポジトリの `.ai-dev-helm.json` から読み、読めない・コミットしていない変更があるときはゲート対象のコマンドを block する（`quality-check`「hook の完全な契約」の「導入先の拡張点」）。`.ai-dev-helm.json` 自体はゲート制御面 |
 | `settings.enabledPlugins` | `.claude/settings.json` の `enabledPlugins` に書くプラグインの有効・無効（例 `{ "superpowers@claude-plugins-official": false }`。書いたキーだけを入れ、ほかは残す） |
 | `workflow` | 運用の形。`remote: "none"`・`issues: "none"`（リモートなし・Issue なし。development-policy の当てはめが変わる）、`protectedBranches`（main・master のほかに守るブランチ。force push と削除の拒否が deny と Codex の rules に入り、3.7.1 から hook も main と同じくゲート対象にする — main を通った内容だけの反映はフラグ無しで通る。`quality-check`「hook の完全な契約」の「宣言した保護ブランチ」） |
@@ -168,6 +168,11 @@ JSON を導入先の外へ保存します。Windows PowerShell 5.1 では `> fil
 - ゲート制御面に、リポジトリ直下の `.mcp.json` が入った。release-please のリリースの PR の差分は、条件を満たせば免除される（`quality-check`「ハーネスのみ変更の免除」の「リリースの差分の免除」）。
 - hook の拡張点（設計 C3h）: 導入先の独自のゲート・review-budget は `gate.script`・`reviewBudgetScript` で宣言し、制御面・免除・スピードモードの分類に足すパスは `gate.controlPlane`・`gate.exemptDocs`・`gate.harness` に書く（上の表）。hook の写しへのローカルパッチ（パターンを足す・実体を差し替える）は、これに移して消す。`.ai-dev-helm.json` はゲート制御面になったので、マニフェストを変える PR（ハーネスの更新の PR を含む）は免除されない。
 - 導入先のローカルパッチの取り込み（設計 C3i）: quality-gate は `git push --dry-run` / `-n` をゲート対象から外し、同じコマンドの別の行の `git merge` / `git pull` / `git rebase` を、trunk に届く push / merge の前にあれば拒否するようになった。review-budget はロックを最大 2 秒待ち、古さでロックを外さなくなり（自分のロックは名前を変えてから消す）、Codex の `agent_name`・下線区切りの名前・`collaboration` で始まるツール名を読むようになった（配布の Codex の登録では `collaboration` の名前は届かない — `harness-runtime.md`）。同じ趣旨のパッチを hook の写しに当てていた導入先は、`upgrade` で配布物に置き換えて消す。
+
+### 3.7.2 の更新
+
+- `quality-context` で `--out` を省くと、呼ぶたびに OS の一時ディレクトリ配下に新しい専用のディレクトリを作って書く（前は決まった名前のディレクトリを見つけたまま使っていた）。そのため、前のサイクルの出力を読むサイクル 2 以降と `--check-untracked` は、前のサイクルと同じ `--out` が要る（無いとエラーになる）。quality-check の手順はどれも `--out <scratchpad>/quality-check` を渡すので変わらない。CLI を直接使う手順を導入先が独自に書いていれば、`--out` を足す。
+- quality-check の 4-0 で、セッション一時ディレクトリ（scratchpad）が無い環境の置き場を変えた。前は OS の一時ディレクトリの下の決まった名前（`ai-dev-helm/<リポジトリ名>/`）だったが、共有のマシンではほかの利用者が先に作れるため、サイクル 1 の最初の実行だけを `--out` なしで行い、コマンドが作った本人だけが読めるディレクトリ（出力の `out:` の行）を以降の実行（同じサイクルの作り直し・以降のサイクル・`--check-untracked`）の `--out` に渡す。片付けでは、そのディレクトリの親ごと消す。scratchpad のある Claude Code では変わらない。
 
 ## 計測の範囲
 
