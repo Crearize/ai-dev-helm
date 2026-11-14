@@ -14,12 +14,13 @@ AI が行います。オーナーの作業はありません。
    - git が無視する場所に書く（書いた）ファイルがある（`written where git ignores them`） — 追跡していないので、新しい checkout には入らない（その場所ではハーネスが未導入になる）。`git add -f <file>` で追跡するか、`.gitignore` の規則を直す。`init` も同じ警告を出す（その実行が書いたファイルと、配布の中身や hook の登録をすでに持っていたので書き直さなかったファイルだけ。製品が自分で置いたファイル、`*.ai-dev-helm-new`・`*.backup.<時刻>`、リンクの代わりに写した skills は出さない）。`--plan` は今の `.gitignore` で判定するので、新版が `.gitignore` に足す行に当たるファイルは、手順 3 の記録にだけ出ることがある。
    - ルート規則の管理ブロックの外の製品の節に、読み替え（`skillTargets`・`reviewBudgetScript`）が当たりうる語がある（`<file> line …`。そのファイルを書く実行、そのファイルに保留（衝突）を残す実行、読み替えの宣言が前の適用（マニフェストの `layoutRead`）から変わった実行だけが出す。行は今のファイルの行で、手順 3 がそのファイルを書いたときは書いた後のファイルの行（`(as written)`）。`--verify` と、宣言が同じでそのファイルをそのままにする実行は出さない） — 下の「読み替えの書き戻し」。
    - ルート規則の管理ブロックの中で、製品が足した行（新版に無い行。三者マージで残した行や製品の注記）を読み替えで書き換える（`<file> line … (as written)`。`--plan` は `(as it would be written)`。そのファイルを書く実行だけが出す） — 照合はそのブロックを新版と一致とみなすので、その更新の PR で、製品の意図どおりかを確かめる。
+   - 配布物の中で実行権の要るスクリプト（superpowers の `sdd-repo` など）を、git が実行権なし（100644）で持っている、またはまだ追加していない（`the release ships as executable are not executable in git`。`--verify` は追跡済みの 100644 だけ） — Windows の checkout（`core.fileMode=false`）で新しく足すと 100644 で入り、Linux・macOS の checkout ではパスで直接起動できない。`upgrade` は index を変えない（POSIX では、置き先にあるそのファイルに実行権を付ける。ファイルそのものがリンクなら触れない（途中のフォルダーのリンクは、書き込みと同じくたどる）。付けられなかったファイルは `could not be made executable` の警告に出るので、`chmod +x` で付ける）ので、`git --literal-pathspecs add --chmod=+x -- <パス>` で追加する。全部のパスが英数字と `._-/@+` だけ（先頭は `-`・`@`・`/` 以外）なら警告にそのまま流せるコマンドが出る。それ以外の文字（空白・引用符・`$`・`[` など）を含むパスがあればコマンドは出ず、パスの一覧だけが出るので、1 つずつ、使うシェルの規則でパスを引用して追加する。
 3. `npx -y @crearize/ai-dev-helm@<新版> upgrade --record <導入先の外のファイル>` で更新する。最後に照合が自動で走る。
 4. 保留（`pending`）があれば解消する。各 `<file>.ai-dev-helm-new` を対応するファイルと比べ、導入先の独自の内容を残して新版の変更を取り込み、`.ai-dev-helm-new` を消してから `upgrade --resolve <path>` で保留から外す（`--resolve <path> <path> …` で複数をまとめて外せる。全部を先に確かめ、1 つでも通らなければ何も書かない）。ルート規則のブロックの衝突（`CLAUDE.md#harness` など）は、`CLAUDE.md.ai-dev-helm-new`（新版のファイル全体）の同じブロックの中身を取り込んで `--resolve CLAUDE.md#harness`。目印が無くて囲めなかったブロックは、下の「初回の移行」の 3 に従って囲んでから `--resolve`。保留を解消したら（hook 本体の衝突を直したときは必ず）、`upgrade` をもう一度実行する（保留のファイルは衝突したときの版を比較元にして比べ直すので、新版の変更が抜けていれば保留のまま残る。hook の登録もここで今の形になり、マニフェストの `complete` が更新される）。`--resolve` は、中身が衝突したときから変わっていない（`.ai-dev-helm-new` を取り込まずに消した。消したときは `upgrade` をもう一度実行すると置き直される）・空・マージの道具の衝突の印（行頭の `<<<<<<<`・`=======`・`>>>>>>>` の 3 行。コードブロックの中も数える）が残っているときは拒否する（製品が例として書いた印の行は字下げする）。ルート規則のブロックの衝突は、ほかのファイルの衝突と同じく、解消するまで `upgrade` がそのブロックを書き換えない（3.7.2 から。衝突の後に宣言（`reviewBudgetScript`・`skillTargets`）を変えて `upgrade` をやり直しても、そのブロックは衝突したときのまま残り、新しい読み替えは `.ai-dev-helm-new` の側に入る。同じファイルのほかのブロックと管理ブロックの外の節は今までどおり扱い、保留のブロックしか変わらないファイルは書かない）。そのため衝突のときの形は保留の記録から増えず、途中で終わった `upgrade` の後にマニフェストだけを git で戻しても、取り込まずに消した（または取り込まずに残した）`.ai-dev-helm-new` は `--resolve` が拒否する。それでも、途中で終わった `upgrade` の後に git で戻すときは、マニフェスト（`.ai-dev-helm.json`）と、その実行が書き換えたファイル（記録の Changes に出たもの）を一緒に、パスを指定して戻す（`git checkout -- .ai-dev-helm.json <記録に出たファイル>`。手で進めたマージは先にコミットしておく）。解消したファイル・ブロックは記録に「resolved by hand」として一覧で出る（照合で新版と一致したものも出る。local の区切りやブロックの外の製品の節は照合から外れるため）ので、新版の変更を取り込めているかは更新の PR のレビューで確かめる（手でのマージは規則では判定できないため。照合は、衝突したときの中身に戻っていれば未導入にする）。
 5. `npx -y @crearize/ai-dev-helm@<新版> upgrade --verify` が終了コード 0 になることを確かめる（未導入 0・保留 0）。
 6. 記録の Changes に `.claude/settings.json` が出たら、導入先で `claude doctor` を実行し、出力に `Invalid settings` の節が無い（設定の読み込みの誤りが無い）ことを確かめる。`claude doctor` は対話なしで終わるが、誤りがあっても終了コードは 0 なので、出力で判断する。
-7. `npx -y @crearize/ai-dev-helm@<新版> hook-selftest` が全件通ることを確かめる（hook の判定表に加えて、登録が各 1 回・Codex の登録が呼ぶ実体がある・hook の写しが配布物と一致・スキルの写しが互いに一致。照合した項目は `ok install:` の行で出る）。
-8. `.codex/hooks.json` が変わったら、Codex を使う人は `/hooks` で信頼し直す（下の「Codex の信頼」）。
+7. `npx -y @crearize/ai-dev-helm@<新版> hook-selftest` が全件通ることを確かめる（hook の判定表に加えて、登録が各 1 回・Codex の登録が呼ぶ実体がある・hook の写しが配布物と一致・スキルの写しが互いに一致。照合した項目は `ok install:` の行で出る。失敗に数えない注意（導入先が書いた fail-open の Codex の gate の登録など）は `WARNING install:` の行で出て、終了コードは変えない）。CLI はマニフェストの版（`.ai-dev-helm.json` の `version`）のものを使う。それより古い CLI（devDependency に入れた古い版など）で流すと、判定表がその CLI の版のもので hook の写しも照合しないので、合格にせず `ACTION REQUIRED` で終了コード 1 になる（3.7.3 から。前は照合を黙って飛ばして合格を出していた）。導入先が独自に CLI の指定（`pnpm exec`・`bunx` で入れた CLI を呼ぶ形など）を書いていれば、この形（`npx -y @crearize/ai-dev-helm@<版>`）に寄せる。新しい CLI で流したときは注記（`NOTE:`）だけが出る。
+8. `.codex/hooks.json` が変わったら、Codex を使う人は、Codex の起動時の確認（Hooks need review）か起動後の `/hooks` で信頼し直す（`harness-runtime.md` の「Codex のフックの信頼」と下の「Codex の信頼」）。
 9. quality-check（「ハーネスの更新の PR」の扱い — 下）→ PR → マージ。PR の本文に、`--record` の記録の「宣言で外したものの配布元の変更」の一覧を載せる。
 
 ### 結果の見方
@@ -31,7 +32,7 @@ AI が行います。オーナーの作業はありません。
 - **配布物から消えたファイル**: 導入先が旧版のままなら消す。変えていれば残して一覧に出す。
 - **宣言で外したもの**: 触らない。配布元で変わっていれば、記録に差分付きで出す（止めない）。取り込むかを PR のレビューで判断する。
 - **未導入**: どれにも当たらないもの。終了コード 1。`upgrade` をやり直すか、理由があれば宣言する。
-- **読み替えの書き戻し**（記録の `references read as the layout`）: `skillTargets`・`reviewBudgetScript` の読み替え（文書の `skills/<木>/`、ルート規則の `.codex/skills/<木>/`・`.cursor/skills/<木>/`、review-budget の呼び出し）で文が変わるファイルを、読み替えた形で書き戻した。ルート規則では管理ブロックの中にだけ当てる（ブロックの中に製品が足した行も読み替えるので、その行は記録の `Warnings` に出る）。スキルの置き場所とリンクの案内の文（AGENTS.md の「Located under …」、.cursorrules の「Skills are installed under …」、`link-skills` の文）も、宣言した木の置き先と「`skillTargets` の写し（リンクではない）」の形になる。管理ブロックの外の製品の節は書き換えない（3.7.1 は書き換えていた）。読み替えが当たりうる語があれば、そのファイルを書く・そのファイルに保留を残す・宣言が変わった後の最初の実行（版を上げる `upgrade`、宣言を足した後の `upgrade` など）が記録の `Warnings` にその行を出すので、その更新の PR で製品の意図どおりかを確かめ、必要なら手で直す（次の `upgrade` も書き換えない。宣言が同じでファイルをそのままにする実行と `--verify` は同じ警告を繰り返さない）。宣言した後の最初の `upgrade`（案内の文は、宣言のある導入先がこの版に上げるとき）で一度だけ起き、2 回目からは変わらない。
+- **読み替えの書き戻し**（記録の `references read as the layout`）: `skillTargets`・`reviewBudgetScript` の読み替え（文書の `skills/<木>/`、ルート規則の `.claude/skills/<木>/`・`.codex/skills/<木>/`・`.cursor/skills/<木>/`、review-budget の呼び出し）で文が変わるファイルを、読み替えた形で書き戻した。ルート規則では管理ブロックの中にだけ当てる（ブロックの中に製品が足した行も読み替えるので、その行は記録の `Warnings` に出る）。スキルの置き場所とリンクの案内の文（AGENTS.md の「Located under …」、.cursorrules の「Skills are installed under …」、`link-skills` の文）も、宣言した木の置き先と「`skillTargets` の写し（リンクではない）」の形になる。管理ブロックの外の製品の節は書き換えない（3.7.1 は書き換えていた）。読み替えが当たりうる語があれば、そのファイルを書く・そのファイルに保留を残す・宣言が変わった後の最初の実行（版を上げる `upgrade`、宣言を足した後の `upgrade` など）が記録の `Warnings` にその行を出すので、その更新の PR で製品の意図どおりかを確かめ、必要なら手で直す（次の `upgrade` も書き換えない。宣言が同じでファイルをそのままにする実行と `--verify` は同じ警告を繰り返さない）。宣言した後の最初の `upgrade`（案内の文は、宣言のある導入先がこの版に上げるとき）で一度だけ起き、2 回目からは変わらない。
 
 比べるときは BOM を除いて改行を LF にそろえ、書き戻すときは導入先のそのファイルの改行（CRLF / LF）と BOM に合わせます。git で管理しているファイルには `.backup.<時刻>` を作りません（git の履歴で戻せるため）。
 
@@ -46,7 +47,21 @@ AI が行います。オーナーの作業はありません。
 - 完了条件に「`upgrade --verify` が終了コード 0」を入れる。
 - レビューの対象は、三者マージしたファイル・衝突を直したファイルとブロック（記録の `resolved by hand`）・宣言（`.ai-dev-helm.json`）の変更・導入先の補足ファイル（`documents/development/project/`）・記録の `Warnings` に出た、管理ブロックの中で読み替えた製品の行だけ（読み替えの書き戻しは管理ブロックの中だけで、配布の文は照合で新版と一致を確かめる）。照合で「新版と一致」と分かったファイルは、配布元の quality-check で確認済みなので見ない。共通コンテキストは `--record` の記録からこの範囲を作る。対象が無ければ（すべて新版と一致）、Step 4 は統合レビュアー 1 体が記録と宣言だけを確かめる。
 - 「宣言で外したものの配布元の変更」の一覧をレビュアーに渡し、取り込みの要否を見る。
-- 更新の PR の品質チェックとマージは、`upgrade` を実行した作業ツリーを作業ディレクトリにしたセッションで行う。セッションは起動した場所の hook（`.claude/settings.json` の登録と `.claude/hooks/` の本体など）で動くので、本体のチェックアウト（更新前の版のまま）で起動したセッションでは古い hook（導入先の独自のゲートを含む）が効き、新しい版の hook なら通るマージを止めることがある。止まったときは、止めた hook のメッセージを読み、そのゲートが新しい版では無くなった・変わったものであることを確かめる（新しい版にも同じゲートがあり、その理由で止まっているなら、セッションを替えずにその理由を解消する）。そのうえで、フラグ（`.quality-check-passed`）の `commit`・作業ツリーの HEAD・PR の HEAD が一致することを確かめてから、その作業ツリーで起動したセッションでマージし直す。
+- 更新の PR の品質チェックとマージは、`upgrade` を実行した作業ツリーを作業ディレクトリにしたセッションで行う。セッションは起動した場所の hook（`.claude/settings.json` の登録と `.claude/hooks/` の本体など）で動くので、本体のチェックアウト（更新前の版のまま）で起動したセッションでは古い hook（導入先の独自のゲートを含む）が効き、新しい版の hook なら通るマージを止めることがある。止まったときは、止めた hook のメッセージを読み、そのゲートが新しい版では無くなった・変わったものであることを確かめる（新しい版にも同じゲートがあり、その理由で止まっているなら、セッションを替えずにその理由を解消する）。そのうえで、フラグ（`.quality-check-passed`）の `commit`・作業ツリーの HEAD・PR の HEAD が一致することを確かめてから、その作業ツリーで起動したセッションでマージし直す。作業ツリーの依存（本体の `node_modules` を借りるとき）と後始末は `worktree-parallel` スキルの Step 4・Step 7（その作業ツリーで起動したセッションから作業ツリーを消すと、Windows では空のフォルダーが残る。そのセッションを終えた後に消す）。
+
+### CI で hook-selftest を流す（任意）
+
+hook の写しの書き換え・登録の重複や欠け・Codex の gate の fail-open の登録を、PR ごとに CI で確かめたい導入先は、マニフェストの版の CLI で `hook-selftest` を流す 1 手順を足せます（例は GitHub Actions。Node.js の入った job で、リポジトリを checkout した後）。
+
+```yaml
+- shell: bash
+  run: |
+    v=$(node -p "require('./.ai-dev-helm.json').version")
+    [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "not a release version: $v" >&2; exit 1; }
+    npx -y "@crearize/ai-dev-helm@$v" hook-selftest
+```
+
+判定・照合のどれかが通らなければ、終了コード 1 で落ちます。版の形を確かめるのは、マニフェストの値（`github:…`・URL など）で別のパッケージを取って実行しないためです。PR の head を checkout する `pull_request_target` の job では流しません（hook-selftest は導入先の hook を実行するため）。配布物は CI のファイルを書きません（導入先の CI の構成はまちまちなため）。導入先が独自に書いた同じ照合（登録が 1 回か、hook の写しが配布物と同じか）は、この手順に置き換えて消せます。
 
 ## 構成と宣言（`.ai-dev-helm.json`）
 
@@ -60,7 +75,7 @@ AI が行います。オーナーの作業はありません。
 | `owned` | 配布元が書かないパス（`{ "path": "<glob>", "reason": "…" }`）。既定で `documents/development/project/**` |
 | `seed` | 無いときだけ作るパス。既定で `documents/development/error-codes.md`・`naming-conventions.md`・`coding-rules/**`・`test-recommendation-ledger.md` |
 | `pending` | 衝突が残ったファイル（`{ path, baseVersion }`、ルート規則のブロックは `block` 付き） |
-| `skillTargets` | スキルの木ごとの置き先（例 `{ "project": [".claude/skills"] }`）。文書とルート規則の `skills/<木>/`、ルート規則の `.codex/skills/<木>/`・`.cursor/skills/<木>/` は置き先に読み替えて入れる。置き先、または git で追跡しているファイルがあるスキルのディレクトリ（`/.claude/skills`・`/.codex/skills`・`/.cursor/skills`）は `.gitignore` に足さない（既に足された行は消さないので、要らなければ更新の PR で消す） |
+| `skillTargets` | スキルの木ごとの置き先（例 `{ "project": [".claude/skills"] }`）。文書とルート規則の `skills/<木>/`、ルート規則の `.claude/skills/<木>/`・`.codex/skills/<木>/`・`.cursor/skills/<木>/` は置き先に読み替えて入れる（ツールのパスは、そのツールが読む場所の置き先 — Claude は `.claude/`、Codex は `.codex/` か `.agents/`、Cursor は `.cursor/` の下 — があればそれに、無ければ 1 つ目の置き先に。3.7.3 から `.claude/skills/<木>/` と Codex の `.agents/` を足した）。置き先、または git で追跡しているファイルがあるスキルのディレクトリ（`/.claude/skills`・`/.codex/skills`・`/.cursor/skills`）は `.gitignore` に足さない（既に足された行は消さないので、要らなければ更新の PR で消す） |
 | `settings.mergeDeny` | `false` で `permissions.deny` をマージしない（下の保護ブランチの拒否も足さない。無い `permissions` / `allow` も作らない） |
 | `gate.script` / `reviewBudgetScript` | 配布の `quality-gate.cjs` / `review-budget.cjs` の代わりに登録する導入先のゲート・review-budget の実体（リポジトリ直下からの相対パス。`.cjs` / `.mjs` / `.js`）。登録は配布と同じ形のラッパーで宣言のパスを呼び、配布の本体は写さない（どれかの登録（Codex など）が配布の写しを呼び続けていれば、その写しは普通の hook 本体として更新・照合する。どの登録も呼ばない写しは更新しないので、宣言した実体が配布の本体を `require` するなら、宣言をやめるか、その実体の側で版をそろえる）。`hook-selftest` は配布の判定表をこの実体に当てる（判定表の一時リポジトリは main が origin/main より 1 コミット進んでいるので、送るものを見て判定するゲートでも「main への push」が意味を持つ。読めないペイロードは、配布の hook では通す（fail-open）が、宣言した実体では拒否も合格にする）。配布の文書・スキルで `.claude/hooks/review-budget.cjs`（`.codex` も）を `node` で呼ぶ箇所は、宣言した実体の呼び出し（`node <reviewBudgetScript>`）に読み替えて入れる（`init --force` の再実行では、その実行で書いた配布の文書・スキルに当てる） |
 | `gate.denyCommands` | フラグ・ゲート語によらず hook が拒否するコマンドの形（`[{ "all": ["<正規表現>", …], "reason": "…" }]`）。例: クラウドのホスティングの環境変数の API の全置換（`PUT /env-vars`）の拒否。形・上限・例の全文は `quality-check`「hook の完全な契約」の「拒否するコマンドの宣言」。3.7.1 |
@@ -70,6 +85,8 @@ AI が行います。オーナーの作業はありません。
 | `apps` | アプリの置き場所（`{ "frontend": "apps/web", "backend": "api" }`）。Cursor の `.mdc` の globs をここから作る（既定は `frontend`・`backend`）。宣言の理由は `reason`（文字列、任意）に書ける |
 
 宣言には理由が必須です。ハーネスの規則を持つファイル（スキルの本体と references、hook、ルート規則、配布文書の本文など、既定の seed 以外の配布物）は `owned` にも `seed` にもできません（`upgrade` が拒否する）。ルート規則（`CLAUDE.md`・`AGENTS.md`・`.cursorrules`）と専用のマージのファイル（`.claude/settings.json`・`.codex/hooks.json`・`.cursor/hooks.json`・`.codex/config.toml`・`.codex/agents/`・`.gitignore`）は、`exclude` にもできません（ルート規則は管理ブロックの中だけをマージし、外の製品の節には触れないため（3.7.2 から読み替え（`skillTargets`・`reviewBudgetScript`）も当てない）。専用のマージは導入先のキーを残すため）。`skillTargets` と `pending` のパスは導入先の中の相対パスに限ります（`..`・絶対パス・`.git` は拒否する）。導入先の製品の内容は、補足ファイル `documents/development/project/<スキル名>.md` に置きます。配布文書（`documents/development/` の `.md`。スキルの中は補足ファイルを使う）の中に導入先の節を残すときは、`<!-- ai-dev-helm:local:start -->` 〜 `<!-- ai-dev-helm:local:end -->` で囲みます。`upgrade` は区切りの中を三者マージの前に取り出し、マージの後に同じ場所（同じ見出しの節の中で、直前の行と同じ行の同じ番目の後。その行が消えていれば節の末尾、その場所がコードブロックの中になっていれば節の末尾で記録に出る、見出しも消えていればファイルの末尾で記録に出る）へ戻します。照合（`--verify`）は区切りの中を除いて比べます。
+
+local の区切りと導入先の独自の文書（製品の開発の手引きなど）には、配布物（hook・hook の登録・CLI）の挙動を書き写しません。書くのは製品への当てはめ（どのコマンド・パス・ポートを使うか）だけにし、挙動は配布文書（`harness-runtime.md`・`quality-check` の「hook の完全な契約」など）を参照します。書き写すと版が上がるたびに古くなり、`upgrade` は区切りの中と独自の文書を書き換えないので、古くなっても照合では分かりません。
 
 ## 初回の移行（3.6.0 以前から）
 
