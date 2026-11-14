@@ -215,7 +215,7 @@ function validateRoles(phase, roles, round, full = round === 1) {
   } else if (full) {
     if (!roles.includes('integrated-reviewer') || roles.some((r) => !['integrated-reviewer', 'falsification-qa', ...SPECIALISTS].includes(r)) ||
         roles.filter((r) => SPECIALISTS.includes(r)).length > 1) {
-      throw new Error(`Invalid ${round === 1 ? 'first-round' : 'full-round'} review role roster (integrated-reviewer, optional falsification-qa, at most one specialist)`);
+      throw new Error(`Invalid ${round === 1 ? 'first-round' : 'full-round'} review role roster (integrated-reviewer, optional falsification-qa, at most one specialist: ${SPECIALISTS.join(', ')})`);
     }
   } else if (!roles.includes('verification-reviewer') || roles.some((r) => !['verification-reviewer', 'falsification-qa'].includes(r))) {
     throw new Error(`Later review roles must be verification-reviewer and optional falsification-qa${again}`);

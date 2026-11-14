@@ -557,7 +557,7 @@ function regexCloses(script, start) {
     }
     if (c === '\\') {
       const n = code[i + 1];
-      if (i + 1 >= code.length || n === '\n' || n === '\r' || n === ' ' || n === ' ') {
+      if (i + 1 >= code.length || n === '\n' || n === '\r' || n === '\u2028' || n === '\u2029') {
         answer = 2;
         break;
       }

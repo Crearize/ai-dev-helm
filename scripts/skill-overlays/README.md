@@ -16,7 +16,9 @@ release, port what matters into the overlay, then run
 `node scripts/apply-skill-overlays.js update <upstream_skills_dir> <version>`,
 write the same `<version>` to `.superpowers-version`, regenerate
 `skills/superpowers` with `scripts/transform-skills.sh` from a clean git clone
-of upstream (it refuses upstream symlinks and untracked files; on Windows,
+of upstream (it refuses upstream symlinks, untracked files and a skill
+directory that is not in git's index under the exact name in `SKILLS`, such
+as one renamed by case only; on Windows,
 where a symlink checks out as a plain file, it refuses anything but a git
 work tree), and run
 `npx vitest run lib/skill-transform.test.js`. The scheduled sync reports such

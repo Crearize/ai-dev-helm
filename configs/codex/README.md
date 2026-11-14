@@ -67,7 +67,7 @@ Files are merged with closer paths overriding earlier ones (combined size limit:
 
 The registered `PreToolUse` hook runs before every Bash tool invocation and refuses a direct push/merge into main (or master) without a valid `.quality-check-passed` flag (commit-bound JSON written by the quality-check skill); feature-branch pushes are not gated, and harness-only diffs skip the gate. What it gates, the unconditional blocks, what passes, the gate control plane and the fail-open scope are defined once in the `quality-check` skill ("hook の完全な契約" in `references/hook-contract.md`, "ハーネスのみ変更の免除" in `references/harness-exemption.md`) - this README does not restate them.
 
-Project-local hooks only load when Codex marks the project as trusted, and each hook runs only after it is trusted in `/hooks` (new or changed hooks are skipped until then; `codex-trust` checks this).
+Project-local hooks only load when Codex marks the project as trusted, and each hook runs only after it is trusted - at Codex's start (Hooks need review) or in `/hooks` (new or changed hooks are skipped until then; `codex-trust` checks this).
 
 ## Personal Setup (Global)
 
