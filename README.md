@@ -112,7 +112,7 @@ npx @crearize/ai-dev-helm integrate-check --main <main のチェックアウト>
 npx @crearize/ai-dev-helm hook-selftest [--dir .]
 ```
 
-導入先にインストールされている quality-gate・review-budget の hook に、同梱の判定表（約 20 件）を実行します。あわせて登録・hook の写し・スキルの写しを照合し、通った項目を `ok install:` の行で出します。1 件でも違えば終了コード 1 です。
+導入先にインストールされている quality-gate・review-budget の hook に、同梱の判定表（約 20 件）を実行します。あわせて登録・hook の写し・スキルの写しを照合し、通った項目を `ok install:` の行で出します。失敗に数えない注意（導入先が書いた fail-open の Codex の gate の登録など）は `WARNING install:` の行で出し、終了コードは変えません。1 件でも違えば終了コード 1 です。
 
 ### 5. Codex のフックの信頼の確認
 
@@ -120,7 +120,7 @@ npx @crearize/ai-dev-helm hook-selftest [--dir .]
 npx @crearize/ai-dev-helm codex-trust --dir . [--codex-home <Codex の設定の場所>]
 ```
 
-Codex は、信頼されていないフック（新しいもの、または `.codex/hooks.json` の登録が変わったもの）を警告なしに飛ばします。`/hooks` でフックを信頼するまで、quality-gate も review-budget も動きません。`hooks.json` を変えたら再び信頼し、Codex のアカウント・設定の場所（`CODEX_HOME`）を切り替えたら、切り替えた先でも信頼します。このコマンドは、Codex の `config.toml` とプロジェクトの `.codex/hooks.json` を読み取るだけで、Codex の設定には書き込みません。読む場所は `--codex-home` > `CODEX_HOME` > `~/.codex` の順で、読んだファイルを必ず表示します。
+Codex は、信頼されていないフック（新しいもの、または `.codex/hooks.json` の登録が変わったもの）を警告なしに飛ばします。フックを信頼するまで（Codex の起動時の確認（Hooks need review）か `/hooks` で信頼します）、quality-gate も review-budget も動きません。`hooks.json` を変えたら再び信頼し、Codex のアカウント・設定の場所（`CODEX_HOME`）を切り替えたら、切り替えた先でも信頼します。このコマンドは、Codex の `config.toml` とプロジェクトの `.codex/hooks.json` を読み取るだけで、Codex の設定には書き込みません。読む場所は `--codex-home` > `CODEX_HOME` > `~/.codex` の順で、読んだファイルを必ず表示します。
 
 - 終了コード: `0` = 問題なし（`.ai-dev-helm.json` の `tools` に codex が無く、Codex が読む `.codex/hooks.json`（linked worktree では本体側のもの）も無いプロジェクトは、Codex の設定を読まずに `NOT APPLICABLE` と出して 0） / `1` = `ACTION REQUIRED`（プロジェクトかフックが信頼されていない、別の綴りのパスでだけ信頼されている、信頼の後に登録が変わった、無効にされている、信頼が今も有効か確かめられない、Codex が `hooks.json` を読み込めない） / `2` = 読めない（読もうとしたパスを表示。空の `--codex-home`、1 MB を超えるファイルも含む）
 - git の linked worktree では、Codex と同じく本体（main checkout）側の `hooks.json` を読み、どれを読んだかを表示します
