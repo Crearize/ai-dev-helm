@@ -185,6 +185,7 @@ JSON を導入先の外へ保存します。Windows PowerShell 5.1 では `> fil
 ### 3.7.3 の更新
 
 - `quality-check`「hook の完全な契約」の「拒否するコマンドの宣言」の例を直した。curl の短いオプションをまとめた `-sX PUT`・`-fsSX PUT` を拒否し、語末だけに t がある長い PowerShell のパラメータ（`-UserAgent` など）を付けた GET を誤って拒否しなくなった。`gate.denyCommands` に例を写した導入先は、例から写し直す（`reason` は導入先の文のままでよい）。`upgrade` はマニフェストの宣言を書き換えない。
+- quality-check の Step 4-2 に「振る舞いの高は、落ちるテストで再現してから直す」が入った（正本は `references/step4-review.md` の 4-2 の 3）。導入先が独自に同じ趣旨の手順（指摘を直す前に再現テストを書く）を書いていれば消す。
 
 ## 計測の範囲
 
