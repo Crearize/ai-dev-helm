@@ -189,6 +189,8 @@ elif [ -f package.json ]; then
 fi
 ```
 
+本体の `node_modules` を借りる（ジャンクション・シンボリックリンクなど）と、pnpm のワークスペースではパッケージごとに要り、ワークスペースのリンクと `pnpm exec` の CLI が本体のチェックアウトの版になる。借りたものは製品のコードの検証には使わない（作業ツリーで install するか、CI の結果で確かめる）。
+
 ### Gradle（worktree 作成時にはビルドしない）
 
 Gradle のキャッシュ（`~/.gradle`）は worktree 間で共有されるため、事前のフルビルドは不要。テスト実行などでビルドが必要になった時点で実行する。
@@ -250,6 +252,8 @@ git worktree remove ".worktrees/<worktree-name>"
 git worktree prune
 git branch -d "<branch-name>"   # マージ済みを確認してから削除。破棄時のみ -D を使用
 ```
+
+その worktree を作業ディレクトリにしたセッション（Claude Code・Codex など）から消すと、Windows ではフォルダーが使用中のため、登録と中身だけが消えて空のフォルダーが残る（`git worktree list` に出なければ登録は外れている）。空のフォルダーは、そのセッションを終えた後に、メインチェックアウトで起動したセッションか利用者が消す。無理に消さない。
 
 **Windows で削除に失敗する場合**（`node_modules` の長いパスなど）。対象は `.worktrees/<name>` の中だけにする。
 
