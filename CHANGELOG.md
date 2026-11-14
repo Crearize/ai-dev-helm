@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.3](https://github.com/Crearize/ai-dev-helm/compare/v3.7.2...v3.7.3) (2026-11-14)
+
+
+### Fixed
+
+* **harness:** 3.7.3 PR 1 - tests, hooks and superpowers sync ([#241](https://github.com/Crearize/ai-dev-helm/issues/241)) ([#242](https://github.com/Crearize/ai-dev-helm/issues/242)) ([64b7d9d](https://github.com/Crearize/ai-dev-helm/commit/64b7d9d9f418166ff03a7ac0027f8ba06f6d39dd))
+
 ## [3.7.2](https://github.com/Crearize/ai-dev-helm/compare/v3.7.1...v3.7.2) (2026-11-09)
 
 
