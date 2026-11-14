@@ -80,7 +80,14 @@ if [ "$src_in_git" = true ]; then
         echo "::error::Upstream file not tracked by git (regenerate from a clean clone of upstream): $untracked" >&2
         exit 1
     fi
-    indexed=$(git -C "$SRC" ls-files -s -- "${SKILLS[@]}" | awk '$1 == "120000"' | cut -f2-)
+    # --error-unmatch: on a case-insensitive file system (Windows, macOS) the
+    # [ -d ] above finds a directory renamed by case only, but git's index is
+    # case-sensitive and would answer both queries with nothing.
+    if ! indexed=$(git -C "$SRC" ls-files -s --error-unmatch -- "${SKILLS[@]}"); then
+        echo "::error::An upstream skill directory is not in git's index under the exact name in SKILLS (renamed by case only? update SKILLS)" >&2
+        exit 1
+    fi
+    indexed=$(printf '%s\n' "$indexed" | awk '$1 == "120000"' | cut -f2-)
     links=$(printf '%s\n' "$links" "$indexed" | sed '/^$/d')
 fi
 if [ -n "$links" ]; then
