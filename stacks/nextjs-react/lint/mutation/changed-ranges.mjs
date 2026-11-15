@@ -16,15 +16,19 @@
 //   mutates the files on disk, so line numbers must match the disk state even
 //   while the quality-check loop holds uncommitted edits. (A brand-new file
 //   that was never staged is invisible to `git diff` and stays out of scope.)
-// - File filtering reuses minimatch - the same matcher Stryker resolves
-//   `mutate` globs with. minimatch is a direct dependency of
+// - File filtering reuses minimatch - the library Stryker resolves `mutate`
+//   globs with. Stryker keeps its own copy, so the product's copy may be
+//   another major version; the known difference is extglob combined with
+//   dot files (keep `mutate` globs plain). minimatch is a direct dependency of
 //   @stryker-mutator/core, but isolated installs (pnpm, Yarn PnP) do not
 //   expose transitive dependencies, so the wiring adds it as an explicit
 //   product devDependency (see the README). It is applied in order with
 //   `dot: false` exactly like Stryker's project reader:
 //   the LAST matching pattern wins, so a positive pattern can re-include what
-//   an earlier negation excluded. The diff scope is therefore always a subset
-//   of the full run's scope, even for product-tuned mutate arrays.
+//   an earlier negation excluded. With plain `mutate` globs the diff scope is
+//   therefore a subset of the full run's scope, even for product-tuned mutate
+//   arrays (with extglob combined with dot files the two copies may disagree,
+//   so the two scopes can differ there).
 // - The git invocation is pinned against user-level git config: --no-ext-diff
 //   (diff.external would replace the unified format entirely and silently
 //   empty the scope), fixed --src-prefix/--dst-prefix (git >= 2.45 lets
