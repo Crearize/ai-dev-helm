@@ -25,8 +25,10 @@
 //   product devDependency (see the README). It is applied in order with
 //   `dot: false` exactly like Stryker's project reader:
 //   the LAST matching pattern wins, so a positive pattern can re-include what
-//   an earlier negation excluded. The diff scope is therefore always a subset
-//   of the full run's scope, even for product-tuned mutate arrays.
+//   an earlier negation excluded. With plain `mutate` globs the diff scope is
+//   therefore a subset of the full run's scope, even for product-tuned mutate
+//   arrays (with extglob combined with dot files the two copies may disagree,
+//   so the two scopes can differ there).
 // - The git invocation is pinned against user-level git config: --no-ext-diff
 //   (diff.external would replace the unified format entirely and silently
 //   empty the scope), fixed --src-prefix/--dst-prefix (git >= 2.45 lets
