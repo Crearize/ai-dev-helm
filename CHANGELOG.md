@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.3](https://github.com/Crearize/ai-dev-helm/compare/v3.7.2...v3.7.3) (2026-11-15)
+
+
+### Fixed
+
+* **harness:** 3.7.3 PR 1 - tests, hooks and superpowers sync ([#241](https://github.com/Crearize/ai-dev-helm/issues/241)) ([#242](https://github.com/Crearize/ai-dev-helm/issues/242)) ([64b7d9d](https://github.com/Crearize/ai-dev-helm/commit/64b7d9d9f418166ff03a7ac0027f8ba06f6d39dd))
+* **harness:** 3.7.3 PR 2 - quality-check: reproduce a behaviour high first; denyCommands example ([#241](https://github.com/Crearize/ai-dev-helm/issues/241)) ([#245](https://github.com/Crearize/ai-dev-helm/issues/245)) ([99ad539](https://github.com/Crearize/ai-dev-helm/commit/99ad539123485f2a572d75d3224a5bbdc021bdc8))
+* **harness:** 3.7.3 PR 3 - Codex registrations ([#241](https://github.com/Crearize/ai-dev-helm/issues/241)) ([#243](https://github.com/Crearize/ai-dev-helm/issues/243)) ([cbdc32f](https://github.com/Crearize/ai-dev-helm/commit/cbdc32ff486734395bae46ed8e0c7e9f60520c42))
+* **harness:** 3.7.3 PR 4 - upgrade and documents ([#241](https://github.com/Crearize/ai-dev-helm/issues/241)) ([#246](https://github.com/Crearize/ai-dev-helm/issues/246)) ([29f8049](https://github.com/Crearize/ai-dev-helm/commit/29f8049884a7d910660df97aa60c717e909b7b1c))
+* **harness:** 3.7.3 PR 5 - dev dependencies; read-ruled false positives are checked too ([#241](https://github.com/Crearize/ai-dev-helm/issues/241)) ([#247](https://github.com/Crearize/ai-dev-helm/issues/247)) ([abe9e16](https://github.com/Crearize/ai-dev-helm/commit/abe9e1640e005b49ff4a1b9d5b165885eb0a4cdc))
+
 ## [3.7.2](https://github.com/Crearize/ai-dev-helm/compare/v3.7.1...v3.7.2) (2026-11-09)
 
 
