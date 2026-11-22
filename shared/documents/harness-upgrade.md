@@ -212,6 +212,7 @@ JSON を導入先の外へ保存します。Windows PowerShell 5.1 では `> fil
 - 追加テストは、無料・副作用なし・30 分以内のもの（quality-policy §2「無料で短いもの」）を確認せずに実施する。
 - 確認の 4 区分（development-policy §1.0「承認後の進め方」10）が入った。
 - 最後の 1 通の型に「確かめたこと」（「済み・反映した・送った・直した」と書いたものごとの確かめ方。確かめていないものは「確かめていない」）と「残」（この作業で作った Issue・答えをもらっていない質問・足した TODO を突き合わせた数）が入った（development-policy §1.0「承認後の進め方」7）。PR の本文（implementation-report と `.github/PULL_REQUEST_TEMPLATE.md`）にも「確かめたこと」の欄が入った。
+- Claude Code に新しいフック `owner-guard.cjs` が入った（`.claude/hooks/` に本体、`.claude/settings.json` の `PreToolUse`（`^AskUserQuestion$`）と `Stop` に登録。harness-runtime.md「質問と作業依頼のガード」）。質問の header に区分（development-policy §1.0「承認後の進め方」9）が無い・`業務` `客先` `範囲` に「（調べたもの: …）」が無い・上限の内の `延長`、最後の応答でのユーザーへの操作の依頼を差し戻す。`upgrade` が本体と登録を足し、`upgrade --verify`・`hook-selftest` が照合する。Codex・Cursor には入らない（Codex の `hooks.json` は変わらないので、信頼のやり直しは要らない）。導入先が `Stop` に独自のフックを登録していても、そのまま残る。
 - どれも全導入先に同じように効く。導入先ごとに選ぶ宣言は無い。導入先の独自の規則・メモリのうち同じ趣旨のもの（「延長は聞かずに」等）は、更新のときにハーネスに寄せて消す。
 
 ## 計測の範囲

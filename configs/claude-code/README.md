@@ -9,6 +9,7 @@
 | Hook | `.claude/hooks/quality-gate.cjs` | Merge-gate hook (Node, cross-platform); registered as a PreToolUse hook by settings.json |
 | Hook | `.claude/hooks/review-budget.cjs` | Review-only admission (counts review rounds); registered as PreToolUse / PostToolUse hooks |
 | Hook | `.claude/hooks/context-handoff.cjs` | Saves a record of the conversation before /compact and /clear and puts its key points back after them; registered as PreCompact / SessionStart / SessionEnd / Stop hooks (see `documents/development/harness-runtime.md`) |
+| Hook | `.claude/hooks/owner-guard.cjs` | Question and request guard (3.8.0): refuses an AskUserQuestion whose header has no class (業務・客先・費用・資源・取消・範囲・本番・差異・設計・延長・テスト・その他), a 業務 / 客先 / 範囲 question without 「（調べたもの: …）」, and a 延長 question while the last reserved review round (quality / production) is below its limit (延長:停滞 / 設計 / 要件 / 全員 pass); a final reply that asks the user to run or open something without `[本人の操作]` is sent back. Registered as PreToolUse (`^AskUserQuestion$`) / Stop hooks, fail-open (Claude Code only; see `documents/development/harness-runtime.md`) |
 | Settings | `.claude/settings.json` | Hook registration, permission deny rules |
 | CLAUDE.md | `CLAUDE.md` (project root) | AI configuration file |
 
@@ -26,7 +27,8 @@ your-project/
 │   ├── hooks/
 │   │   ├── quality-gate.cjs   # Merge-gate hook (always overwritten by init)
 │   │   ├── review-budget.cjs  # Review-only admission
-│   │   └── context-handoff.cjs # Record across /compact and /clear
+│   │   ├── context-handoff.cjs # Record across /compact and /clear
+│   │   └── owner-guard.cjs    # Question classes and requests to the user
 │   └── settings.json          # Hook registration and permissions
 ├── skills/
 │   ├── superpowers/           # Development process skills
