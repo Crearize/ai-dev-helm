@@ -9,6 +9,7 @@
 | `cycles` | `Cycle[]` | 必須 | quality-check サイクル（Step 2 → 3 → 4 → 統合指摘の対応 を1周とする。quality-policy.md §5）の配列 |
 | `total_cycles` | `number` | 必須 | 完了したサイクル総数（`cycle_extensions` による追加サイクルを含む。`review_mode: "carried"` のサイクルは数えない） |
 | `cycle_abort_reason` | `"cycle_limit" \| "stagnation" \| "structural" \| null` | フェーズ2必須 [^lifecycle] | サイクルの打ち切り事由。`cycle_limit`: サイクル上限到達 / `stagnation`: 直前サイクルと同一の高指摘が再度残った（停滞検出）/ `structural`: 1サイクルで同一クラスの高指摘が閾値以上出た（構造的停滞 — quality-policy §5）。高指摘が解消して終了した場合は `null`。ユーザー承認で追加サイクルを実施し最終的に解消した場合も `null`（打ち切りの経緯は `cycle_extensions` に残る） |
+| `rework` | `{ cycle: number, trigger: "stagnation" \| "structural", pattern: string, approach: string } \| null` | 任意（3.8.0） | 停滞・構造的停滞のときの「作りの見直し」（quality-policy §5。ブランチ・フェーズごとに 1 回）。`cycle`: 見直しを始めたサイクル / `trigger`: きっかけ / `pattern`: まとめた高の型（同じ仕組み・同じ設計判断） / `approach`: その型を丸ごと無くす直し方（入力の正規化・共通の関数への寄せ・型の入力をまとめて試すテスト等）。見直しをしていなければ省くか `null`。見直しの後も停滞して打ち切ったときは、`cycle_abort_reason` に `stagnation` か `structural` を記録する |
 | `cycle_extensions` | `CycleExtension[]` | フェーズ2必須 [^lifecycle] | 上限到達・停滞後にユーザー承認で追加サイクルを実施した記録。なければ空配列（§ CycleExtension オブジェクト 参照） |
 | `e2e` | `E2E` | 必須 | Step 5（`test-recommendation` スキル）による E2E テストの判定・実行結果（quality-policy.md §2）。旧トップレベル `e2e_result` / `e2e_issues` を置き換える（§ E2E オブジェクト 参照） |
 | `documentation` | `Documentation` | 必須 | `feature-documentation` スキルの実行状況（Step 0） |

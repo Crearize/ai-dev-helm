@@ -12,9 +12,14 @@ const PHASES = ['requirements', 'design', 'plan', 'quality', 'production', 'muta
 // Phases whose limit waits for the owner: the final quality reviews, and the reviews before the design approval.
 const OWNER_STOP_PHASES = ['quality', 'production', 'design', 'requirements'];
 const BRANCH_PHASES = ['requirements', 'design', 'plan', 'production']; // reservations are per branch, so not on the trunk
-// The final quality review and the production review: the full review and one check of the high fixes (3.6.0, #213).
-// A first --limit cannot raise them; only extend, after the owner approved, goes past it.
-const REVIEW_LIMIT = { quality: 2, production: 2 };
+// The final quality review and the production review: the full review, then a check of the high fixes for as long as
+// the round before fixed a high (3.8.0, #248: 5 rounds; 3.6.0 #213 had 2). The owner decided the checks of the high
+// fixes need no approval (quality-policy §5). A first --limit cannot raise them; only extend, after the owner approved,
+// goes past it.
+const REVIEW_LIMIT = { quality: 5, production: 5 };
+// The other phases' limits stay 1-3. A state recorded under an older, lower limit keeps it (a limit is never raised
+// automatically).
+const OTHER_MAX_LIMIT = 3;
 const SPECIALISTS = ['security-engineer', 'requirements-analyst', 'performance-engineer'];
 // 3.7.2 (#234): a round whose reviewers' results were lost (the session ended before they returned) may be retaken -
 // its started seats once more, under a new marker, without adding a round. Only the latest round of a phase, once.
@@ -53,6 +58,8 @@ function isReviewDescription(text) {
   return (REVIEW_START.test(d) && !REVIEW_ARTIFACT.test(rest)) || REVIEW_END.test(d);
 }
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+// The highest limit a phase may hold: REVIEW_LIMIT for quality and production, OTHER_MAX_LIMIT otherwise.
+const maxLimit = (phase) => (own(REVIEW_LIMIT, phase) ? REVIEW_LIMIT[phase] : OTHER_MAX_LIMIT);
 const digest = (text) => crypto.createHash('sha256').update(text).digest('hex');
 
 function location(cwd) {
@@ -102,7 +109,7 @@ function validState(state, branch) {
   if (state.extensions !== undefined && !validExtensions(state.extensions)) return false;
   const extensions = state.extensions || [];
   for (const [phase, group] of Object.entries(state.phases)) {
-    if (!PHASES.includes(phase) || !group || !Number.isInteger(group.limit) || group.limit < 1 || group.limit > 3 ||
+    if (!PHASES.includes(phase) || !group || !Number.isInteger(group.limit) || group.limit < 1 || group.limit > maxLimit(phase) ||
         (phase === 'mutation' && group.limit !== 1) ||
         !Array.isArray(group.rounds) || group.rounds.length > ceiling(group, extensions, phase)) return false;
     // A full round lies past the phase's own limit and within its ceiling (it is the first round its extend added).
@@ -235,10 +242,10 @@ function limitReached(phase, what) {
 
 function beginRound({ cwd = process.cwd(), phase, roles, limit }) {
   if (!PHASES.includes(phase)) throw new Error('Unknown review phase');
-  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 3)) throw new Error('Review limit must be an integer from 1 to 3');
   if (phase === 'mutation' && limit !== undefined && limit !== 1) throw new Error('The mutation review limit is fixed at 1');
-  if (own(REVIEW_LIMIT, phase) && limit !== undefined && limit > REVIEW_LIMIT[phase]) {
-    throw new Error(`The ${phase} review limit cannot exceed ${REVIEW_LIMIT[phase]}; go past it only with extend, after the owner approves`);
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > maxLimit(phase))) {
+    const past = own(REVIEW_LIMIT, phase) ? '; go past it only with extend, after the owner approves' : '';
+    throw new Error(`The ${phase} review limit must be an integer from 1 to ${maxLimit(phase)}${past}`);
   }
   return transact(cwd, true, (state, loc) => {
     if (BRANCH_PHASES.includes(phase) && /^refs\/heads\/(main|master)$/.test(loc.branch)) {
