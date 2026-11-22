@@ -94,14 +94,14 @@ git diff origin/main...HEAD
 | Phase N | [計画内容] | 計画通り / 差分あり | [備考] |
 
 ### 設計・計画との差異
-- なし / **[設計の該当箇所]** → [どうしたか] / 理由: [理由] / 影響: [影響]
+- なし / **[設計の該当箇所]** → [どうしたか] / 理由: [理由] / 影響: [影響]（安全側の差異（development-policy §1.0「承認後の進め方」2）は末尾に「安全側（確認なしでマージ）」と、満たす条件①〜⑤を 1 行で添える）
 
 ### 品質チェック結果サマリ
 - リスクレベル: high / medium / low（`risk_level`）
 - 静的チェック AI 修正パス: N回（打ち切り事由: なし / oscillation）（`lint_cycles` / `lint_abort_reason`）
 - テスト設計メモ: verified / retroactive / out_of_scope / not_required（メモ: [パス] または なし）（`test_design.status` / `test_design.memo_path`）
 - ミューテーションテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / not_proposed / deferred と判断者 auto / user（`mutation.recommendation` / `mutation.user_decision` / `mutation.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`mutation.decline_reason`）を明記する。実施した場合はスコア N%（生スコア、参考情報。最後の実行がキャッシュを再利用した計測なら「incremental」と付記 — `mutation.incremental`）、実行 N回、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n / tool_false_negative n）（`mutation.score_raw` / `mutation.runs` / `mutation.survivors`）。判定・実行そのものが不能だった場合は理由（`mutation.reason`: not_configured / out_of_scope / empty_scope / scope_error / tool_error）
-- 品質チェックサイクル数: N回（N回目で高指摘ゼロ達成 / 打ち切り事由: なし / cycle_limit / stagnation / 追加サイクル: N回）（`total_cycles` / `cycle_abort_reason` / `cycle_extensions`）
+- 品質チェックサイクル数: N回（N回目で高指摘ゼロ達成 / 打ち切り事由: なし / cycle_limit / stagnation / structural / 作りの見直し: なし・あり（型と直し方）/ 追加サイクル: N回）（`total_cycles` / `cycle_abort_reason` / `rework` / `cycle_extensions`）
 - E2Eテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / added_only / not_proposed / deferred と判断者 auto / user（`e2e.recommendation` / `e2e.user_decision` / `e2e.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`e2e.decline_reason`）を明記する。結果: pass / fail / skipped、検出した問題（`e2e.result` / `e2e.issues`）。新規シナリオがある場合は `e2e.new_scenarios` の各件（シナリオ名と判断: added_and_run / added_only / declined）を明記する
 - ドキュメント更新: updated / not_required（`documentation.status`、updated の場合は対象ファイル）
 - Flag commit (`.quality-check-passed` `commit`): `<sha>`（本番への反映で、反映元の PR が quality-check を通った commit を PR 本文から探せるようにする。フラグの作成前に PR を作るとき（順序 B・設計との差異の確認待ち）は「未作成」と書き、フラグの作成後に PR 本文を更新する）
