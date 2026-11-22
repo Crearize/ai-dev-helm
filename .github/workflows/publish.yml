@@ -20,12 +20,15 @@ name: Publish to npm
 # - The runtime dependencies are bundled into the tarball (bundleDependencies,
 #   3.8.0, #248), so the transitive versions that npx installs are the ones
 #   in package-lock.json. npm 12.2.1 has no `npm shrinkwrap`, so bundling is
-#   the way to pin them. verify packs and checks the tarball and hands it to
-#   publish; publish uploads exactly that file. Recovering a tag older than
-#   3.8.0 is not possible through this workflow (its package.json bundles
-#   nothing, so the check in verify stops it).
-# - Actions are pinned to full commit SHAs (the version in the comment), npm
-#   to an exact version, and every npm command runs with --ignore-scripts.
+#   the way to pin them. The tarball that is published is built in its own
+#   job (pack), where no third-party code has run: it installs only the
+#   runtime dependencies without scripts, packs, and compares the bundled
+#   files with package-lock.json. publish takes exactly that file. A tag
+#   from before 3.8.0 bundles nothing and is packed and published as before.
+# - A vulnerability in a bundled dependency (@iarna/toml, yargs and what
+#   they bring) reaches users only through a new release: fix the lock,
+#   commit it as 'fix(deps):' and release it with release-please (see
+#   CONTRIBUTING.md). Until then users keep the version they have.
 # - There is no publish without provenance. A failed publish whose Sigstore
 #   tlog entry already exists ends successfully only when the version is
 #   already on npm; otherwise it stops: release the next patch version.
@@ -132,31 +135,101 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Pack the tarball and check the bundled dependencies
+  pack:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check the tag
+        env:
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          SEMVER_TAG='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if ! [[ "$TAG" =~ $SEMVER_TAG ]]; then
+            echo "::error::The tag is not v<semver>"
+            exit 1
+          fi
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: refs/tags/${{ needs.verify.outputs.tag }}
+          persist-credentials: false
+
+      - name: Check the commit is the one verify tested
+        env:
+          TESTED: ${{ needs.verify.outputs.sha }}
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          if [ "$HEAD_SHA" != "$TESTED" ]; then
+            echo "::error::The tag moved after verify ($TESTED -> $HEAD_SHA)"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '26'
+          check-latest: true
+
+      - name: Install the runtime dependencies only
+        run: npm ci --omit=dev --ignore-scripts --legacy-peer-deps
+
+      - name: Pack the tarball
         run: |
           mkdir dist-tarball
           npm pack --ignore-scripts --pack-destination dist-tarball
+
+      - name: Check the bundled files against package-lock.json
+        run: |
           VERSION=$(node -p "require('./package.json').version")
           TARBALL="dist-tarball/crearize-ai-dev-helm-${VERSION}.tgz"
           if [ ! -f "$TARBALL" ]; then
             echo "::error::$TARBALL was not created"
             exit 1
           fi
-          tar -tzf "$TARBALL" > dist-tarball/files.txt
-          for DEP in @iarna/toml yargs; do
-            if ! grep -qx "package/node_modules/$DEP/package.json" dist-tarball/files.txt; then
-              echo "::error::$DEP is not bundled in the tarball"
-              exit 1
-            fi
-            BUNDLED=$(tar -xzOf "$TARBALL" "package/node_modules/$DEP/package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
-            LOCKED=$(DEP="$DEP" node -p "require('./package-lock.json').packages['node_modules/' + process.env.DEP].version")
-            if [ "$BUNDLED" != "$LOCKED" ]; then
-              echo "::error::Bundled $DEP $BUNDLED differs from package-lock.json $LOCKED"
-              exit 1
-            fi
-            echo "Bundled $DEP $BUNDLED matches package-lock.json"
-          done
-          rm dist-tarball/files.txt
+          UNPACKED="$RUNNER_TEMP/unpacked"
+          mkdir "$UNPACKED"
+          tar -xzf "$TARBALL" -C "$UNPACKED"
+          cat > "$RUNNER_TEMP/check-bundle.js" <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const [root, unpacked] = process.argv.slice(2);
+          const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+          const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
+          const bundled = pkg.bundleDependencies || [];
+          if (bundled.length === 0) {
+            console.log('Nothing is bundled (a tag from before 3.8.0).');
+            process.exit(0);
+          }
+          const base = path.join(unpacked, 'package');
+          const found = new Map();
+          const walk = (rel) => {
+            for (const e of fs.readdirSync(path.join(base, rel), { withFileTypes: true })) {
+              if (!e.isDirectory() || e.name === '.bin') continue;
+              const r = `${rel}/${e.name}`;
+              if (e.name.startsWith('@')) { walk(r); continue; }
+              const f = path.join(base, r, 'package.json');
+              if (!fs.existsSync(f)) continue;
+              found.set(r, JSON.parse(fs.readFileSync(f, 'utf8')).version);
+              if (fs.existsSync(path.join(base, r, 'node_modules'))) walk(`${r}/node_modules`);
+            }
+          };
+          if (fs.existsSync(path.join(base, 'node_modules'))) walk('node_modules');
+          const expected = new Map();
+          for (const [k, v] of Object.entries(lock.packages)) {
+            if (k !== '' && !v.dev && k.startsWith('node_modules/')) expected.set(k, v.version);
+          }
+          const problems = [];
+          for (const name of bundled) if (!found.has(`node_modules/${name}`)) problems.push(`${name} is not bundled`);
+          for (const [k, v] of expected) if (found.get(k) !== v) problems.push(`${k}: lock ${v}, tarball ${found.get(k) || 'missing'}`);
+          for (const [k, v] of found) if (!expected.has(k)) problems.push(`${k}@${v} is in the tarball but not in the lock`);
+          if (problems.length > 0) {
+            for (const p of problems) console.log(`::error::${p}`);
+            process.exit(1);
+          }
+          console.log(`The ${found.size} bundled packages match package-lock.json.`);
+          EOF
+          node "$RUNNER_TEMP/check-bundle.js" . "$UNPACKED"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -166,7 +239,7 @@ jobs:
           retention-days: 7
 
   publish:
-    needs: verify
+    needs: [verify, pack]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -220,7 +293,7 @@ jobs:
           TAG: ${{ needs.verify.outputs.tag }}
         run: |
           set +e
-          npm publish "dist-tarball/crearize-ai-dev-helm-${TAG#v}.tgz" --access public --provenance --ignore-scripts 2>&1 | tee publish.log
+          npm publish "./dist-tarball/crearize-ai-dev-helm-${TAG#v}.tgz" --access public --provenance --ignore-scripts 2>&1 | tee publish.log
           status=${PIPESTATUS[0]}
           set -e
 
