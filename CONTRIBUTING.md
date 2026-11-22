@@ -51,6 +51,8 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 Releases are cut by release-please. Its release PR changes only `CHANGELOG.md`, the `version` line of `package.json`, the `version` fields of `package-lock.json` and `.release-please-manifest.json`, so the quality gate exempts it (the `quality-check` skill, "リリースの差分の免除"). The hook judges the diff of the branch that is checked out, so check out the release PR's branch and run `gh pr merge` from there; from a `main` checkout the exemption does not apply.
 
+The published tarball bundles the runtime dependencies (`@iarna/toml`, `yargs` and what they bring; `bundleDependencies`), so `npx` installs exactly the versions in `package-lock.json`. The `pack` job of `publish.yml` builds it without any third-party code running, and `publish` publishes that file. If a vulnerability is found in a bundled dependency, fix `package-lock.json`, commit it as `fix(deps):` and release it through release-please. Users do not get the fix until the new version is published; keep the previous versions' users in mind when you judge the urgency.
+
 ## Adding a Tech Stack
 
 See the [README](README.md#技術スタックの追加) for instructions on adding new tech stacks.

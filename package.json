@@ -42,6 +42,10 @@
     "@iarna/toml": "^2.2.5",
     "yargs": "^18.0.0"
   },
+  "bundleDependencies": [
+    "@iarna/toml",
+    "yargs"
+  ],
   "devDependencies": {
     "@ast-grep/cli": "^0.51.0",
     "@eslint/js": "^10.0.1",
