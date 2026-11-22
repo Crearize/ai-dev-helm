@@ -52,6 +52,7 @@ Closes #
 ### Quality Check Summary
 <!-- Write "None" explicitly where an item does not apply - omission and "not applicable" must be distinguishable -->
 - Risk level:
+- Customer-facing (`customer_facing`: yes / no, and the reason; when yes, Medium findings on the parts clients see were fixed too):
 - Static check cycles (abort reason):
 - Test design memo (status, path):
 - Mutation testing (recommendation / decision and who decided: auto or user, "deferred" in speed mode, or "awaiting confirmation"; raw score, survivors killed / equivalent / accepted / unresolved / untriaged / tool_false_negative, or skip reason):

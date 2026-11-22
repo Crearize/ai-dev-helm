@@ -259,6 +259,8 @@ yargs(hideBin(process.argv))
       if (result.findingsError) {
         console.log(`findings: previous findings.json unreadable - ${result.findingsError}`);
       }
+      // 3.8.0 (#248): customer_facing missing from the report, and actions outside the fixed values.
+      for (const warning of result.warnings || []) console.log(`WARNING: ${warning}`);
       if (result.untracked.length > 0) {
         const shown = result.untracked.slice(0, 20).join(', ');
         const more = result.untracked.length > 20 ? ` ... and ${result.untracked.length - 20} more` : '';

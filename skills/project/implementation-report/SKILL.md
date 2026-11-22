@@ -101,6 +101,7 @@ git diff origin/main...HEAD
 
 ### 品質チェック結果サマリ
 - リスクレベル: high / medium / low（`risk_level`）
+- 客先に出る差分: はい / いいえ（理由: [理由]）（`customer_facing`。はいなら客先に出る部分にかかる中も直した）
 - 静的チェック AI 修正パス: N回（打ち切り事由: なし / oscillation）（`lint_cycles` / `lint_abort_reason`）
 - テスト設計メモ: verified / retroactive / out_of_scope / not_required（メモ: [パス] または なし）（`test_design.status` / `test_design.memo_path`）
 - ミューテーションテスト: 提案 strong / recommended / none（根拠: [`recommendation_basis`]）、判断 executed / declined / not_proposed / deferred と判断者 auto / user（`mutation.recommendation` / `mutation.user_decision` / `mutation.decided_by`。確認待ちなら「確認待ち」）。`declined` の場合は見送り理由（`mutation.decline_reason`）を明記する。実施した場合はスコア N%（生スコア、参考情報。最後の実行がキャッシュを再利用した計測なら「incremental」と付記 — `mutation.incremental`）、実行 N回、生存 N 件（killed n / equivalent n / accepted n / unresolved n / untriaged n / tool_false_negative n）（`mutation.score_raw` / `mutation.runs` / `mutation.survivors`）。判定・実行そのものが不能だった場合は理由（`mutation.reason`: not_configured / out_of_scope / empty_scope / scope_error / tool_error）
@@ -129,7 +130,7 @@ git diff origin/main...HEAD
 
 「確かめたこと」には、PR 本文（設計・計画との対応、レビュー指摘への対応 等）で「済み・反映した・送った・直した」と書いたものごとに、確かめ方を 1 行で書く。同じ本文の別の欄に確かめ方があるもの（品質チェック結果サマリのテスト結果、検証レビュアーの確認）は、その欄を指す（例: 「→ 品質チェック結果サマリ」「→ 検証レビュアー N 巡目」）。確かめていないものは「確かめていない」と書き、推測を事実として書かない（`documents/development/development-policy.md` §1.0「承認後の進め方」7「確かめたことと残」）。テストとレビューの結果は下の各欄にあるので、ここでは繰り返さない。
 
-「レビュー指摘への対応」に書くのは高の指摘（直したもの）と対応不要と判断したもの。中と既存（差分外）の高は直していないので「レビューの中の指摘（直していないもの）」に一覧で書く（quality-check Step 4「指摘の優先度（基準）」）。
+「レビュー指摘への対応」に書くのは直した指摘（高と、客先に出る部分の中）と対応不要と判断したもの。直していない中と既存（差分外）の高は「レビューの中の指摘（直していないもの）」に一覧で書く（quality-check Step 4「指摘の優先度（基準）」）。
 
 ---
 
