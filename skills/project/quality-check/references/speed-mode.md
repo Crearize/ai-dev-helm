@@ -24,7 +24,7 @@
 | Step 5 | 判定だけ行う。`strong` / `recommended` の対象は実行せず後回しにする（`user_decision: "deferred"`・`decided_by: "user"`）。`none` は通常どおり記録のみ。永続台帳には後回しの対象を `pending`・理由「後回し（Issue #n）」で記録してコミットする（#n は Issue を作った後に埋める — 下記「順序」） |
 | 設計・計画の文書レビュー | 省く。brainstorming の Design Gate では、設計を示して承認を受ける 1 通は残す。writing-plans の計画レビューも省く |
 
-**順序**: 実装 → Step 0〜3 → Step 4-0 → Step 5 の判定と台帳のコミット → 未追跡の確認（`quality-context --check-untracked`。最初の push の前）→ push → PR 作成（本文に「モード: スピード優先」とユーザーの指示の原文。レビューの中の指摘の節は「レビュー未実施（後回し）」）→ 後回しの Issue の作成 → 台帳の「後回し（Issue #n）」に番号を埋めてコミットし push → PR 本文に Issue へのリンク → 未追跡の確認（フラグの前）→ フラグ作成（下記）→ マージ → Issue にマージのコミットを追記 → 最後の 1 通。設計との差異があるときは、最後の 1 通で OK を受けてからフラグを作る（`documents/development/development-policy.md` §1.0「承認後の進め方」7）。
+**順序**: 実装 → Step 0〜3 → Step 4-0 → Step 5 の判定と台帳のコミット → 未追跡の確認（`quality-context --check-untracked`。最初の push の前）→ push → PR 作成（本文に「モード: スピード優先」とユーザーの指示の原文。レビューの中の指摘の節は「レビュー未実施（後回し）」）→ 後回しの Issue の作成 → 台帳の「後回し（Issue #n）」に番号を埋めてコミットし push → PR 本文に Issue へのリンク → 未追跡の確認（フラグの前）→ フラグ作成（下記）→ マージ → Issue にマージのコミットを追記 → 最後の 1 通。設計との差異があるときは、最後の 1 通で OK を受けてからフラグを作る（`documents/development/development-policy.md` §1.0「承認後の進め方」7）。スピードモードではレビュアーが差異の分類を確かめないので、安全側の差異（同 2）も聞く。
 
 **後回しの Issue**（PR ごとに 1 件）:
 

@@ -353,7 +353,7 @@ Select options (space-separated): 1 2 3 4
 | **branch-workflow** | ブランチ作業フロー | 作業開始時の Issue 作成・ブランチ作成 |
 | **test-design** | テスト設計 | 実装前に呼ぶ。High/Medium リスク変更のテストオラクル（期待値の根拠）とファルシフィケーション項目を定義する |
 | **quality-check** | 品質チェック | マージ前の静的チェック・テスト・レビューと追加テスト |
-| **test-recommendation** | 追加テストの判定と実施 | 変更内容からミューテーション/E2E の推奨度を判定し、強く推奨・範囲が小さい・副作用なしのものは確認なしで実施、それ以外は最後の報告で確認。quality-check Step 5 から参照実行されるほか単体実行も可能 |
+| **test-recommendation** | 追加テストの判定と実施 | 変更内容からミューテーション/E2E の推奨度を判定し、強く推奨・範囲が小さい・副作用なしのものと、無料・副作用なし・短時間のものは確認なしで実施、それ以外は最後の報告で確認。quality-check Step 5 から参照実行されるほか単体実行も可能 |
 | **server-startup** | サーバー起動 | E2E・ブラウザ検証・開発サーバーの起動/停止手順 |
 | **worktree-parallel** | Worktree 並列開発 | Git worktree の配置・ポート割当・環境コピー・クリーンアップ |
 | **backend-development** | バックエンド開発 | バックエンド実装時の規約・パターン |
