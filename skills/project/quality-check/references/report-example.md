@@ -40,8 +40,8 @@ JSONフォーマット例：
           "concern": "design",
           "severity": "中",
           "description": "リポジトリ層の例外の変換を固定するテストが無い",
-          "action": "対応済",
-          "detail": "客先に出る差分（customer_facing）なので直した。テストの追加だけで production コードに及ばないので、確認の巡は回さない（4-3「客先に出る差分の中の確かめ方」）"
+          "action": "PR に記録",
+          "detail": "PR の本文の「レビューの中の指摘」に記載（customer_facing は false。客先に出る差分なら、客先に出る部分にかかる中だけを直す — 4-3「客先に出る部分の中の確かめ方」）"
         }
       ]
     }
@@ -60,7 +60,7 @@ JSONフォーマット例：
     "new_scenarios": []
   },
   "risk_level": "high",
-  "customer_facing": { "value": true, "reason": "AuthService.java の authorize() の変更で、利用者がログインした後に使える画面（動き）が変わる" },
+  "customer_facing": { "value": false, "reason": "AuthService.java の認可の内部処理（SQL のバインド）とそのテストだけで、利用者に見える画面の文言・表示・動きと、客先向けの文書・文面は変わらない" },
   "lint_cycles": 1,
   "lint_abort_reason": null,
   "test_design": {
