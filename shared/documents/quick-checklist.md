@@ -47,7 +47,7 @@ A quick-reference checklist for AI tools when working on development tasks.
 
 ### Final Confirmation
 - [ ] **Deviations from the design recorded before the flag** (spec `## 実装時の差異` / plan / working note)
-- [ ] **Final message**: completion / deviations from the design / decisions needed only (`documents/development/development-policy.md` §1.0)
+- [ ] **Final message**: completion / what was checked and how / deviations from the design / what remains / decisions needed only (`documents/development/development-policy.md` §1.0)
 - [ ] Related documentation consistency verified
 - [ ] (Optional) Self-improvement candidates noted (not a completion condition)
 - [ ] PR created (with /implementation-report, closes #[issue-number])
