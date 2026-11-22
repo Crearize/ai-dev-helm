@@ -15,6 +15,7 @@
 | `documentation` | `Documentation` | 必須 | `feature-documentation` スキルの実行状況（Step 0） |
 | `self_improvement` | `SelfImprovement` | 任意 | 自己改善を実施した場合の記録。未実施なら省略でき、完了・通過条件にしない。旧レポートの値は保持する |
 | `risk_level` | `"high" \| "medium" \| "low"` | フェーズ2必須 [^lifecycle] | Step 1 で判定したリスクレベル。判定基準は `quality-policy.md` §1、レベル別のゲート強度は同 §2 を参照 |
+| `customer_facing` | `{ value: boolean, reason: string }` | 必須（3.8.0。Step 1 を行ったレポート。旧レポートには無い） | Step 1 で決めた「客先に出る差分か」（`quality-check` references/step0-step1.md「客先に出る差分か」）。`value: true`: 差分が、客先が読む文書・客先や利用者が使う画面（文言・表示・動き）・客先に送る文面に触れる（迷ったら `true`）。`reason`: 理由を 1 行（触れるファイル・画面、または触れないと決めた根拠）。`true` のとき、中の指摘も直す（`quality-check` SKILL.md Step 4「指摘の優先度（基準）」） |
 | `lint_cycles` | `number \| null` | フェーズ2必須 [^lifecycle] | 全サイクルを通じた Step 2 の AI 修正パスの累計（`carried` のサイクルは、直すと tree が変わって通常の quality-check に戻るので数えない。1パス = 静的チェックコマンド（`lint-scaffolding` 導入済みプロダクトでは `lint:all`、未導入では CLAUDE.md に登録されたコマンド）の実行 → AI による修正。各サイクルで最大1パス — quality-policy.md §5）。決定的自動修正のみで完結したパスは含めない。**Step 2 を実行しない領域（docs のみの変更等）では `null`** — `0`（実行したが AI 修正が不要だった）とは区別する。infra のみの変更では Step 2（該当ビルドコマンド）を実行する（`quality-check` スキル 変更領域別ステップ適用テーブル） |
 | `lint_abort_reason` | `"oscillation" \| null` | フェーズ2必須 [^lifecycle] | Step 2 の打ち切り事由。`oscillation`: 同一ルール×同一ファイルの違反が確認パスで再発（振動検出 — ルール自体が不適切な可能性）。該当なし、および `lint_cycles` が `null`（Step 2 未実行）の場合は `null`。確認パスで残った違反は統合指摘（高）として `cycles[].findings` に `source: "lint"` で記録する |
 | `mutation` | `Mutation` | フェーズ2必須 [^lifecycle] | Step 5（`test-recommendation` スキル）によるミューテーションテストの判定・実行結果（quality-policy.md §2）。詳細は § Mutation オブジェクト を参照 |
@@ -61,7 +62,7 @@
 | `adjudication` | `"confirmed" \| "false_positive" \| "unknown"` | 任意 | 根拠に照らした裁定。未判定・旧記録の欠落は `unknown`。確認した根拠は既存の `detail` に短く記す。振る舞いの高は落ちるテストで決める（step4-review.md 4-2 の 3「振る舞いの高は、落ちるテストで再現してから直す」） |
 | `recurrence` | `"new" \| "repeated" \| "unknown"` | 任意 | 新規検出か既出の再掲か。同じ `id` の既出指摘は `repeated`、履歴が不明なら `unknown`。件数だけから推定しない |
 | `description` | `string` | 必須 | 指摘内容の概要 |
-| `action` | `"対応済" \| "未対応" \| "対象外" \| "PR に記録"` | 必須 | 対応状況。`PR に記録`: 中と既存（`preexisting`）の高を、直さずに PR の本文の「レビューの中の指摘（直していないもの）」に書いた（3.6.0）。`対象外` には、ハーネス自身のゲートへの指摘で普通の操作では踏まない形として受け入れたものを含む（導入先の製品への指摘には使わない）（`quality-check` スキル references/step4-review.md 4-2 の 4） |
+| `action` | `"対応済" \| "未対応" \| "対象外" \| "PR に記録"` | 必須 | 対応状況。`PR に記録`: 中と既存（`preexisting`）の高を、直さずに PR の本文の「レビューの中の指摘（直していないもの）」に書いた（3.6.0）。客先に出る差分（`customer_facing.value: true`）の中は直して `対応済` とする（3.8.0。上限の巡で出て、直すと production コードに及ぶものだけは `PR に記録`）。`対象外` には、ハーネス自身のゲートへの指摘で普通の操作では踏まない形として受け入れたものを含む（導入先の製品への指摘には使わない）（`quality-check` スキル references/step4-review.md 4-2 の 4） |
 | `detail` | `string` | 任意 | 対応の詳細説明 |
 | `id` | `string` | 任意 | 指摘の追跡 ID。検証レビュー（`review_mode: "verification"`）で前サイクルの指摘を参照する際に用いる |
 | `concern` | `"design" \| "security" \| "performance" \| "requirements" \| "docs" \| "falsification"` | 必須（レビュアー由来の指摘） | 指摘の観点。`source` がレビュアー名の指摘では必須（`source` が `lint` / `test` / `test_design` の指摘では省略する）。統合レビュアーの指摘では観点別セクションから決まる（`design`: 設計・保守性 / `security` / `performance` / `requirements`: 要件整合 / `docs`: 文書整合）。QAエンジニア（ファルシフィケーション型）の指摘は `falsification`、専門家の指摘は各自の観点、検証レビュアーの指摘は元の指摘の観点を引き継ぐ。旧レポートには存在しない |
