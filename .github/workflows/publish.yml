@@ -3,7 +3,7 @@ name: Publish to npm
 # Single source of truth for both automated and manual npm releases.
 #
 # Automated path: push to main -> release-please job opens / merges
-#   release PR -> verify and publish jobs run in the same workflow.
+#   release PR -> verify, pack and publish jobs run in the same workflow.
 # Manual path:    'gh workflow run publish.yml -f publish_tag=vX.Y.Z'
 #   skips the release-please step and publishes the existing tag directly.
 #
@@ -140,6 +140,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      sha256: ${{ steps.digest.outputs.sha256 }}
     steps:
       - name: Check the tag
         env:
@@ -231,6 +233,12 @@ jobs:
           EOF
           node "$RUNNER_TEMP/check-bundle.js" . "$UNPACKED"
 
+      - name: Record the digest of the tarball
+        id: digest
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "sha256=$(sha256sum "dist-tarball/crearize-ai-dev-helm-${VERSION}.tgz" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-tarball
@@ -274,6 +282,17 @@ jobs:
         with:
           name: package-tarball
           path: dist-tarball
+
+      - name: Check the downloaded tarball is the one pack made
+        env:
+          TAG: ${{ needs.verify.outputs.tag }}
+          EXPECTED: ${{ needs.pack.outputs.sha256 }}
+        run: |
+          ACTUAL=$(sha256sum "dist-tarball/crearize-ai-dev-helm-${TAG#v}.tgz" | cut -d ' ' -f 1)
+          if [ -z "$EXPECTED" ] || [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::The downloaded tarball ($ACTUAL) is not the one pack made ($EXPECTED)"
+            exit 1
+          fi
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
