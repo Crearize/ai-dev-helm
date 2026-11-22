@@ -464,7 +464,7 @@ Codex には `.codex/agents/helm-*.toml`（designer / doc-reviewer / implementer
 
 ### 質問と作業依頼のガード（owner-guard、Claude Code）
 
-`init` は `.claude/hooks/owner-guard.cjs` を配り、`.claude/settings.json` の `PreToolUse`（`AskUserQuestion`）と `Stop` に登録します（3.8.0）。質問の各問いの header の先頭に区分（`業務` `客先` `費用` `資源` `取消` `範囲` `本番` `差異` `設計` `延長` `テスト` `その他`）が無いとき、`業務` `客先` `範囲` の問いに「（調べたもの: …）」が無いとき、quality・production のレビューが上限の内なのに `延長` を聞いたときに差し戻し、`テスト` には「無料・副作用なし・30 分以内なら聞かずに実施」の注意を出します。最後の応答でユーザーに操作を頼んだとき（「実行してください」等。`[本人の操作]` と理由が無いとき）も差し戻します。AI のうっかり防止で、読めない入力は通します。Codex・Cursor には登録せず、同じ規則を文章（development-policy §1.0 の 9）で守ります。詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「質問と作業依頼のガード」。
+`init` は `.claude/hooks/owner-guard.cjs` を配り、`.claude/settings.json` の `PreToolUse`（`AskUserQuestion`）と `Stop` に登録します（3.8.0）。質問の各問いの header の先頭に区分（`業務` `客先` `費用` `資源` `取消` `範囲` `本番` `差異` `設計` `延長` `テスト` `その他`）が無いとき、`業務` `客先` `範囲` の問いに「（調べたもの: …）」が無いとき、最後に予約した quality・production のレビューが上限の内なのに `延長` を聞いたとき（X1 の停滞などは `延長:停滞` 等で聞ける）に差し戻し、`テスト` には「無料・副作用なし・30 分以内なら聞かずに実施」の注意を出します。最後の応答でユーザーに操作を頼んだとき（「実行してください」等。`[本人の操作]` と理由が無いとき）も差し戻します。AI のうっかり防止で、読めない入力は通します。Codex・Cursor には登録せず、同じ規則を文章（development-policy §1.0 の 9）で守ります。詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「質問と作業依頼のガード」。
 
 詳細と起動例は [harness-runtime.md](shared/documents/harness-runtime.md)。レビューの別名への偽装、親自身の思考内レビュー、外部 CLI、無効化したフックや改ざんまで防ぐセキュリティ境界ではありません。フックを信頼・有効化した実行環境で使用してください。
 
