@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0](https://github.com/Crearize/ai-dev-helm/compare/v3.7.3...v3.8.0) (2026-11-22)
+
+
+### Added
+
+* **harness:** 3.8.0 PR 1 - review limit 5, rework on stagnation, safe-side deviations, free short tests ([#248](https://github.com/Crearize/ai-dev-helm/issues/248)) ([#249](https://github.com/Crearize/ai-dev-helm/issues/249)) ([3cea289](https://github.com/Crearize/ai-dev-helm/commit/3cea289ac12bc231c358db39685bcc6d1928ec52))
+* **harness:** 3.8.0 PR 2 - owner-guard: ask by class, check before asking, no user operations ([#248](https://github.com/Crearize/ai-dev-helm/issues/248)) ([#254](https://github.com/Crearize/ai-dev-helm/issues/254)) ([b648caf](https://github.com/Crearize/ai-dev-helm/commit/b648caf6c456429b9f6722b36271c12e0d4238db))
+* **harness:** 3.8.0 PR 3 - final message: what was checked and what remains ([#248](https://github.com/Crearize/ai-dev-helm/issues/248)) ([#251](https://github.com/Crearize/ai-dev-helm/issues/251)) ([9ea5858](https://github.com/Crearize/ai-dev-helm/commit/9ea5858abb6b9d2ad23b8be4ead47b176988f7f2))
+* **harness:** 3.8.0 PR 4 - client-facing changes fix medium findings too; candidate 48 ([#248](https://github.com/Crearize/ai-dev-helm/issues/248)) ([#253](https://github.com/Crearize/ai-dev-helm/issues/253)) ([232ddfd](https://github.com/Crearize/ai-dev-helm/commit/232ddfd58bcd70d9fe30b5fd73919615e81de0a8))
+* **harness:** 3.8.0 PR 5 - bundle runtime dependencies to pin them ([#248](https://github.com/Crearize/ai-dev-helm/issues/248)) ([#252](https://github.com/Crearize/ai-dev-helm/issues/252)) ([a2a5255](https://github.com/Crearize/ai-dev-helm/commit/a2a5255181b471e46a11d189d984e11d0274aafd))
+
 ## [3.7.3](https://github.com/Crearize/ai-dev-helm/compare/v3.7.2...v3.7.3) (2026-11-15)
 
 
