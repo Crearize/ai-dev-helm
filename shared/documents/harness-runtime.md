@@ -135,4 +135,24 @@ Codex での動き（3.7.1）:
 - `/clear` のたびに会話記録を 2 回読む（SessionEnd で保存し、SessionStart で作り直す。SessionStart が動かなかったときの備え）。数百 MB の会話記録では数秒かかる。
 - サブエージェントには入れない（短命で、本体に返るのは最終の文だけのため）。
 
+## 質問と作業依頼のガード（owner-guard）
+
+3.8.0 から、Claude Code では `.claude/hooks/owner-guard.cjs` が、質問（`AskUserQuestion`）と最後の応答を見て、AI のうっかりをその場で差し戻す。規則の正本は development-policy §1.0「承認後の進め方」の 9（質問の header の区分）と 10（確認の 4 区分）。ガードは AI のうっかり防止で、意図的な回避（印だけ付けて中身を書かない等）は追わない。読めない入力・状態は通す（fail-open）。
+
+| イベント | 見るもの | 差し戻す（通す）とき |
+|---|---|---|
+| `PreToolUse`（matcher `^AskUserQuestion$`） | 各問いの `header` | 先頭に区分（`業務` `客先` `費用` `資源` `取消` `範囲` `本番` `差異` `設計` `延長` `テスト` `その他`。区分だけ・`区分:…`・`区分：…`）が無い |
+| 同上 | `延長`（`延長:全員`・`延長：全員` を除く） | 今のブランチの review-budget の状態で、quality・production のフェーズがあり、どれもまだ上限（`limit`＋オーナーが承認した `extend` の巡）に達していない。どれかが上限に達している・そのフェーズが無い（設計・要件の延長）・状態が読めない・detached HEAD のときは通す |
+| 同上 | `業務` `客先` `範囲` の問いの文 | 「（調べたもの:」「（調べたもの：」が無い |
+| 同上 | `テスト` | 差し戻さず、注意（`additionalContext`）だけを出す: 無料・副作用なし・30 分以内なら聞かずに実施して報告に書く |
+| `Stop` | 最後の応答（入力の `last_assistant_message`。無ければ `transcript_path` の末尾の、最後の user の行より後の assistant の文。サブエージェントの行は読まない） | ユーザーへの操作の依頼（「実行してください」「開いてください」「ログインしてください」「押してください」「入力してください」「打ってください」「再起動してください」「マージしてください」「実行をお願いします」・英語の `please run` 等、一覧はフックの中）か、`` `! <コマンド>` `` のインラインのコードがあり、同じ応答に `[本人の操作]` が無い。`stop_hook_active` が真のときは見ない |
+
+- **依頼の見分け方**: 規則や文書の文を引いて述べただけのものを拾わないよう、比べる前に、コードブロック・インラインのコード・「」『』の中・引用の行（`>` で始まる行）を除く（`! <コマンド>` だけは元の文で探す）。文面を貼る・写す（コピー・貼り付け）は、オーナーが自分で送る文面の受け渡しにも使うので一覧に入れない。「ご確認ください」（判断を求める）も入れない。
+- **延長の状態の読み方**: review-budget と同じ規則で、`<git-common-dir>/ai-dev-helm-reviews/<ブランチの ref（refs/heads/…）の SHA-256>.json` を読む。git は入力の `cwd` で、3 秒で打ち切る。
+- **返し方**: 差し戻しは、本体が JSON を標準出力に出して exit 0 で返す（`PreToolUse` は `hookSpecificOutput.permissionDecision: "deny"` と `permissionDecisionReason`、注意は `hookSpecificOutput.additionalContext`、`Stop` は `{"decision":"block","reason":…}`）。登録のラッパーは本体の終了コードを捨てるので、exit 2 と stderr では差し戻せない。差し戻しの文は日本語で、何をすればよいか（区分を付けて聞き直す、調べたものを書く、上限の内なので次の巡を回す、自分で実行して確かめる・本人にしかできない操作なら `[本人の操作]` と理由を書く）を書く。
+- **登録**: `.claude/settings.json` の `PreToolUse`（matcher `^AskUserQuestion$`）と `Stop` に、タイムアウト 10 秒で 1 つずつ。ラッパーは context-handoff と同じ fail-open の形で、本体を `CLAUDE_PROJECT_DIR`、次に git のルートから探し、本体が無い・起動できない・落ちる・9 秒を過ぎるときも exit 0 で終わる（`Stop` で exit 2 を返すと応答が終わらなくなるため）。再実行（`init`・`upgrade`）は、`owner-guard.cjs` を走らせる登録（手で書いたもの・前の版の形を含む）を外して今の形を 1 つ足す（手で足したキーは残す）。
+- **Codex・Cursor**: 登録も写しもしない（Codex の `hooks.json` を変えると導入先で信頼のやり直しが要るため）。Codex・Cursor では、development-policy §1.0 の 9・10 を文章のまま守る。
+- **確かめ方**: `hook-selftest` が、本体と、登録したコマンドの形（`PreToolUse`・`Stop`）の両方で判定表を流す（延長の事例は、使い捨てのリポジトリに review-budget の状態を作って流す）。`upgrade --verify` と `hook-selftest` は、2 つの登録が 1 回ずつあること（`PreToolUse` の matcher が `AskUserQuestion` に届くこと）と、本体が配布の写しと同じことを確かめる。
+- **限界**: header の区分が問いの中身に合っているかは見ない。依頼の一覧の外の言い方は拾わない。`stop_hook_active` はほかの `Stop` フック（利用者の全体設定のフックなど）と共有なので、ほかのフックが差し戻した次の回では、このガードは見ない（無限ループを防ぐ方を取る）。サブエージェントの応答（`SubagentStop`）は見ない。
+
 仕様参照: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)、[Codex hooks](https://learn.chatgpt.com/docs/hooks)、[Claude Code hooks](https://code.claude.com/docs/en/hooks)。
