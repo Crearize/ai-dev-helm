@@ -44,7 +44,7 @@ Closes #
 | | | | |
 
 ### Deviations from the Approved Design / Plan
-<!-- "None" if no deviations. One line each: what (design section) -> what was done / why / impact -->
+<!-- "None" if no deviations. One line each: what (design section) -> what was done / why / impact. For a safe-side deviation (development-policy §1.0 "承認後の進め方" 2), add "safe-side (merged without asking)" and the conditions ①-⑤ it meets, in one line -->
 
 ### What Was Checked
 <!-- One line for each "done", "applied", "sent" or "fixed" in this PR body: what -> how it was checked (command output, screen, SHA, URL). Write "not checked" (and why) for what was not checked - never a guess stated as fact. "None" if nothing applies -->
