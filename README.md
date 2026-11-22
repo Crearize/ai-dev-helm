@@ -112,7 +112,7 @@ npx @crearize/ai-dev-helm integrate-check --main <main のチェックアウト>
 npx @crearize/ai-dev-helm hook-selftest [--dir .]
 ```
 
-導入先にインストールされている quality-gate・review-budget の hook に、同梱の判定表（約 20 件）を実行します。あわせて登録・hook の写し・スキルの写しを照合し、通った項目を `ok install:` の行で出します。失敗に数えない注意（導入先が書いた fail-open の Codex の gate の登録など）は `WARNING install:` の行で出し、終了コードは変えません。1 件でも違えば終了コード 1 です。導入先では、マニフェストの版の CLI（`npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> hook-selftest`）で流します。それより古い CLI では合格にしません（`documents/development/harness-upgrade.md` の更新の手順 7）。
+導入先にインストールされている quality-gate・review-budget・owner-guard の hook に、同梱の判定表（quality-gate 16 件・review-budget 6 件・owner-guard 19 件。owner-guard は登録したコマンドの形でも判定ごとに 1 件ずつ）を実行します。あわせて登録・hook の写し・スキルの写しを照合し、通った項目を `ok install:` の行で出します。失敗に数えない注意（導入先が書いた fail-open の Codex の gate の登録など）は `WARNING install:` の行で出し、終了コードは変えません。1 件でも違えば終了コード 1 です。導入先では、マニフェストの版の CLI（`npx -y @crearize/ai-dev-helm@<.ai-dev-helm.json の version> hook-selftest`）で流します。それより古い CLI では合格にしません（`documents/development/harness-upgrade.md` の更新の手順 7）。
 
 ### 5. Codex のフックの信頼の確認
 
@@ -444,7 +444,7 @@ Claude Code / Codex はサブエージェントごとのモデルをテンプレ
 
 ### サイクルルール
 
-レビューの巡の数（上限は quality-policy §5）、優先度の基準（直して確かめるのは高だけ）、検証の巡、停滞と構造的停滞の扱いは、`quality-check` スキルの Step 4「指摘の優先度（基準）」と 4-3「サイクルルール」が正本です。
+レビューの巡の数（上限は quality-policy §5）、優先度の基準（直して確かめるのは高と、客先に出る部分の中）、検証の巡、停滞と構造的停滞の扱いは、`quality-check` スキルの Step 4「指摘の優先度（基準）」と 4-3「サイクルルール」が正本です。
 
 ### スピード優先モード
 
@@ -461,6 +461,10 @@ Codex には `.codex/agents/helm-*.toml`（designer / doc-reviewer / implementer
 ### 会話の記録の引き継ぎ（context-handoff、Claude Code・Codex）
 
 `init` は `.claude/hooks/context-handoff.cjs` を配り、`.claude/settings.json` の `PreCompact`・`SessionStart`（compact / clear）・`SessionEnd`（clear）・`Stop` に登録します。コンパクトと `/clear` の直前に、ユーザーの指示の原文・質問への回答・直近のやり取り・変更したファイル・git と PR の操作を会話記録からプログラムで抜き出して `~/.claude/context-handoff/` に保存し、直後にその要点（1 万文字未満）と記録の場所を文脈に戻します。秘密情報らしい文字列（URL の中のパスワード、よくあるトークンの形）は `[REDACTED]` に置き換えて保存します。文脈が 30 万トークンを超えると、区切りで `/clear` してよいことを画面に知らせます。環境変数 `AI_DEV_HELM_HANDOFF=off` で止められます。長い会話を、やり取りを失わずに整理するための仕組みです（フックから `/clear`・`/compact` は起こせないので、打つのはユーザーです）。Codex を使う導入先には、同じ本体を `.codex/hooks/context-handoff.cjs` に配り、`.codex/hooks.json` の `PreCompact`・`SessionStart`（compact / clear）・`Stop` に登録します（記録は `~/.codex/context-handoff/`、戻す要点は Codex の上限の 2,500 トークン以内。新しい 3 件は Codex の起動時の確認で信頼します）。詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「会話の記録の引き継ぎ」。
+
+### 質問と作業依頼のガード（owner-guard、Claude Code）
+
+`init` は `.claude/hooks/owner-guard.cjs` を配り、`.claude/settings.json` の `PreToolUse`（`AskUserQuestion`）と `Stop` に登録します（3.8.0）。質問の各問いの header の先頭に区分（`業務` `客先` `費用` `資源` `取消` `範囲` `本番` `差異` `設計` `延長` `テスト` `その他`）が無いとき、`業務` `客先` `範囲` の問いに「（調べたもの: …）」が無いとき、最後に予約した quality・production のレビューが上限の内なのに `延長` を聞いたとき（X1 の停滞などは `延長:停滞` 等で聞ける）に差し戻し、`テスト` には「無料・副作用なし・30 分以内なら聞かずに実施」の注意を出します。最後の応答でユーザーに操作を頼んだとき（「実行してください」等。`[本人の操作]` と理由が無いとき）も差し戻します。AI のうっかり防止で、読めない入力は通します。Codex・Cursor には登録せず、同じ規則を文章（development-policy §1.0 の 9）で守ります。詳細は [harness-runtime.md](shared/documents/harness-runtime.md) の「質問と作業依頼のガード」。
 
 詳細と起動例は [harness-runtime.md](shared/documents/harness-runtime.md)。レビューの別名への偽装、親自身の思考内レビュー、外部 CLI、無効化したフックや改ざんまで防ぐセキュリティ境界ではありません。フックを信頼・有効化した実行環境で使用してください。
 
@@ -616,6 +620,7 @@ ai-dev-helm/
 │   ├── hooks/quality-gate.cjs      # 品質ゲートフック本体（Node 製・クロスプラットフォーム）
 │   ├── hooks/review-budget.cjs     # レビューだけの回数制御
 │   ├── hooks/context-handoff.cjs   # コンパクト・/clear の前後の会話の記録の保存と引き継ぎ（Claude Code・Codex）
+│   ├── hooks/owner-guard.cjs       # 質問の区分・調べたもの・延長と、ユーザーへの作業依頼のガード（Claude Code）
 │   └── PULL_REQUEST_TEMPLATE.md
 │
 ├── configs/                    # AI ツール別ドキュメント
@@ -654,6 +659,7 @@ your-project/
 │   ├── hooks/quality-gate.cjs      #   品質ゲートフック（Node 製）
 │   ├── hooks/review-budget.cjs     #   レビューだけの回数制御
 │   ├── hooks/context-handoff.cjs   #   コンパクト・/clear の前後の会話の記録
+│   ├── hooks/owner-guard.cjs       #   質問の区分とユーザーへの作業依頼のガード
 │   └── settings.json               #   フック・権限設定
 │
 ├── .cursor/                        # Cursor 用ディレクトリ
@@ -724,8 +730,8 @@ your-project/
 | `CLAUDE.md` | Claude Code が会話開始時に読み込む設定ファイル。プロジェクト概要、ルール、コマンド一覧を記述 |
 | `.cursorrules` | Cursor が参照するプロジェクト設定ファイル |
 | `AGENTS.md` | Codex CLI が会話開始時に読み込む設定ファイル（プロジェクトルートからチェーンマージ） |
-| `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施のマージ（main への取り込み）をブロックするフックなど |
-| `.claude/hooks/` / `.codex/hooks/` | 品質ゲートフック本体（`quality-gate.cjs`）とレビューの回数制御（`review-budget.cjs`）。コンパクト・`/clear` の前後で会話の記録を保存して戻す `context-handoff.cjs` も入る。Node 製のため Windows / macOS / Linux で同一動作（`jq` 等の外部ツール不要） |
+| `.claude/settings.json` | Claude Code のフック設定。品質チェック未実施のマージ（main への取り込み）をブロックするフックや、質問と作業依頼のガード（owner-guard。`PreToolUse` の `AskUserQuestion` と `Stop`）など |
+| `.claude/hooks/` / `.codex/hooks/` | 品質ゲートフック本体（`quality-gate.cjs`）とレビューの回数制御（`review-budget.cjs`）。コンパクト・`/clear` の前後で会話の記録を保存して戻す `context-handoff.cjs` も入る。`.claude/hooks/` には、質問の区分とユーザーへの作業依頼を見る `owner-guard.cjs`（Claude Code だけ）も入る。Node 製のため Windows / macOS / Linux で同一動作（`jq` 等の外部ツール不要） |
 | `.codex/config.toml` | Codex のプロジェクトローカル設定（approval/sandbox） |
 | `.codex/hooks.json` | Codex のフック設定。PreToolUse の品質ゲートは、有効な `.quality-check-passed` がないと main へのマージ・直接 push をブロック。ほかに review-budget と context-handoff（`PreCompact`・`SessionStart`・`Stop`） |
 | `.claude/rules/` | Claude Code が自動読み込みするコーディングルール |
